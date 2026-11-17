@@ -7,7 +7,8 @@ Standalone Android app running the real, unmodified
 - ✅ Phase 1 — runtime spike: unmodified Pi over `pi --mode rpc` on bundled Node 24.
 - ✅ Phase 2 — toolchain + task engine: bash, git (https), ripgrep, curl, npm;
   one pi process per task (`--session-id`, resumable); foreground service.
-- ⏳ Phase 3 — premium Compose UI ("Phosphor" design).
+- 🟡 Phase 3 — premium Compose UI ("Phosphor"): home task cards, task screen,
+  slash palette, settings/model/project sheets ✅ · terminal, browser, store ⏳
 
 ## How the runtime works
 Executables ship as `jniLibs/arm64-v8a/libx_<cmd>.so` (Android only allows

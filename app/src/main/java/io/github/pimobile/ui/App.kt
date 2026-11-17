@@ -1,0 +1,43 @@
+package io.github.pimobile.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import io.github.pimobile.ui.state.UiStore
+import io.github.pimobile.ui.theme.Ph
+import io.github.pimobile.ui.theme.PhosphorTheme
+
+/** Home <-> task, with the tapped card morphing into the task screen. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun App() {
+    PhosphorTheme {
+        var openId by rememberSaveable { mutableStateOf<String?>(null) }
+        BackHandler(enabled = openId != null) { openId = null }
+
+        SharedTransitionLayout(Modifier.fillMaxSize().background(Ph.Ground)) {
+            AnimatedContent(
+                targetState = openId,
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
+                label = "nav",
+            ) { id ->
+                val task = id?.let { UiStore.find(it) }
+                if (task == null) HomeScreen(this@SharedTransitionLayout, this) { openId = it.task.id }
+                else TaskScreen(task, this@SharedTransitionLayout, this) { openId = null }
+            }
+        }
+    }
+}

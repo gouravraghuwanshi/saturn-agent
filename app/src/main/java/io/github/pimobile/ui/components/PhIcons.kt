@@ -1,0 +1,51 @@
+package io.github.pimobile.ui.components
+
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+
+/** Stroke icons on a 24px grid, matching the approved design. */
+object PhIcons {
+    private fun circle(cx: Float, cy: Float, r: Float) =
+        "M${cx - r},$cy a$r,$r 0 1,0 ${2 * r},0 a$r,$r 0 1,0 ${-2 * r},0"
+
+    private fun stroke(vararg paths: String, width: Float = 1.8f) = ImageVector.Builder(
+        defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        paths.forEach {
+            addPath(
+                pathData = addPathNodes(it), stroke = SolidColor(Color.Black), strokeLineWidth = width,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round,
+            )
+        }
+    }.build()
+
+    private fun fill(path: String) = ImageVector.Builder(
+        defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f,
+    ).apply { addPath(pathData = addPathNodes(path), fill = SolidColor(Color.Black)) }.build()
+
+    val Back = stroke("M15 5l-7 7 7 7")
+    val Settings = stroke("M4 7h10M18 7h2M4 17h4M12 17h8", circle(16f, 7f, 2f), circle(10f, 17f, 2f), width = 1.7f)
+    val Plus = stroke("M12 5v14M5 12h14")
+    val Folder = stroke("M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
+    val Send = stroke("M12 19V5M5 12l7-7 7 7", width = 2.2f)
+    val Stop = fill("M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z")
+    val More = fill(circle(5f, 12f, 1.6f) + circle(12f, 12f, 1.6f) + circle(19f, 12f, 1.6f))
+    val Cube = stroke("M12 3l8 4.5v9L12 21l-8-4.5v-9z", "M12 12l8-4.5M12 12v9M12 12L4 7.5", width = 1.7f)
+    val Warning = stroke("M12 3l9 16H3z", "M12 10v4M12 17h.01")
+    val Chevron = stroke("M6 9l6 6 6-6")
+    val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
+}
+
+@Composable
+fun PhIcon(icon: ImageVector, tint: Color, size: Dp = 20.dp, description: String? = null) =
+    Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(size))

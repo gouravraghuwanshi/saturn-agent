@@ -24,6 +24,8 @@ object TaskManager {
         val number: Int,
         var title: String,
         val cwd: File,
+        /** Loaded from disk at startup: its history lives in pi's session file. */
+        val restored: Boolean = false,
     ) {
         @Volatile var status = Status.STOPPED
         @Volatile var lastActivity: String = ""
@@ -100,6 +102,25 @@ object TaskManager {
 
     private val DIALOG_METHODS = setOf("select", "confirm", "input", "editor")
 
+    /** Synthetic record emitted after a task's pi process is up. */
+    const val SESSION_STARTED = "app_session_started"
+
+    fun rename(task: Task, title: String) {
+        task.title = title
+        save()
+        emit(task, null, null)
+    }
+
+    /** Removes the card and ends the process. pi's session file is kept on disk. */
+    fun delete(task: Task) = io.execute {
+        task.session?.stop()
+        task.session = null
+        synchronized(_tasks) { _tasks.remove(task) }
+        save()
+        main.post { PiService.sync(app, activeCount) }
+        emit(task, null, null)
+    }
+
     /** Ends the process; the session stays on disk and can be resumed. */
     fun stop(task: Task) = io.execute {
         task.session?.stop()
@@ -124,6 +145,7 @@ object TaskManager {
         try {
             session.start(sessionEnv)
             setStatus(task, Status.IDLE)
+            emit(task, JSONObject().put("type", SESSION_STARTED), null)
         } catch (e: Exception) {
             setStatus(task, Status.FAILED)
             emit(task, null, "start failed: $e")
@@ -175,7 +197,7 @@ object TaskManager {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 // Processes don't survive app death: a task that was active is now resumable.
-                _tasks.add(Task(o.getString("id"), o.getInt("number"), o.getString("title"), File(o.getString("cwd"))))
+                _tasks.add(Task(o.getString("id"), o.getInt("number"), o.getString("title"), File(o.getString("cwd")), restored = true))
             }
         }
     }

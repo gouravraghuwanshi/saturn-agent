@@ -100,6 +100,9 @@ class PiRuntime private constructor(private val ctx: Context) {
         // Non-interactive bash (pi's shell tool) sources this: npm/npx helpers.
         "BASH_ENV" to bashEnv.path,
         "PI_SKIP_VERSION_CHECK" to "1",
+        // npm is bundled with the app; its "new version available" notice is noise here.
+        "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
+        "NPM_CONFIG_FUND" to "false",
     )
 
     private fun link(dir: File, entries: Map<String, String>) {

@@ -70,6 +70,7 @@ private val ACTIVE = setOf(Status.STARTING, Status.RUNNING, Status.NEEDS_INPUT)
 fun HomeScreen(
     shared: SharedTransitionScope,
     visibility: AnimatedVisibilityScope,
+    onStore: () -> Unit,
     onOpen: (TaskUi) -> Unit,
 ) {
     var input by remember { mutableStateOf(TextFieldValue("")) }
@@ -97,6 +98,7 @@ fun HomeScreen(
                     Text(UiStore.model ?: if (UiStore.hasCredentials) "auto model" else "no provider key yet",
                         style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                IconBox(PhIcons.Cube, "Extension store") { onStore() }
                 IconBox(PhIcons.Settings, "Settings") { sheet = "settings" }
             }
 

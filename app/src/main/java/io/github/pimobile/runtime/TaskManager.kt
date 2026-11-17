@@ -125,6 +125,14 @@ object TaskManager {
         setStatus(task, Status.STOPPED)
     }
 
+    /**
+     * After installing/removing packages: end idle task processes so they
+     * reload resources on their next message. Running tasks are left alone.
+     */
+    fun restartIdle() = tasks.filter { it.status == Status.IDLE && it.session != null }.forEach { t ->
+        io.execute { t.session?.stop(); t.session = null; setStatus(t, Status.STOPPED) }
+    }
+
     /** Removes the card and ends the process. pi's session file is kept on disk. */
     fun delete(task: Task) = io.execute {
         task.session?.stop()

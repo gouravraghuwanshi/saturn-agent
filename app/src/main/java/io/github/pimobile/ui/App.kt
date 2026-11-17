@@ -21,7 +21,9 @@ import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
 import io.github.pimobile.ui.theme.PhosphorTheme
 
-/** Home <-> task, with the tapped card morphing into the task screen. */
+private const val STORE = "store"
+
+/** Home <-> task (the tapped card morphs into the task screen), and the store. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun App() {
@@ -39,7 +41,8 @@ fun App() {
                 label = "nav",
             ) { id ->
                 val task = id?.let { UiStore.find(it) }
-                if (task == null) HomeScreen(this@SharedTransitionLayout, this) { openId = it.task.id }
+                if (id == STORE) StoreScreen { openId = null }
+                else if (task == null) HomeScreen(this@SharedTransitionLayout, this, onStore = { openId = STORE }) { openId = it.task.id }
                 else TaskScreen(task, this@SharedTransitionLayout, this) { openId = null }
             }
         }

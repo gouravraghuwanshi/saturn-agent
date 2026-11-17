@@ -19,6 +19,10 @@ android {
 
     buildFeatures { compose = true }
 
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
+    }
+
     packaging {
         // Extract .so files to nativeLibraryDir on install: that directory is
         // the one place a modern (targetSdk 29+) app may exec() binaries from.

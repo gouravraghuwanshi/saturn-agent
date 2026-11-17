@@ -13,7 +13,8 @@ import java.util.concurrent.TimeUnit
  */
 class PiSession(
     private val runtime: PiRuntime,
-    val sessionId: String,
+    /** null = in-memory session (`--no-session`), used by the app's control process. */
+    val sessionId: String?,
     val cwd: File,
     private val listener: Listener,
 ) {
@@ -37,8 +38,7 @@ class PiSession(
         val cmd = listOf(
             runtime.node.path, runtime.piCli.path,
             "--mode", "rpc",
-            "--session-id", sessionId,
-        ) + extraArgs
+        ) + (if (sessionId != null) listOf("--session-id", sessionId) else listOf("--no-session")) + extraArgs
         val pb = ProcessBuilder(cmd).directory(cwd)
         pb.environment().putAll(runtime.env() + extraEnv)
         val p = pb.start()

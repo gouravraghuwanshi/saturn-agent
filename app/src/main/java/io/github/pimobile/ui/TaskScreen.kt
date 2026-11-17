@@ -41,6 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import io.github.pimobile.runtime.TaskManager
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -87,7 +89,8 @@ private fun blocks(items: List<Item>): List<Block> {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVisibilityScope, onBack: () -> Unit) {
+fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVisibilityScope,
+               onOpenTask: (TaskUi) -> Unit = {}, onBack: () -> Unit) {
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
@@ -127,13 +130,64 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         if (tab == "chat" && blocks.isNotEmpty()) { follow = true; list.scrollToItem(blocks.size, Int.MAX_VALUE / 2) }
     }
 
-    val commands = slashCommands(listOf(
-        SlashCommand("model", "Switch model for this task", "pi") { sheet = "model" },
-        SlashCommand("compact", "Summarize to free context", "pi") { UiStore.compact(t) },
-        SlashCommand("name", "Rename this task", "app") { sheet = "rename" },
-        SlashCommand("stop", "Stop the current run", "app") { UiStore.stop(t) },
-        SlashCommand("login", "Add a provider API key", "pi") { sheet = "settings" },
-    ))
+    val ctx = LocalContext.current
+    var loginArg by remember { mutableStateOf("") }
+    // pi's built-in commands, mapped to RPC, the pimobile-app extension or native screens.
+    val builtins = listOf(
+        Builtin("model", "Switch model for this task", args = true) { a ->
+            if (a.contains('/')) UiStore.setModel(t, a.substringBefore('/'), a.substringAfter('/')) else sheet = "model" },
+        Builtin("thinking", "Set the thinking level", args = true) { a ->
+            if (a.isNotBlank()) UiStore.rpc(t, "set_thinking_level", "level" to a) else sheet = "thinking" },
+        Builtin("login", "Sign in to a provider (subscriptions, API keys)", args = true) { a -> loginArg = a; sheet = "login" },
+        Builtin("logout", "Remove a provider credential") { sheet = "logout" },
+        Builtin("new", "Start a fresh session in this task") { UiStore.rpc(t, "new_session") },
+        Builtin("resume", "Open another session as a task") { sheet = "resume" },
+        Builtin("name", "Rename this task", tag = "app", args = true) { a ->
+            if (a.isNotBlank()) { UiStore.rename(t, a); UiStore.rpc(t, "set_session_name", "name" to a) } else sheet = "rename" },
+        Builtin("session", "Session info and statistics") { sheet = "session" },
+        Builtin("tree", "Navigate the session tree") { sheet = "tree" },
+        Builtin("fork", "New session from an earlier message") { sheet = "fork" },
+        Builtin("clone", "Duplicate this session at this point") { UiStore.rpc(t, "clone") },
+        Builtin("compact", "Compact context (optional instructions)", args = true) { a ->
+            UiStore.rpc(t, "compact", "customInstructions" to a.ifBlank { null }) },
+        Builtin("copy", "Copy the last reply") { t.responses.remove("get_last_assistant_text"); UiStore.rpc(t, "get_last_assistant_text") },
+        Builtin("export", "Export the session as HTML and share it") {
+            val out = java.io.File(ctx.cacheDir, "exports/task-${t.task.number}.html").apply { parentFile?.mkdirs() }
+            t.responses.remove("export_html"); UiStore.rpc(t, "export_html", "outputPath" to out.path) },
+        Builtin("reload", "Reload extensions, skills, prompts and context") { UiStore.appCommand(t, "reload") },
+        Builtin("settings", "App settings", tag = "app") { sheet = "settings" },
+        Builtin("changelog", "What's new in pi") { sheet = "changelog" },
+        Builtin("stop", "Stop the current run", tag = "app") { UiStore.stop(t) },
+        Builtin("quit", "End this task's pi process", tag = "app") { TaskManager.stop(t.task) },
+    )
+    val commands = paletteOf(builtins)
+
+    // Results of commands that act outside the transcript.
+    t.responses["get_last_assistant_text"]?.let { r ->
+        LaunchedEffect(r) {
+            val text = r.optString("text").takeIf { it.isNotBlank() && it != "null" }
+            if (text != null) ctx.getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("Phi", text))
+            android.widget.Toast.makeText(ctx, if (text != null) "Copied the last reply" else "No reply to copy yet", android.widget.Toast.LENGTH_SHORT).show()
+            t.responses.remove("get_last_assistant_text")
+        }
+    }
+    t.responses["export_html"]?.let { r ->
+        LaunchedEffect(r) {
+            t.responses.remove("export_html")
+            val f = java.io.File(r.optString("path").ifBlank { java.io.File(ctx.cacheDir, "exports/task-${t.task.number}.html").path })
+            if (f.exists()) {
+                val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+                ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND)
+                    .setType("text/html").putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share session"))
+            }
+        }
+    }
+    // /fork and /tree hand an earlier message back for editing, like pi's TUI.
+    t.prefill?.let { text ->
+        LaunchedEffect(text) { input = TextFieldValue(text, androidx.compose.ui.text.TextRange(text.length)); t.prefill = null; tab = "chat" }
+    }
 
     with(shared) {
         Box(
@@ -178,14 +232,17 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             Toggle("steer", !followUp) { followUp = false }
                             Toggle("follow-up", followUp) { followUp = true }
                             Box(Modifier.weight(1f))
-                            Text(if (followUp) "sent when pi finishes" else "sent after current step", style = Ph.monoSmall)
+                            Text(if (followUp) "sent when Phi finishes" else "sent after current step", style = Ph.monoSmall)
                         }
                     }
                     Composer(
                         value = input, onValue = { input = it },
                         placeholder = "Continue task #${t.task.number}…",
                         commands = commands,
-                        onSend = { text -> input = TextFieldValue(""); UiStore.send(t, text, followUp) },
+                        onSend = { text ->
+                            input = TextFieldValue("")
+                            if (!dispatchSlash(text, builtins)) UiStore.send(t, text, followUp)
+                        },
                         extra = {
                             if (running) Box(
                                 Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.RedWash)
@@ -204,6 +261,14 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         "model" -> ModelSheet(t) { sheet = null }
         "rename" -> RenameSheet(t) { sheet = null }
         "settings" -> SettingsSheet { sheet = null }
+        "login" -> LoginSheet(initialQuery = loginArg) { sheet = null }
+        "logout" -> LoginSheet(logoutMode = true) { sheet = null }
+        "thinking" -> ThinkingSheet(t) { sheet = null }
+        "session" -> SessionSheet(t) { sheet = null }
+        "tree" -> TreeSheet(t) { sheet = null }
+        "fork" -> ForkSheet(t) { sheet = null }
+        "resume" -> ResumeSheet(onOpen = { other -> if (other !== t) onOpenTask(other) }) { sheet = null }
+        "changelog" -> ChangelogSheet { sheet = null }
     }
 }
 
@@ -270,7 +335,7 @@ private fun TerminalBusy(onStop: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
         PulseDot(Ph.Amber, 9)
-        Text("pi is working on this task", style = Ph.title, modifier = Modifier.padding(top = 16.dp))
+        Text("Phi is working on this task", style = Ph.title, modifier = Modifier.padding(top = 16.dp))
         Text("The terminal opens this same session in pi's own TUI once the run is idle.",
             style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
@@ -292,7 +357,7 @@ private fun Toggle(label: String, on: Boolean, onClick: () -> Unit) {
 private fun Working(t: TaskUi) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulseDot(Ph.Amber, 7)
-        Text(if (t.status == Status.STARTING) "starting pi" else "working · ${elapsed(t.runStartedAt)}", style = Ph.mono.copy(color = Ph.Muted))
+        Text(if (t.status == Status.STARTING) "starting Phi" else "working · ${elapsed(t.runStartedAt)}", style = Ph.mono.copy(color = Ph.Muted))
         BlinkCursor()
     }
 }
@@ -341,7 +406,7 @@ private fun DialogCard(t: TaskUi, d: Item.Dialog) {
             .border(1.dp, if (d.answer == null) Ph.AmberLine else Ph.Line, shape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(d.title.ifBlank { "pi needs your input" }, style = Ph.title.copy(fontSize = 14.sp))
+        Text(d.title.ifBlank { "Phi needs your input" }, style = Ph.title.copy(fontSize = 14.sp))
         if (d.message.isNotBlank()) Text(d.message, style = Ph.body.copy(fontSize = 13.sp))
         val answered = d.answer
         if (answered != null) Text("→ $answered", style = Ph.mono.copy(color = Ph.Green))

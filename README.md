@@ -1,6 +1,6 @@
-# pi-android
+# Phi (pi-android)
 
-Standalone Android app running the real, unmodified
+**Phi** is a standalone Android app running the real, unmodified
 [Pi Coding Agent](https://pi.dev) (`@earendil-works/pi-coding-agent`) on-device.
 
 ## Status

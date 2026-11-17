@@ -117,8 +117,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
 
     PhSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            SheetTitle("Settings", "Keys are encrypted with the Android Keystore and only passed to pi.")
-            Text("PROVIDERS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp))
+            SheetTitle("Settings", "Keys are encrypted with the Android Keystore and only passed to Phi's engine. For subscriptions use /login.")
+            Text("API KEYS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp))
             PROVIDERS.forEach { (name, env) ->
                 val set = secrets[env]
                 Column(Modifier.fillMaxWidth().clickable { editing = if (editing == env) null else env; draft = "" }

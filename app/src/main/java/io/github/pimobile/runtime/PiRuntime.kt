@@ -151,7 +151,14 @@ class PiRuntime private constructor(private val ctx: Context) {
         settingsFile.writeText(settings.toString(2))
         // Built-in extensions shipped with the app (refreshed on every start).
         val ext = File(home, ".pi/agent/extensions").apply { mkdirs() }
-        ctx.assets.open("pimobile-browser.js").use { i -> File(ext, "pimobile-browser.js").outputStream().use { i.copyTo(it) } }
+        for (name in listOf("pimobile-browser.js", "pimobile-app.js")) {
+            ctx.assets.open(name).use { i -> File(ext, name).outputStream().use { i.copyTo(it) } }
+        }
+        // The app is called Phi; pi stays unmodified and just learns its name here.
+        File(home, ".pi/agent/APPEND_SYSTEM.md").writeText(
+            "You are running inside Phi, an Android app. In this app you are called Phi; " +
+                "introduce yourself as Phi if asked. The user works on a phone: keep answers concise.\n"
+        )
     }
 
     /** Extracts assets/<name>.zip into [dest] when assets/<name>.version changes. */

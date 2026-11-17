@@ -124,7 +124,7 @@ class PiService : Service() {
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle(if (count == 1) "1 task running" else "$count tasks running")
-            .setContentText("pi is working — tap to open")
+            .setContentText("Phi is working — tap to open")
             .setContentIntent(pi)
             .setOngoing(true)
             .build()

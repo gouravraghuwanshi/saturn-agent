@@ -65,6 +65,10 @@ import java.util.Locale
 
 private val ACTIVE = setOf(Status.STARTING, Status.RUNNING, Status.NEEDS_INPUT)
 
+/** pi built-ins that only make sense inside a task. */
+private val TASK_ONLY = setOf("tree", "fork", "clone", "session", "name", "new", "compact", "copy", "export",
+    "thinking", "stop", "quit", "import", "share", "scoped-models", "hotkeys", "trust", "bug")
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeScreen(
@@ -79,11 +83,20 @@ fun HomeScreen(
     val activeCount = UiStore.tasks.count { it.status in ACTIVE }
     val spent = UiStore.tasks.sumOf { it.cost }
 
-    val commands = slashCommands(listOf(
-        SlashCommand("model", "Switch model", "pi") { sheet = "model" },
-        SlashCommand("login", "Add a provider API key", "pi") { sheet = "settings" },
-        SlashCommand("project", "Choose the project folder", "app") { sheet = "project" },
-    ))
+    var loginArg by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val builtins = listOf(
+        Builtin("login", "Sign in to a provider (subscriptions, API keys)", args = true) { a -> loginArg = a; sheet = "login" },
+        Builtin("logout", "Remove a provider credential") { sheet = "logout" },
+        Builtin("model", "Default model for new tasks", args = true) { a ->
+            if (a.contains('/')) UiStore.setModel(null, a.substringBefore('/'), a.substringAfter('/')) else sheet = "model" },
+        Builtin("resume", "Reopen an earlier session as a task") { sheet = "resume" },
+        Builtin("project", "Choose the project folder", tag = "app") { sheet = "project" },
+        Builtin("settings", "App settings", tag = "app") { sheet = "settings" },
+        Builtin("reload", "Reload extensions & skills in idle tasks") { io.github.pimobile.runtime.TaskManager.restartIdle(); UiStore.commands = emptyList() },
+        Builtin("changelog", "What's new in pi") { sheet = "changelog" },
+    )
+    val commands = paletteOf(builtins)
 
     Box(Modifier.fillMaxSize().background(Ph.Ground)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -91,11 +104,11 @@ fun HomeScreen(
             Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Ph.Amber), contentAlignment = Alignment.Center) {
-                    Text("π", style = Ph.mono.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ph.AmberInk))
+                    Text("φ", style = Ph.mono.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ph.AmberInk))
                 }
                 Column(Modifier.weight(1f).clickable { sheet = "model" }) {
-                    Text("pi", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
-                    Text(UiStore.model ?: if (UiStore.hasCredentials) "auto model" else "no provider key yet",
+                    Text("Phi", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
+                    Text(UiStore.model ?: if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "auto model" else "not signed in · /login",
                         style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconBox(PhIcons.Cube, "Extension store") { onStore() }
@@ -109,7 +122,7 @@ fun HomeScreen(
             }
 
             // ---- tasks
-            if (UiStore.tasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials) { sheet = "settings" }
+            if (UiStore.tasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) { sheet = "login" }
             else LazyColumn(
                 Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -133,11 +146,18 @@ fun HomeScreen(
         ) {
             Composer(
                 value = input, onValue = { input = it },
-                placeholder = "Ask pi to do something…",
+                placeholder = "Ask Phi to do something…",
                 commands = commands,
                 onSend = { text ->
                     input = TextFieldValue("")
-                    UiStore.newTask(text, File(project))
+                    val name = text.removePrefix("/").substringBefore(' ')
+                    when {
+                        dispatchSlash(text, builtins) -> {}
+                        // pi built-ins that act on one task: don't start a task (and an LLM call) by accident.
+                        text.startsWith("/") && name in TASK_ONLY -> android.widget.Toast.makeText(context,
+                            "Open a task to use /$name", android.widget.Toast.LENGTH_SHORT).show()
+                        else -> UiStore.newTask(text, File(project))
+                    }
                 },
                 leading = {
                     ChipButton(File(project).let { if (it == UiStore.runtime.projects) "projects" else it.name },
@@ -153,6 +173,10 @@ fun HomeScreen(
         "settings" -> SettingsSheet { sheet = null }
         "model" -> ModelSheet(null) { sheet = null }
         "project" -> ProjectSheet(File(project), { project = it.path }) { sheet = null }
+        "login" -> LoginSheet(initialQuery = loginArg) { sheet = null }
+        "logout" -> LoginSheet(logoutMode = true) { sheet = null }
+        "resume" -> ResumeSheet(onOpen = { onOpen(it) }) { sheet = null }
+        "changelog" -> ChangelogSheet { sheet = null }
     }
 }
 
@@ -169,21 +193,21 @@ fun IconBox(icon: androidx.compose.ui.graphics.vector.ImageVector, description: 
 private fun EmptyState(modifier: Modifier, hasKey: Boolean, onSettings: () -> Unit) {
     Column(modifier.fillMaxWidth().padding(horizontal = 32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("π", style = Ph.mono.copy(fontSize = 56.sp, color = Ph.LineStrong))
+        Text("φ", style = Ph.mono.copy(fontSize = 56.sp, color = Ph.LineStrong))
         Spacer(Modifier.height(16.dp))
-        Text(if (hasKey) "What should pi work on?" else "Connect a model to begin",
+        Text(if (hasKey) "What should Phi work on?" else "Connect a model to begin",
             style = Ph.title.copy(fontSize = 18.sp), textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Text(
             if (hasKey) "Every instruction becomes its own task. Run several at once — tap one to continue it."
-            else "Add an API key for OpenRouter, Anthropic, OpenAI or another provider.",
+            else "Sign in with a subscription (Claude, ChatGPT, Copilot…) or add an API key.",
             style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center,
         )
         if (!hasKey) {
             Spacer(Modifier.height(20.dp))
             Box(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Amber).clickable { onSettings() }
                 .padding(horizontal = 18.dp, vertical = 12.dp)) {
-                Text("Add a key", style = Ph.title.copy(fontSize = 14.sp, color = Ph.AmberInk))
+                Text("Sign in", style = Ph.title.copy(fontSize = 14.sp, color = Ph.AmberInk))
             }
         }
         Spacer(Modifier.height(140.dp))

@@ -160,7 +160,7 @@ fun TerminalPane(t: TaskUi) {
             val env = (rt.env() + TaskManager.envFor(t.task)).map { (k, v) -> "$k=$v" }.toTypedArray()
             view.post {
                 val s = TerminalSession(rt.node.path, t.task.cwd.path,
-                    arrayOf("pi", rt.piCli.path, "--session-id", t.task.id), env, 3000, sessionClient)
+                    arrayOf("pi", rt.piCli.path, "--session-id", t.task.sessionId), env, 3000, sessionClient)
                 holder[0] = s
                 view.setTerminalViewClient(viewClient)
                 view.attachSession(s)

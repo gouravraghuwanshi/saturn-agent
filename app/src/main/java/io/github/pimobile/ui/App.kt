@@ -43,7 +43,7 @@ fun App() {
                 val task = id?.let { UiStore.find(it) }
                 if (id == STORE) StoreScreen { openId = null }
                 else if (task == null) HomeScreen(this@SharedTransitionLayout, this, onStore = { openId = STORE }) { openId = it.task.id }
-                else TaskScreen(task, this@SharedTransitionLayout, this) { openId = null }
+                else TaskScreen(task, this@SharedTransitionLayout, this, onOpenTask = { openId = it.task.id }) { openId = null }
             }
         }
         }

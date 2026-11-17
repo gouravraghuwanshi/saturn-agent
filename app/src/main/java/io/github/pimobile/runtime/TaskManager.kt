@@ -27,6 +27,8 @@ object TaskManager {
         /** Loaded from disk at startup: its history lives in pi's session file. */
         val restored: Boolean = false,
     ) {
+        /** pi session this task is on; changes after /fork, /clone, /new, /resume. */
+        @Volatile var sessionId: String = id
         @Volatile var status = Status.STOPPED
         @Volatile var lastActivity: String = ""
         internal var session: PiSession? = null
@@ -108,6 +110,24 @@ object TaskManager {
     /** Synthetic record emitted after a task's pi process is up. */
     const val SESSION_STARTED = "app_session_started"
 
+    /** pi moved the task to another session (fork/clone/new/resume): restart on that one. */
+    fun setSessionId(task: Task, id: String) {
+        if (id.isBlank() || id == task.sessionId) return
+        task.sessionId = id
+        save()
+    }
+
+    /** Opens an existing pi session (from /resume) as a new task card. */
+    fun adopt(sessionId: String, title: String, cwd: File): Task {
+        val task = synchronized(_tasks) {
+            Task("task-" + UUID.randomUUID().toString().take(8), (_tasks.maxOfOrNull { it.number } ?: 0) + 1,
+                title.take(80), cwd, restored = true).also { it.sessionId = sessionId; _tasks.add(0, it) }
+        }
+        save()
+        emit(task, null, null)
+        return task
+    }
+
     fun rename(task: Task, title: String) {
         task.title = title
         save()
@@ -153,7 +173,7 @@ object TaskManager {
     private fun ensureSession(task: Task) {
         if (task.session?.isAlive == true) return
         setStatus(task, Status.STARTING)
-        val session = PiSession(runtime, task.id, task.cwd, object : PiSession.Listener {
+        val session = PiSession(runtime, task.sessionId, task.cwd, object : PiSession.Listener {
             override fun onRecord(record: JSONObject) = handle(task, record)
             override fun onLog(line: String) = emit(task, null, line)
             override fun onExit(code: Int) {
@@ -208,7 +228,7 @@ object TaskManager {
         val arr = JSONArray()
         tasks.forEach {
             arr.put(JSONObject().put("id", it.id).put("number", it.number).put("title", it.title)
-                .put("cwd", it.cwd.path).put("status", it.status.name))
+                .put("cwd", it.cwd.path).put("status", it.status.name).put("sessionId", it.sessionId))
         }
         runCatching { store.writeText(arr.toString()) }
     }
@@ -219,7 +239,8 @@ object TaskManager {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 // Processes don't survive app death: a task that was active is now resumable.
-                _tasks.add(Task(o.getString("id"), o.getInt("number"), o.getString("title"), File(o.getString("cwd")), restored = true))
+                _tasks.add(Task(o.getString("id"), o.getInt("number"), o.getString("title"), File(o.getString("cwd")), restored = true)
+                    .apply { sessionId = o.optString("sessionId").ifBlank { id } })
             }
         }
     }

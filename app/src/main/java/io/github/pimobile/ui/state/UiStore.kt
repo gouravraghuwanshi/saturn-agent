@@ -54,6 +54,11 @@ class TaskUi(val task: TaskManager.Task) {
     var pendingDialog by mutableStateOf<Item.Dialog?>(null)
     /** True while the current run is using the in-app browser (shows the browser tab). */
     var browsing by mutableStateOf(false)
+    /** Latest successful RPC response data per command (feeds the command sheets). */
+    val responses = androidx.compose.runtime.mutableStateMapOf<String, JSONObject>()
+    /** Text to put into the composer (e.g. the message chosen in /fork or /tree). */
+    var prefill by mutableStateOf<String?>(null)
+    var thinkingLevel by mutableStateOf<String?>(null)
     /** Bumped whenever the transcript is replaced from pi's history. */
     var rebuilds by mutableStateOf(0)
     internal var current: Item.Assistant? = null
@@ -98,6 +103,7 @@ object UiStore : TaskManager.Listener {
             old.edit().clear().apply()
         }
         TaskManager.init(app)
+        Control.init(app)
         // App updates move the native lib dir: refresh usr/bin links (and unpack
         // bundles if new) right away, not only when the first task starts.
         Thread({ runCatching { PiRuntime.get(app).prepare() } }, "runtime-prepare").start()
@@ -287,6 +293,30 @@ object UiStore : TaskManager.Listener {
         }
     }
 
+    /** Events from the bundled pimobile-app extension (tree navigation, reload). */
+    private fun appEvent(ui: TaskUi, e: JSONObject) {
+        when (e.optString("type")) {
+            "tree_done" -> {
+                e.optJSONObject("result")?.optString("editorText")?.takeIf { it.isNotBlank() }?.let { ui.prefill = it }
+                TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
+            }
+            "reloaded" -> { commands = emptyList(); TaskManager.command(ui.task, JSONObject().put("type", "get_commands")) }
+            "error" -> ui.items.add(Item.Notice(ui.key("n"), "${e.optString("scope")}: ${e.optString("message")}", true))
+        }
+    }
+
+    /** Sends an RPC command to a task's pi process (starting it if needed). */
+    fun rpc(ui: TaskUi, type: String, vararg fields: Pair<String, Any?>) {
+        val cmd = JSONObject().put("type", type)
+        fields.forEach { (k, v) -> if (v != null) cmd.put(k, v) }
+        TaskManager.command(ui.task, cmd)
+    }
+
+    /** Runs a hidden pimobile-app extension command in the task's pi process. */
+    fun appCommand(ui: TaskUi, name: String, args: JSONObject = JSONObject()) =
+        rpc(ui, "prompt", "message" to "/pimobile-$name $args", "id" to "app-${appIds++}")
+    private var appIds = 0
+
     private fun extensionUi(ui: TaskUi, r: JSONObject) {
         when (val method = r.optString("method")) {
             "select", "confirm", "input", "editor" -> {
@@ -297,7 +327,11 @@ object UiStore : TaskManager.Listener {
                 ui.items.add(d)
                 ui.pendingDialog = d
             }
-            "notify" -> ui.items.add(Item.Notice(ui.key("n"), r.optString("message"), r.optString("notifyType") == "error"))
+            "notify" -> {
+                val msg = r.optString("message")
+                if (msg.startsWith("pimobile:")) runCatching { appEvent(ui, JSONObject(msg.removePrefix("pimobile:"))) }
+                else ui.items.add(Item.Notice(ui.key("n"), msg, r.optString("notifyType") == "error"))
+            }
         }
     }
 
@@ -307,20 +341,33 @@ object UiStore : TaskManager.Listener {
             return
         }
         val data = r.optJSONObject("data")
+        ui.responses[r.optString("command")] = data ?: JSONObject()
         when (r.optString("command")) {
             // Extension commands consumed by pi never echo a user message.
-            "prompt" -> if (data?.optString("disposition") == "handled") ui.echoes.removeLastOrNull()
-            "get_state" -> data?.optJSONObject("model")?.let { m ->
-                if (m.optString("id") != "unknown") {
-                    model = "${m.optString("provider")}/${m.optString("id")}"
-                    prefs.edit().putString("model", model).apply()
+            "prompt" -> if (data?.optString("disposition") == "handled" && !r.optString("id").startsWith("app-")) ui.echoes.removeLastOrNull()
+            "get_state" -> {
+                data?.optJSONObject("model")?.let { m ->
+                    if (m.optString("id") != "unknown") {
+                        model = "${m.optString("provider")}/${m.optString("id")}"
+                        prefs.edit().putString("model", model).apply()
+                    }
                 }
+                data?.optString("thinkingLevel")?.takeIf { it.isNotBlank() }?.let { ui.thinkingLevel = it }
+                data?.optString("sessionId")?.let { TaskManager.setSessionId(ui.task, it) }
             }
+            // These switch pi to another session: follow it and reload the transcript.
+            "fork", "clone", "new_session", "switch_session" -> if (data?.optBoolean("cancelled") != true) {
+                if (r.optString("command") == "fork") data?.optString("text")?.takeIf { it.isNotBlank() }?.let { ui.prefill = it }
+                if (r.optString("command") == "new_session") { ui.items.clear(); ui.cost = 0.0; ui.contextTokens = 0 }
+                TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
+                TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
+            }
+            "set_thinking_level" -> TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
             "set_model" -> data?.let { model = "${it.optString("provider")}/${it.optString("id")}" }
             "get_commands" -> data?.optJSONArray("commands")?.let { a ->
-                commands = (0 until a.length()).map { a.getJSONObject(it) }.map {
-                    Command(it.optString("name"), it.optString("description"), it.optString("source"))
-                }
+                commands = (0 until a.length()).map { a.getJSONObject(it) }
+                    .filterNot { it.optString("name").startsWith("pimobile-") } // the app's own bridge commands
+                    .map { Command(it.optString("name"), it.optString("description"), it.optString("source")) }
             }
             "get_available_models" -> data?.optJSONArray("models")?.let { a ->
                 models = (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("provider") to it.optString("id") }

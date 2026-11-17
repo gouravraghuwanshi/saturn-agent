@@ -41,6 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -100,12 +103,29 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val blocks by remember(t) { derivedStateOf { blocks(t.items.toList()) } }
 
     LaunchedEffect(t) { UiStore.open(t) }
-    // Follow the conversation while the user is at the bottom.
-    val atBottom by remember { derivedStateOf { !list.canScrollForward || list.layoutInfo.totalItemsCount == 0 } }
+    // Follow new output until the user scrolls up; resume when they return to the bottom.
+    var follow by remember { mutableStateOf(true) }
+    LaunchedEffect(list) {
+        list.interactionSource.interactions.collect { i ->
+            when (i) {
+                is DragInteraction.Start -> follow = false
+                is DragInteraction.Stop, is DragInteraction.Cancel -> {
+                    snapshotFlow { list.isScrollInProgress }.first { !it } // let the fling settle
+                    follow = !list.canScrollForward
+                }
+            }
+        }
+    }
     val lastText = (t.items.lastOrNull() as? Item.Assistant)?.text?.length ?: 0
-    LaunchedEffect(blocks.size, lastText) { if (atBottom && blocks.isNotEmpty()) list.animateScrollToItem(blocks.size) }
+    val lastOutput = (t.items.lastOrNull() as? Item.Tool)?.output?.length ?: 0
+    LaunchedEffect(blocks.size, lastText, lastOutput, running) {
+        // Offset beyond the end is clamped, so this lands at the very bottom.
+        if (follow && list.layoutInfo.totalItemsCount > 0) list.scrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2)
+    }
     // Opening the task, coming back from the terminal, or a history reload: show the latest.
-    LaunchedEffect(t.rebuilds, tab) { if (tab == "chat" && blocks.isNotEmpty()) list.scrollToItem(blocks.size) }
+    LaunchedEffect(t.rebuilds, tab) {
+        if (tab == "chat" && blocks.isNotEmpty()) { follow = true; list.scrollToItem(blocks.size, Int.MAX_VALUE / 2) }
+    }
 
     val commands = slashCommands(listOf(
         SlashCommand("model", "Switch model for this task", "pi") { sheet = "model" },

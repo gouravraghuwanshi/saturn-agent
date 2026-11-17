@@ -98,6 +98,9 @@ object UiStore : TaskManager.Listener {
             old.edit().clear().apply()
         }
         TaskManager.init(app)
+        // App updates move the native lib dir: refresh usr/bin links (and unpack
+        // bundles if new) right away, not only when the first task starts.
+        Thread({ runCatching { PiRuntime.get(app).prepare() } }, "runtime-prepare").start()
         BrowserManager.init(app)
         applySecrets()
         model = prefs.getString("model", null)

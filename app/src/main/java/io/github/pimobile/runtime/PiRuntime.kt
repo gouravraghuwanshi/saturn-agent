@@ -61,6 +61,17 @@ class PiRuntime private constructor(private val ctx: Context) {
 
     val node get() = File(nativeDir, "libx_node.so")
 
+    private val prefs get() = ctx.getSharedPreferences("runtime", Context.MODE_PRIVATE)
+
+    /**
+     * "Run scripts directly": preload libpiexec.so so `./script.sh` and
+     * `#!/usr/bin/env node` tools (npx, MCP servers) work although Android
+     * forbids exec() of files in app storage. On by default; see piexec.c.
+     */
+    var runScripts: Boolean
+        get() = prefs.getBoolean("run_scripts", true)
+        set(v) { prefs.edit().putBoolean("run_scripts", v).apply() }
+
     @Volatile private var prepared = false
 
     /** Idempotent; safe to call from any thread before starting a session. */
@@ -72,12 +83,21 @@ class PiRuntime private constructor(private val ctx: Context) {
         listOf(home, projects, tmp, bin, gitCore, bashEnv.parentFile!!).forEach { it.mkdirs() }
         link(bin, BIN)
         link(gitCore, GIT_CORE)
+        // Real npm/npx commands (npm's own #!/usr/bin/env node scripts), so
+        // extensions can spawn e.g. `npx some-mcp-server`. Needs the exec shim.
+        for ((name, script) in listOf("npm" to npmCli, "npx" to npxCli)) {
+            File(bin, name).delete()
+            if (runScripts) Os.symlink(script.path, File(bin, name).path)
+        }
         writeConfig()
         prepared = true
     }
 
     /** Environment for pi and every process it spawns. */
-    fun env(): Map<String, String> = mapOf(
+    fun env(): Map<String, String> = baseEnv() +
+        (if (runScripts) mapOf("LD_PRELOAD" to File(nativeDir, "libpiexec.so").path) else emptyMap())
+
+    private fun baseEnv(): Map<String, String> = mapOf(
         "PATH" to "${bin.path}:/system/bin",
         "LD_LIBRARY_PATH" to nativeDir.path,
         "HOME" to home.path,

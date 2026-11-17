@@ -5,7 +5,9 @@
 // started via npx fail with EACCES. This shim wraps execve(): only when the
 // real call fails with EACCES and the file starts with "#!", it re-executes
 // the interpreter (which is allowed: our binaries live in the APK's native lib
-// dir, reached through usr/bin symlinks) with the script as an argument.
+// dir, reached through usr/bin symlinks) with the script as an argument. It
+// also covers scripts whose #! interpreter doesn't exist on Android
+// (/usr/bin/env, /bin/bash, /bin/sh).
 // Everything else is passed through untouched.
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -58,7 +60,10 @@ static int resolve_interpreter(const char *interp, char *const envp[], char out[
 
 int execve(const char *path, char *const argv[], char *const envp[]) {
     int rc = real_execve()(path, argv, envp);
-    if (errno != EACCES) return rc;
+    // EACCES: Android forbids exec() from app storage. ENOENT on an existing
+    // file: its #! interpreter is missing (Android has no /usr/bin/env, /bin/sh).
+    // ENOEXEC: no usable interpreter line. Anything else passes through.
+    if (errno != EACCES && errno != ENOEXEC && !(errno == ENOENT && access(path, F_OK) == 0)) return rc;
     int saved = errno;
 
     char head[256];

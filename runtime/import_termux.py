@@ -60,6 +60,9 @@ SH_TO = b"/system/bin/sh"
 # git runs hooks and !aliases through its compiled-in shell path.
 SHELL_REWRITES = [SH_FROM, (TERMUX_PREFIX + "/bin/bash").encode()]
 SHELL_REWRITE_IN = {"libx_git.so", "libx_git-remote-http.so"}
+# bash's compiled-in startup files live in Termux's prefix; if Termux is
+# installed that dir exists but is unreadable to us ("Permission denied" noise).
+FILE_REWRITES = {"libx_bash.so": [(TERMUX_PREFIX + "/etc/bash.bashrc").encode(), (TERMUX_PREFIX + "/etc/profile").encode()]}
 # Same-length renames for libraries whose names exist in Android's /system.
 NAME_OVERRIDES = {"libcurl.so": "libcurx.so"}
 
@@ -235,6 +238,12 @@ def main():
     for out, src in sorted(outputs.items()):
         data = bytearray(open(os.path.realpath(src), "rb").read())
         rewrite(data, renames, SHELL_REWRITES if out in SHELL_REWRITE_IN else (SH_FROM,))
+        for old in FILE_REWRITES.get(out, []):
+            needle = b"\0" + old + b"\0"
+            pos = data.find(needle)
+            while pos != -1:
+                data[pos + 1:pos + 1 + len(old)] = b"/dev/null".ljust(len(old), b"\0")
+                pos = data.find(needle, pos + 1)
         if out == "libx_node.so":
             data = bytearray(patch_node_js(bytes(data)))
         open(os.path.join(JNI, out), "wb").write(data)

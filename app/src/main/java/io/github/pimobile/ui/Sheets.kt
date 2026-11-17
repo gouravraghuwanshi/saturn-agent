@@ -149,6 +149,24 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 }
             }
 
+            Text("RUNTIME", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
+            var runScripts by remember { mutableStateOf(UiStore.runtime.runScripts) }
+            Row(Modifier.fillMaxWidth().clickable {
+                runScripts = !runScripts
+                UiStore.runtime.runScripts = runScripts
+                io.github.pimobile.runtime.TaskManager.restartIdle()
+            }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Run scripts directly", style = Ph.title.copy(fontSize = 14.sp))
+                    Text("Lets ./scripts and tools started via npx (e.g. MCP servers) run. Android blocks running files from app storage; this starts them through node or bash instead.",
+                        style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted))
+                }
+                androidx.compose.material3.Switch(checked = runScripts, onCheckedChange = null,
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedTrackColor = Ph.Amber, checkedThumbColor = Ph.AmberInk,
+                        uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
+            }
+
             Text("DIAGNOSTICS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton(if (running) "Running…" else "Run toolchain check", enabled = !running) {

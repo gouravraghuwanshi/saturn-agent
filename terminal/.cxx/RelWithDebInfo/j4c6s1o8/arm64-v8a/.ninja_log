@@ -1,0 +1,3 @@
+# ninja log v5
+0	63	1794935335703129361	CMakeFiles/termux.dir/termux.c.o	d9855c303ed86eb0
+63	89	1794935335730129783	/home/gourav/pi-android/terminal/build/intermediates/cxx/RelWithDebInfo/j4c6s1o8/obj/arm64-v8a/libtermux.so	3960e43be0ab236d

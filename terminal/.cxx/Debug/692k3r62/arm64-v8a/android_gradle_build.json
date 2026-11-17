@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "/home/gourav/pi-android/terminal/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/gourav/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/gourav/pi-android/terminal/.cxx/Debug/692k3r62/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/gourav/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/gourav/pi-android/terminal/.cxx/Debug/692k3r62/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "termux::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "termux",
+      "output": "/home/gourav/pi-android/terminal/build/intermediates/cxx/Debug/692k3r62/obj/arm64-v8a/libtermux.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/gourav/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/gourav/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": []
+}

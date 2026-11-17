@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "pi-android"
-include(":app")
+include(":app", ":terminal")

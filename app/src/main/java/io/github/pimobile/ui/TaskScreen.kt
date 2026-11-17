@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -42,10 +43,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +88,10 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
+    var tab by rememberSaveable { mutableStateOf("chat") }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    LaunchedEffect(tab) { focus.clearFocus(); keyboard?.hide() }
     val running = t.status == Status.RUNNING || t.status == Status.STARTING
     val list = rememberLazyListState()
     val blocks by remember(t) { derivedStateOf { blocks(t.items.toList()) } }
@@ -92,6 +101,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val atBottom by remember { derivedStateOf { !list.canScrollForward || list.layoutInfo.totalItemsCount == 0 } }
     val lastText = (t.items.lastOrNull() as? Item.Assistant)?.text?.length ?: 0
     LaunchedEffect(blocks.size, lastText) { if (atBottom && blocks.isNotEmpty()) list.animateScrollToItem(blocks.size) }
+    // Opening the task, coming back from the terminal, or a history reload: show the latest.
+    LaunchedEffect(t.rebuilds, tab) { if (tab == "chat" && blocks.isNotEmpty()) list.scrollToItem(blocks.size) }
 
     val commands = slashCommands(listOf(
         SlashCommand("model", "Switch model for this task", "pi") { sheet = "model" },
@@ -110,13 +121,19 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(t, onBack, onMenu = { sheet = "rename" })
+                Tabs(tab) { tab = it }
+                if (tab == "terminal") {
+                    if (running) TerminalBusy { UiStore.stop(t) }
+                    else TerminalPane(t)
+                    return@Column
+                }
                 LazyColumn(
-                    state = list, modifier = Modifier.weight(1f),
+                    state = list, modifier = Modifier.weight(1f).clipToBounds(),
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(blocks, key = { it.key }) { b ->
-                        Box(Modifier.animateItem()) {
+                        Box(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)) {
                             when (b) {
                                 is Block.Tools -> ToolPanel(b.tools)
                                 is Block.Single -> Row1(t, b.item)
@@ -194,6 +211,40 @@ private fun Header(t: TaskUi, onBack: () -> Unit, onMenu: () -> Unit) {
         }
         Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Rename task") { onMenu() },
             contentAlignment = Alignment.Center) { PhIcon(PhIcons.More, Ph.TextSoft, 20.dp, "Task options") }
+    }
+}
+
+/** chat · terminal (the browser tab joins only while the agent is browsing). */
+@Composable
+private fun Tabs(tab: String, onTab: (String) -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 16.dp).padding(bottom = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(14.dp)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        listOf("chat", "terminal").forEach { name ->
+            val on = tab == name
+            Box(
+                Modifier.weight(1f).heightIn(min = 36.dp).clip(RoundedCornerShape(10.dp))
+                    .background(if (on) Ph.Selected else Color.Transparent).clickable(onClickLabel = "Show $name") { onTab(name) },
+                contentAlignment = Alignment.Center,
+            ) { Text(name, style = Ph.mono.copy(color = if (on) Ph.Text else Ph.Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)) }
+        }
+    }
+}
+
+@Composable
+private fun TerminalBusy(onStop: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        PulseDot(Ph.Amber, 9)
+        Text("pi is working on this task", style = Ph.title, modifier = Modifier.padding(top = 16.dp))
+        Text("The terminal opens this same session in pi's own TUI once the run is idle.",
+            style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
+        Text("Stop the run", style = Ph.title.copy(fontSize = 14.sp, color = Ph.Red),
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A2A28), RoundedCornerShape(12.dp))
+                .clickable { onStop() }.padding(horizontal = 18.dp, vertical = 11.dp))
     }
 }
 

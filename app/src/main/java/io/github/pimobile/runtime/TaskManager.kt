@@ -111,6 +111,17 @@ object TaskManager {
         emit(task, null, null)
     }
 
+    /**
+     * Hands the session to the real pi TUI: ends the RPC process (pi saves the
+     * session as it goes), so only one pi process ever touches a session file.
+     * Blocking; call off the main thread. The next send() restarts RPC mode.
+     */
+    fun releaseForTerminal(task: Task) {
+        task.session?.stop()
+        task.session = null
+        setStatus(task, Status.STOPPED)
+    }
+
     /** Removes the card and ends the process. pi's session file is kept on disk. */
     fun delete(task: Task) = io.execute {
         task.session?.stop()

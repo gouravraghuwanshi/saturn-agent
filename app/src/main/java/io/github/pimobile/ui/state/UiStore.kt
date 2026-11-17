@@ -50,9 +50,13 @@ class TaskUi(val task: TaskManager.Task) {
     var runStartedAt by mutableStateOf<Long?>(null)
     var lastError by mutableStateOf<String?>(null)
     var pendingDialog by mutableStateOf<Item.Dialog?>(null)
+    /** Bumped whenever the transcript is replaced from pi's history. */
+    var rebuilds by mutableStateOf(0)
     internal var current: Item.Assistant? = null
     internal val echoes = ArrayDeque<String>()
     internal var historyLoaded = false
+    /** Set after the TUI ran: the transcript must be re-read from pi. */
+    internal var historyStale = false
     private var seq = 0
     internal fun key(p: String) = "$p-${seq++}"
 
@@ -171,6 +175,13 @@ object UiStore : TaskManager.Listener {
         tasks.remove(ui); byId.remove(ui.task.id)
     }
 
+    /** Back from the terminal: restart RPC and pull in what happened in the TUI. */
+    fun terminalClosed(ui: TaskUi) {
+        ui.historyStale = true
+        ui.echoes.clear()
+        TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
+    }
+
     /** Opening a restored task: start its process so history can be fetched. */
     fun open(ui: TaskUi) {
         if (ui.task.restored && !ui.historyLoaded && ui.items.isEmpty()) {
@@ -201,8 +212,8 @@ object UiStore : TaskManager.Listener {
             TaskManager.SESSION_STARTED -> {
                 TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
                 if (commands.isEmpty()) TaskManager.command(ui.task, JSONObject().put("type", "get_commands"))
-                if (ui.task.restored && !ui.historyLoaded && ui.items.isEmpty()) {
-                    ui.historyLoaded = true
+                if (ui.historyStale || (ui.task.restored && !ui.historyLoaded && ui.items.isEmpty())) {
+                    ui.historyLoaded = true; ui.historyStale = false
                     TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
                 }
             }
@@ -310,18 +321,22 @@ object UiStore : TaskManager.Listener {
     private fun rebuild(ui: TaskUi, msgs: JSONArray) {
         val out = mutableListOf<Item>()
         val toolsById = mutableMapOf<String, Item.Tool>()
+        ui.cost = 0.0; ui.contextTokens = 0 // recomputed from the full history below
         for (i in 0 until msgs.length()) {
             val m = msgs.getJSONObject(i)
             when (m.optString("role")) {
-                "user" -> out.add(Item.User(ui.key("u"), textOf(m)))
+                "user" -> out.add(Item.User("h$i", textOf(m)))
                 "assistant" -> {
                     val content = m.optJSONArray("content") ?: JSONArray()
                     // Text/thinking before a tool call is its own row; text after it starts a new one.
-                    var a = Item.Assistant(ui.key("a")).apply { streaming = false }
+                    // Keys come from the position in pi's history, so a reload keeps
+                    // existing rows stable and only appends what is new.
+                    var part = 0
+                    var a = Item.Assistant("h$i.a$part").apply { streaming = false }
                     fun flushText() {
                         if (a.text.isNotBlank() || a.thinking.isNotBlank()) {
                             out.add(a)
-                            a = Item.Assistant(ui.key("a")).apply { streaming = false }
+                            a = Item.Assistant("h$i.a${++part}").apply { streaming = false }
                         }
                     }
                     for (j in 0 until content.length()) {
@@ -331,7 +346,7 @@ object UiStore : TaskManager.Listener {
                             "thinking" -> a.thinking += c.optString("thinking")
                             "toolCall" -> {
                                 flushText()
-                                val t = Item.Tool(ui.key("t"), c.optString("id"), c.optString("name"), c.optJSONObject("arguments") ?: JSONObject())
+                                val t = Item.Tool("h$i.t$j", c.optString("id"), c.optString("name"), c.optJSONObject("arguments") ?: JSONObject())
                                 t.state = ToolState.DONE
                                 toolsById[t.callId] = t; out.add(t)
                             }
@@ -350,6 +365,7 @@ object UiStore : TaskManager.Listener {
             }
         }
         ui.items.clear(); ui.items.addAll(out)
+        ui.rebuilds++
     }
 
     private fun tool(ui: TaskUi, r: JSONObject) =

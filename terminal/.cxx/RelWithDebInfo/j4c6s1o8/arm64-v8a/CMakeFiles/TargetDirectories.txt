@@ -1,0 +1,3 @@
+/home/gourav/pi-android/terminal/.cxx/RelWithDebInfo/j4c6s1o8/arm64-v8a/CMakeFiles/termux.dir
+/home/gourav/pi-android/terminal/.cxx/RelWithDebInfo/j4c6s1o8/arm64-v8a/CMakeFiles/edit_cache.dir
+/home/gourav/pi-android/terminal/.cxx/RelWithDebInfo/j4c6s1o8/arm64-v8a/CMakeFiles/rebuild_cache.dir

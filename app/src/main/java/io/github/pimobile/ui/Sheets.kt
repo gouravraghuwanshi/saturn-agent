@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -181,6 +182,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 if (diag.isNotEmpty()) Text(diag.joinToString("\n"), style = Ph.mono.copy(color = Ph.TextSoft, fontSize = 11.5.sp),
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Deep).padding(12.dp))
             }
+
+            About()
         }
     }
 }
@@ -262,5 +265,52 @@ fun RenameSheet(task: TaskUi, onDismiss: () -> Unit) {
             Field(title, { title = it }, "Task title", mono = false)
             PrimaryButton("Save", enabled = title.isNotBlank()) { UiStore.rename(task, title.trim()); onDismiss() }
         }
+    }
+}
+
+// -------------------------------------------------------------------- about
+
+@Composable
+private fun About() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val info = remember {
+        val app = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?"
+        val bundle = runCatching { ctx.assets.open("pi-bundle.version").bufferedReader().readText().trim() }.getOrDefault("?")
+        val rt = runCatching { org.json.JSONObject(ctx.assets.open("runtime-info.json").bufferedReader().readText()) }.getOrNull()
+        Triple(app, bundle, rt)
+    }
+    val (app, bundle, rt) = info
+    val pi = bundle.substringBefore("+")
+    val npm = bundle.substringAfter("+npm", "?")
+    Text("ABOUT", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp))
+    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(Ph.Amber), contentAlignment = Alignment.Center) {
+                Text("φ", style = Ph.mono.copy(fontSize = 20.sp, color = Ph.AmberInk))
+            }
+            Column {
+                Text("Phi $app", style = Ph.title)
+                Text("powered by the Pi coding agent $pi", style = Ph.monoSmall)
+            }
+        }
+        Text("Phi runs the real, unmodified Pi on your phone, with its own Linux userland.",
+            style = Ph.body.copy(fontSize = 13.sp))
+        Text(listOfNotNull("pi $pi", "node ${rt?.optString("node")}", "npm $npm", "bash ${rt?.optString("bash")}",
+            "git ${rt?.optString("git")}", "ripgrep ${rt?.optString("ripgrep")}", "curl ${rt?.optString("curl")}").joinToString(" · "),
+            style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.TextSoft))
+        Text("Open source", style = Ph.title.copy(fontSize = 13.sp), modifier = Modifier.padding(top = 4.dp))
+        listOf(
+            "Pi coding agent — MIT" to "https://pi.dev",
+            "Node.js — MIT" to "https://nodejs.org",
+            "npm — Artistic-2.0" to "https://github.com/npm/cli",
+            "Termux packages (bash, git, curl, ripgrep, OpenSSL…) — their own licenses" to "https://github.com/termux/termux-packages",
+            "Terminal emulator & view (from Termux) — Apache-2.0" to "https://github.com/termux/termux-app",
+            "Inter, JetBrains Mono — SIL Open Font License 1.1" to "https://openfontlicense.org",
+        ).forEach { (label, link) ->
+            Text(label, style = Ph.body.copy(fontSize = 12.5.sp, color = Ph.Cyan),
+                modifier = Modifier.clickable { uri.openUri(link) }.padding(vertical = 2.dp))
+        }
+        Box(Modifier.size(1.dp))
     }
 }

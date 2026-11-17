@@ -9,8 +9,10 @@
 
     <application
         android:label="Phi"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:extractNativeLibs="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/Theme.Phi">
         <activity
             android:name=".MainActivity"
             android:exported="true"

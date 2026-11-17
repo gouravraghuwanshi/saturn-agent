@@ -261,6 +261,11 @@ def main():
                     p = os.path.join(r, f) if os.path.isdir(r) else f
                     if os.path.isfile(p) and not os.path.islink(p):
                         z.write(p, os.path.relpath(p, prefix))
+    # Versions shown in the app's About screen.
+    versions = {p["package"]: p["version"].split(":")[-1] for p in lock}
+    json.dump({k: versions.get(v) for k, v in {"node": "nodejs-lts", "bash": "bash", "git": "git",
+               "ripgrep": "ripgrep", "curl": "curl", "openssl": "openssl"}.items()},
+              open(os.path.join(ASSETS, "runtime-info.json"), "w"))
     json.dump({"packages": lock, "executables": sorted(EXECUTABLES)},
               open(os.path.join(HERE, "termux.lock.json"), "w"), indent=1)
     h = hashlib.sha256(open(os.path.join(HERE, "termux.lock.json"), "rb").read()).hexdigest()[:12]

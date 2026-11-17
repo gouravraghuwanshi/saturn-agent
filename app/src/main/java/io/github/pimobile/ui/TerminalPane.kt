@@ -157,7 +157,7 @@ fun TerminalPane(t: TaskUi) {
             TaskManager.releaseForTerminal(t.task) // one pi process per session at a time
             val rt = UiStore.runtime
             rt.prepare()
-            val env = (rt.env() + TaskManager.sessionEnv).map { (k, v) -> "$k=$v" }.toTypedArray()
+            val env = (rt.env() + TaskManager.envFor(t.task)).map { (k, v) -> "$k=$v" }.toTypedArray()
             view.post {
                 val s = TerminalSession(rt.node.path, t.task.cwd.path,
                     arrayOf("pi", rt.piCli.path, "--session-id", t.task.id), env, 3000, sessionClient)

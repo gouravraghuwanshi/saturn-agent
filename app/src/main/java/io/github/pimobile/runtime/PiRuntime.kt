@@ -126,6 +126,9 @@ class PiRuntime private constructor(private val ctx: Context) {
         val settings = runCatching { JSONObject(settingsFile.readText()) }.getOrElse { JSONObject() }
         settings.put("npmCommand", JSONArray(listOf(File(bin, "node").path, npmCli.path)))
         settingsFile.writeText(settings.toString(2))
+        // Built-in extensions shipped with the app (refreshed on every start).
+        val ext = File(home, ".pi/agent/extensions").apply { mkdirs() }
+        ctx.assets.open("pimobile-browser.js").use { i -> File(ext, "pimobile-browser.js").outputStream().use { i.copyTo(it) } }
     }
 
     /** Extracts assets/<name>.zip into [dest] when assets/<name>.version changes. */

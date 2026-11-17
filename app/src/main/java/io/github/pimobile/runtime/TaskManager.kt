@@ -102,6 +102,9 @@ object TaskManager {
 
     private val DIALOG_METHODS = setOf("select", "confirm", "input", "editor")
 
+    /** Environment for a task's pi process (RPC or TUI): credentials + app integration. */
+    fun envFor(task: Task): Map<String, String> = sessionEnv + ("PIMOBILE_TASK_ID" to task.id)
+
     /** Synthetic record emitted after a task's pi process is up. */
     const val SESSION_STARTED = "app_session_started"
 
@@ -154,7 +157,7 @@ object TaskManager {
         })
         task.session = session
         try {
-            session.start(sessionEnv)
+            session.start(envFor(task))
             setStatus(task, Status.IDLE)
             emit(task, JSONObject().put("type", SESSION_STARTED), null)
         } catch (e: Exception) {

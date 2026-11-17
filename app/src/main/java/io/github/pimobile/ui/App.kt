@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import io.github.pimobile.browser.BrowserManager
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
 import io.github.pimobile.ui.theme.PhosphorTheme
@@ -28,6 +29,9 @@ fun App() {
         var openId by rememberSaveable { mutableStateOf<String?>(null) }
         BackHandler(enabled = openId != null) { openId = null }
 
+        // Live WebViews that aren't on screen keep rendering here, under the opaque UI.
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+        BrowserHost(BrowserManager.shown)
         SharedTransitionLayout(Modifier.fillMaxSize().background(Ph.Ground)) {
             AnimatedContent(
                 targetState = openId,
@@ -38,6 +42,7 @@ fun App() {
                 if (task == null) HomeScreen(this@SharedTransitionLayout, this) { openId = it.task.id }
                 else TaskScreen(task, this@SharedTransitionLayout, this) { openId = null }
             }
+        }
         }
     }
 }

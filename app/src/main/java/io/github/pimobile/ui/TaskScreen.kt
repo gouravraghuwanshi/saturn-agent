@@ -89,6 +89,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf("chat") }
+    var holdBrowser by rememberSaveable { mutableStateOf(false) } // user took over
+    val showBrowserTab = t.browsing || holdBrowser
+    LaunchedEffect(showBrowserTab) { if (!showBrowserTab && tab == "browser") tab = "chat" }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     LaunchedEffect(tab) { focus.clearFocus(); keyboard?.hide() }
@@ -121,7 +124,11 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(t, onBack, onMenu = { sheet = "rename" })
-                Tabs(tab) { tab = it }
+                Tabs(tab, showBrowserTab) { tab = it; if (it != "browser") holdBrowser = false }
+                if (tab == "browser") {
+                    BrowserPane(t) { holdBrowser = true; if (running) UiStore.stop(t) }
+                    return@Column
+                }
                 if (tab == "terminal") {
                     if (running) TerminalBusy { UiStore.stop(t) }
                     else TerminalPane(t)
@@ -216,19 +223,24 @@ private fun Header(t: TaskUi, onBack: () -> Unit, onMenu: () -> Unit) {
 
 /** chat · terminal (the browser tab joins only while the agent is browsing). */
 @Composable
-private fun Tabs(tab: String, onTab: (String) -> Unit) {
+private fun Tabs(tab: String, browser: Boolean, onTab: (String) -> Unit) {
     Row(
         Modifier.padding(horizontal = 16.dp).padding(bottom = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
             .background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(14.dp)).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        listOf("chat", "terminal").forEach { name ->
+        (if (browser) listOf("chat", "terminal", "browser") else listOf("chat", "terminal")).forEach { name ->
             val on = tab == name
             Box(
                 Modifier.weight(1f).heightIn(min = 36.dp).clip(RoundedCornerShape(10.dp))
                     .background(if (on) Ph.Selected else Color.Transparent).clickable(onClickLabel = "Show $name") { onTab(name) },
                 contentAlignment = Alignment.Center,
-            ) { Text(name, style = Ph.mono.copy(color = if (on) Ph.Text else Ph.Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)) }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (name == "browser") PulseDot(Ph.Cyan, 6)
+                    Text(name, style = Ph.mono.copy(color = if (on) Ph.Text else Ph.Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal))
+                }
+            }
         }
     }
 }

@@ -89,7 +89,13 @@ fun BlinkCursor(color: Color = Ph.Amber) {
 // ------------------------------------------------------------------ status
 
 @Composable
-fun StatusBadge(status: Status, hasError: Boolean) {
+fun StatusBadge(status: Status, hasError: Boolean, browsing: Boolean = false) {
+    if (browsing && status == Status.RUNNING) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PulseDot(Ph.Cyan); Text(" browsing", style = Ph.monoSmall.copy(color = Ph.Cyan))
+        }
+        return
+    }
     when (status) {
         Status.STARTING, Status.RUNNING -> Row(verticalAlignment = Alignment.CenterVertically) {
             PulseDot(Ph.Amber)

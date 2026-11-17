@@ -221,9 +221,14 @@ private fun TaskCard(t: TaskUi, onOpen: () -> Unit) {
                     color = if (t.status == Status.RUNNING || t.status == Status.STARTING) Ph.Amber else Ph.Muted))
                 Text(t.title, style = if (active) Ph.title else Ph.title.copy(fontWeight = FontWeight.Normal, color = Ph.TextSoft, fontSize = 14.sp),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                StatusBadge(t.status, hasError)
+                StatusBadge(t.status, hasError, t.browsing)
             }
 
+            if (t.browsing) io.github.pimobile.browser.BrowserManager.pages[t.task.id]?.let { page ->
+                Text("◉ " + page.url.removePrefix("https://").takeIf { !it.startsWith("data:") }.orEmpty(),
+                    style = Ph.mono.copy(color = Ph.Cyan), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
+            }
             if (needs) NeedsYou(t)
             else if (active) {
                 // Live tail: last three tool calls (or the streaming reply).

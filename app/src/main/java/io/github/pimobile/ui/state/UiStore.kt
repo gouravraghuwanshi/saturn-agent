@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.pimobile.browser.BrowserBridge
+import io.github.pimobile.browser.BrowserManager
 import io.github.pimobile.runtime.PiRuntime
 import io.github.pimobile.runtime.TaskManager
 import io.github.pimobile.runtime.TaskManager.Status
@@ -50,6 +52,8 @@ class TaskUi(val task: TaskManager.Task) {
     var runStartedAt by mutableStateOf<Long?>(null)
     var lastError by mutableStateOf<String?>(null)
     var pendingDialog by mutableStateOf<Item.Dialog?>(null)
+    /** True while the current run is using the in-app browser (shows the browser tab). */
+    var browsing by mutableStateOf(false)
     /** Bumped whenever the transcript is replaced from pi's history. */
     var rebuilds by mutableStateOf(0)
     internal var current: Item.Assistant? = null
@@ -94,6 +98,7 @@ object UiStore : TaskManager.Listener {
             old.edit().clear().apply()
         }
         TaskManager.init(app)
+        BrowserManager.init(app)
         applySecrets()
         model = prefs.getString("model", null)
         TaskManager.tasks.forEach { ui(it) }
@@ -102,7 +107,7 @@ object UiStore : TaskManager.Listener {
 
     fun applySecrets() {
         val s = secrets.all()
-        TaskManager.sessionEnv = s
+        TaskManager.sessionEnv = s + ("PIMOBILE_BROWSER_URL" to BrowserBridge.baseUrl)
         hasCredentials = s.isNotEmpty()
     }
 
@@ -171,6 +176,7 @@ object UiStore : TaskManager.Listener {
     }
 
     fun delete(ui: TaskUi) {
+        BrowserManager.close(ui.task.id)
         TaskManager.delete(ui.task)
         tasks.remove(ui); byId.remove(ui.task.id)
     }
@@ -218,7 +224,7 @@ object UiStore : TaskManager.Listener {
                 }
             }
             "agent_start" -> { ui.runStartedAt = System.currentTimeMillis(); ui.lastError = null }
-            "agent_settled" -> { ui.runStartedAt = null; ui.current?.streaming = false; ui.current = null }
+            "agent_settled" -> { ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return
                 when (m.optString("role")) {
@@ -258,9 +264,12 @@ object UiStore : TaskManager.Listener {
                     ui.items.add(Item.Notice(ui.key("n"), it, error = true))
                 }
             }
-            "tool_execution_start" -> ui.items.add(
+            "tool_execution_start" -> {
+                if (r.optString("toolName").startsWith("browser_")) ui.browsing = true
+                ui.items.add(
                 Item.Tool(ui.key("t"), r.optString("toolCallId"), r.optString("toolName"), r.optJSONObject("args") ?: JSONObject())
-            )
+                )
+            }
             "tool_execution_update" -> tool(ui, r)?.output = resultText(r.optJSONObject("partialResult"))
             "tool_execution_end" -> tool(ui, r)?.let {
                 it.output = resultText(r.optJSONObject("result"))

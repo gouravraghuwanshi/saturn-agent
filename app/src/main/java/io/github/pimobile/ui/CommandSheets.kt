@@ -259,6 +259,7 @@ private fun DialogStep(d: Control.Dialog) {
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Ph.Ground)
                     .border(1.dp, Ph.LineStrong, RoundedCornerShape(10.dp)).padding(12.dp),
                 decorationBox = { inner -> Box { if (value.isEmpty()) Text(d.placeholder.ifBlank { if (d.kind == "manual_code") "Paste redirect URL or code" else "" }, style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() } })
+            if (secret) Text("Saved only on this phone, in Saturn's private storage.", style = Ph.monoSmall.copy(color = Ph.Muted))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Btn("Continue", primary = true, enabled = value.isNotBlank()) { Control.answer(value.trim()) }
             }

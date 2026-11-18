@@ -366,7 +366,18 @@ private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = n
                 Text("Sign in", style = Ph.title.copy(fontSize = 14.sp, color = Ph.AmberInk))
             }
         }
+        Spacer(Modifier.height(28.dp))
+        TrustLine()
         Spacer(Modifier.height(140.dp))
+    }
+}
+
+/** The one-line trust note: quiet, never louder than the content around it. */
+@Composable
+fun TrustLine(modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        PhIcon(PhIcons.Lock, Ph.Muted, 12.dp)
+        Text("Open source · runs on your phone", style = Ph.monoSmall.copy(color = Ph.Muted, fontSize = 11.sp))
     }
 }
 

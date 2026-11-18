@@ -57,8 +57,9 @@ object PhIcons {
     val Check = stroke("M5 12l5 5 9-10", width = 2.4f)
     val Close = stroke("M6 6l12 12M18 6L6 18")
     val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
+    val Lock = stroke("M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3")
 }
 
 @Composable
-fun PhIcon(icon: ImageVector, tint: Color, size: Dp = 20.dp, description: String? = null) =
-    Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(size))
+fun PhIcon(icon: ImageVector, tint: Color, size: Dp = 20.dp, description: String? = null, modifier: Modifier = Modifier) =
+    Icon(icon, contentDescription = description, tint = tint, modifier = modifier.size(size))

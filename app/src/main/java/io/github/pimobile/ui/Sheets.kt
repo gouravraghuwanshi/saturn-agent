@@ -185,6 +185,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Deep).padding(12.dp))
             }
 
+            Privacy()
             About()
         }
     }
@@ -294,6 +295,27 @@ fun RenameSheet(task: TaskUi, onDismiss: () -> Unit) {
 // -------------------------------------------------------------------- about
 
 @Composable
+private fun Privacy() {
+    Text("PRIVACY", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp))
+    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        listOf(
+            Triple(PhIcons.Lock, "Runs on this phone", "Pi, your projects, files, artifacts and terminal live in Saturn's private storage. Nothing is backed up to the cloud."),
+            Triple(PhIcons.Key, "Your keys stay here", "API keys are encrypted with the Android Keystore. Account sign-ins are kept in Saturn's private storage."),
+            Triple(PhIcons.External, "What leaves your phone", "Your messages, and the files Saturn reads for them, go to the model provider you choose. Web pages and packages are downloaded when you or Saturn ask for them."),
+            Triple(PhIcons.Check, "No tracking", "No accounts, analytics, ads or telemetry. Saturn has no server of its own."),
+        ).forEach { (icon, title, body) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PhIcon(icon, Ph.TextSoft, 18.dp, modifier = Modifier.padding(top = 1.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(title, style = Ph.title.copy(fontSize = 14.sp))
+                    Text(body, style = Ph.body.copy(fontSize = 12.5.sp, lineHeight = 18.sp, color = Ph.Muted))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun About() {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
@@ -317,7 +339,7 @@ private fun About() {
                 Text("powered by the Pi coding agent $pi", style = Ph.monoSmall)
             }
         }
-        Text("Saturn runs the real, unmodified Pi on your phone, with its own Linux userland.",
+        Text("Saturn is open source. It runs the real, unmodified Pi on your phone, with its own Linux userland.",
             style = Ph.body.copy(fontSize = 13.sp))
         Text(listOfNotNull("pi $pi", "node ${rt?.optString("node")}", "npm $npm", "bash ${rt?.optString("bash")}",
             "git ${rt?.optString("git")}", "ripgrep ${rt?.optString("ripgrep")}", "curl ${rt?.optString("curl")}").joinToString(" · "),

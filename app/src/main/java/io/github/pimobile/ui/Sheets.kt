@@ -77,7 +77,7 @@ fun PhSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun SheetTitle(title: String, sub: String? = null) {
+internal fun SheetTitle(title: String, sub: String? = null) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Text(title, style = Ph.heading)
         sub?.let { Text(it, style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp)) }
@@ -169,6 +169,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                         checkedTrackColor = Ph.Amber, checkedThumbColor = Ph.AmberInk,
                         uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
             }
+
+            PhoneFeatures()
 
             Text("DIAGNOSTICS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -293,6 +295,53 @@ fun RenameSheet(task: TaskUi, onDismiss: () -> Unit) {
 }
 
 // -------------------------------------------------------------------- about
+
+@Composable
+private fun PhoneFeatures() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var on by remember { mutableStateOf(io.github.pimobile.device.Device.enabled) }
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); tick++ } } // reflect grants made in Android's dialog
+    Text("PHONE FEATURES", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
+    Row(Modifier.fillMaxWidth().clickable { on = !on; io.github.pimobile.device.Device.enabled = on }
+        .padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("Let Saturn use phone features", style = Ph.title.copy(fontSize = 14.sp))
+            Text("Torch, camera, microphone, location, sensors, notifications, contacts and sharing. Android asks you the first time each one is used.",
+                style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted))
+        }
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = null,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedTrackColor = Ph.Amber, checkedThumbColor = Ph.AmberInk,
+                uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
+    }
+    if (on) {
+        val perms = buildList {
+            add("Camera" to android.Manifest.permission.CAMERA)
+            add("Microphone" to android.Manifest.permission.RECORD_AUDIO)
+            add("Location" to android.Manifest.permission.ACCESS_FINE_LOCATION)
+            add("Contacts" to android.Manifest.permission.READ_CONTACTS)
+            if (android.os.Build.VERSION.SDK_INT >= 33) add("Notifications" to android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)) {
+            perms.forEach { (label, perm) ->
+                val granted = remember(tick) { io.github.pimobile.device.Device.granted(perm) ||
+                    perm == android.Manifest.permission.ACCESS_FINE_LOCATION && io.github.pimobile.device.Device.granted(android.Manifest.permission.ACCESS_COARSE_LOCATION) }
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
+                    // Android won't show its dialog again after two "Don't allow"s; the app's settings page always works.
+                    if (granted) ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", ctx.packageName, null)))
+                    else io.github.pimobile.device.Permissions.request(perm)
+                }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, style = Ph.body.copy(fontSize = 13.5.sp, color = Ph.TextSoft), modifier = Modifier.weight(1f))
+                    Text(if (granted) "allowed" else "ask on first use", style = Ph.monoSmall.copy(color = if (granted) Ph.Green else Ph.Muted))
+                }
+            }
+            Text("Calls and texts only open the dialer or Messages filled in — you press call or send.",
+                style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted), modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
 
 @Composable
 private fun Privacy() {

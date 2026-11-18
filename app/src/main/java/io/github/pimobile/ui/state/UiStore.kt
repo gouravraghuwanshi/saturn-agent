@@ -112,6 +112,8 @@ object UiStore : TaskManager.Listener {
         Thread({ runCatching { PiRuntime.get(app).prepare() } }, "runtime-prepare").start()
         BrowserManager.init(app)
         io.github.pimobile.browser.AppLinks.init(app)
+        io.github.pimobile.device.Device.init(app)
+        io.github.pimobile.runtime.Scheduler.init(app)
         applySecrets()
         model = prefs.getString("model", null)
         project = prefs.getString("project", null)?.let { File(it) }

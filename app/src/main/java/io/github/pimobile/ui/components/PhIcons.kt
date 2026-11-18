@@ -57,6 +57,7 @@ object PhIcons {
     val Check = stroke("M5 12l5 5 9-10", width = 2.4f)
     val Close = stroke("M6 6l12 12M18 6L6 18")
     val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
+    val Clock = stroke(circle(12f, 12f, 8.5f), "M12 7.5V12l3 2")
     val Lock = stroke("M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3")
 }
 

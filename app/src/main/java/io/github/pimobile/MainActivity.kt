@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         UiStore.init(this)
+        io.github.pimobile.device.Permissions.attach(this)
         requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
         setContent { App() }
     }

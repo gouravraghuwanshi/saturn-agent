@@ -80,6 +80,21 @@ object BrowserBridge {
             rest.startsWith("/app/clipboard") -> if (req.method == "POST") {
                 AppLinks.setClipboard(body(req, input)); respond(out, 200, "{}")
             } else respondText(out, AppLinks.getClipboard())
+            // termux-* phone feature commands: body = cwd \0 artifacts \0 args…
+            rest.startsWith("/app/device/") -> {
+                val cmd = rest.removePrefix("/app/device/").substringBefore('?')
+                val argv = body(req, input).split('\u0000').let { if (it.lastOrNull() == "") it.dropLast(1) else it }
+                runCatching { io.github.pimobile.device.Device.run(cmd, argv) }
+                    .onSuccess { respondText(out, it) }
+                    .onFailure { e -> respondText(out, (e.message ?: e.toString()), 400) }
+            }
+            // saturn-schedule: body = cwd \0 artifacts \0 args…
+            rest.startsWith("/app/schedule") -> {
+                val argv = body(req, input).split('\u0000').let { if (it.lastOrNull() == "") it.dropLast(1) else it }
+                runCatching { io.github.pimobile.runtime.Scheduler.cli(argv) }
+                    .onSuccess { respondText(out, it) }
+                    .onFailure { e -> respondText(out, (e.message ?: e.toString()), 400) }
+            }
             // DevTools serves its WebSocket targets under /devtools/page/<id>.
             rest.startsWith("/devtools/") -> proxy(req, rest, input, out)
             else -> respond(out, 404, "{}")
@@ -149,9 +164,9 @@ object BrowserBridge {
         return String(buf, 0, read, Charsets.UTF_8)
     }
 
-    private fun respondText(out: OutputStream, body: String) {
+    private fun respondText(out: OutputStream, body: String, code: Int = 200) {
         val bytes = body.toByteArray()
-        out.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write("HTTP/1.1 $code OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
         out.write(bytes); out.flush()
     }
 

@@ -43,7 +43,9 @@ class PiService : Service() {
                 live != null && live.foreground -> if (active > 0) live.update(active) else live.scheduleStop()
                 active > 0 && !starting -> {
                     starting = true
-                    ctx.startForegroundService(Intent(ctx, PiService::class.java))
+                    // Android refuses background starts unless the app is exempt (e.g. an exact alarm
+                    // just fired); the task still runs while the process lives.
+                    runCatching { ctx.startForegroundService(Intent(ctx, PiService::class.java)) }.onFailure { starting = false }
                 }
                 // else: a start is in flight; onStartCommand reads `wanted`.
             }

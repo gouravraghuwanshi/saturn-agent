@@ -294,14 +294,16 @@ fun HomeScreen(
             onTerminal = onTerminal, onArtifacts = onArtifacts, onStore = onStore,
             onImport = { importFrom.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/json", "*/*")) },
             onSelect = { projectTasks.firstOrNull { !it.hidden }?.let { selected.add(it.task.id) } },
-        ) { sheet = null }
+            onScheduled = { sheet = "scheduled" },
+        ) { if (sheet == "saturn") sheet = null }
+        "scheduled" -> ScheduleSheet { sheet = null }
     }
 }
 
 /** Tapping the Saturn mark: the app's own places, away from the task list. */
 @Composable
 private fun SaturnSheet(onTerminal: () -> Unit, onArtifacts: () -> Unit, onStore: () -> Unit,
-                        onImport: () -> Unit, onSelect: () -> Unit, onDismiss: () -> Unit) {
+                        onImport: () -> Unit, onSelect: () -> Unit, onScheduled: () -> Unit, onDismiss: () -> Unit) {
     val artifacts = remember { UiStore.runtime.artifacts.walkTopDown().maxDepth(2).count { it.isFile && !it.name.startsWith(".") } }
     PhSheet(onDismiss) {
         Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -318,6 +320,7 @@ private fun SaturnSheet(onTerminal: () -> Unit, onArtifacts: () -> Unit, onStore
         listOf(
             Triple(PhIcons.Sparkle, "Artifacts", "Files Saturn made for you") to onArtifacts,
             Triple(PhIcons.Terminal, "Terminal", "bash · npm · git · node") to onTerminal,
+            Triple(PhIcons.Clock, "Scheduled", io.github.pimobile.runtime.Scheduler.jobs.size.let { if (it == 0) "Timers and repeating jobs" else "$it job${if (it == 1) "" else "s"} waiting" }) to onScheduled,
             Triple(PhIcons.Cube, "Extension store", "Packages from pi.dev") to onStore,
             Triple(PhIcons.Check, "Select tasks", "Export or delete several") to onSelect,
             Triple(PhIcons.Import, "Import tasks", "From a Saturn export or pi session") to onImport,

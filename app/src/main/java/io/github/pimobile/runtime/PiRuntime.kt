@@ -178,7 +178,23 @@ class PiRuntime private constructor(private val ctx: Context) {
             "termux-clipboard-set" to "if [ ${'$'}# -gt 0 ]; then printf '%s' \"${'$'}*\"; else cat; fi | ${post("clipboard")}",
             "termux-clipboard-get" to "curl -fsS \"${'$'}PIMOBILE_BROWSER_URL/app/clipboard\"",
         )
-        for ((name, body) in shims) {
+        // Phone features (Termux:API-compatible names), handled by device/Device.kt.
+        val device = io.github.pimobile.device.Device.COMMANDS.associateWith { name ->
+            val stdin = when (name) { // read piped text when called without arguments
+                "termux-tts-speak", "termux-toast" -> "if [ ${'$'}# -eq 0 ] && [ ! -t 0 ]; then set -- \"${'$'}(cat)\"; fi\n"
+                "termux-share" -> "if [ ${'$'}# -eq 0 ] && [ ! -t 0 ]; then set -- --text \"${'$'}(cat)\"; fi\n"
+                else -> ""
+            }
+            stdin + """
+                |out=${'$'}(printf '%s\0' "${'$'}PWD" "${'$'}SATURN_ARTIFACTS" "${'$'}@" | curl -sS --fail-with-body -X POST --data-binary @- "${'$'}PIMOBILE_BROWSER_URL/app/device/$name" 2>&1)
+                |rc=${'$'}?
+                |if [ ${'$'}rc -ne 0 ]; then printf '$name: %s\n' "${'$'}{out:-Saturn is not responding}" >&2; exit 1; fi
+                |[ -n "${'$'}out" ] && printf '%s\n' "${'$'}out"
+                |exit 0
+                """.trimMargin()
+        }
+        val schedule = "saturn-schedule" to device.getValue("termux-torch").replace("/app/device/termux-torch", "/app/schedule").replace("termux-torch: ", "saturn-schedule: ")
+        for ((name, body) in shims + device + schedule) {
             val f = File(bin, name)
             f.delete()
             f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
@@ -229,6 +245,29 @@ class PiRuntime private constructor(private val ctx: Context) {
             |## Environment
             |A Linux-like userland on Android: bash, node, npm/npx, git, curl, ripgrep. There is no apt/pkg,
             |no sudo and no python unless installed via npm packages. `npm i -g <pkg>` installs CLIs on PATH.
+            |
+            |## Phone features
+            |You can use the phone itself through Termux:API-compatible commands (run them with bash):
+            |termux-torch on|off · termux-battery-status · termux-vibrate [-d ms] · termux-volume [stream vol]
+            |· termux-tts-speak <text> · termux-notification -t <title> -c <text> [--id id] · termux-toast <text>
+            |· termux-location [-p gps|network] [-r once|last] · termux-camera-info · termux-camera-photo [-c 0|1] [file.jpg]
+            |· termux-microphone-record [-f file.m4a] [-l seconds] · termux-sensor -l | -s <name> [-n count]
+            |· termux-contact-list · termux-wifi-connectioninfo · termux-clipboard-get / -set
+            |· termux-share <file> · termux-open-url <url> · termux-telephony-call <number> · termux-sms-send -n <number> <text>
+            |Photos and recordings without a file name are saved to the artifacts folder; the path is printed.
+            |termux-telephony-call and termux-sms-send only open the dialer / messaging app filled in — the user
+            |presses call or send themselves; say so. Use these only when the user's request needs them. The first
+            |use of the camera, microphone, location or contacts shows an Android permission prompt to the user.
+            |
+            |## Scheduling (timers, reminders, cron)
+            |To do something later or repeatedly, use `saturn-schedule` — it sets an Android alarm that runs even
+            |when Saturn is closed. Never use `sleep` or background loops for this.
+            |  saturn-schedule in 10m -- termux-torch off
+            |  saturn-schedule at 07:30 -- termux-notification -t "Wake up" -c "Morning!"
+            |  saturn-schedule cron "0 9 * * 1-5" --prompt "Summarise today's top tech news into an artifact"
+            |  saturn-schedule list · saturn-schedule rm <id> · saturn-schedule log <id>
+            |`-- <command>` runs a shell command (in the current directory); `--prompt "…"` starts a new Saturn
+            |task with that prompt. Times are the phone's local time. Tell the user what you scheduled and when.
             |""".trimMargin()
         )
         bashrc.parentFile?.mkdirs()

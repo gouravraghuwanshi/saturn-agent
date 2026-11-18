@@ -111,6 +111,11 @@
    "sha256": "38e28bc297000517b24702568a483eca7dc3323eb6bdccc9033f031776bdcc6c"
   },
   {
+   "package": "fd",
+   "version": "10.5.2",
+   "sha256": "8578ee6a7aeb457b0c2f7fd7657c3f11191970cdf09699fc268577c5d5ca3d7a"
+  },
+  {
    "package": "curl",
    "version": "8.23.0",
    "sha256": "e57a9975a828eb48790bec0da950795af165aa714f6a33d266c45a4e2898aa85"
@@ -119,6 +124,7 @@
  "executables": [
   "bash",
   "curl",
+  "fd",
   "git",
   "git-remote-http",
   "node",

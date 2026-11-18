@@ -38,7 +38,7 @@ WORK = os.path.join(HERE, "build", "termux")
 REPO = "https://packages.termux.dev/apt/termux-main"
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-WANT = ["nodejs-lts", "bash", "git", "ripgrep", "curl", "ca-certificates"]
+WANT = ["nodejs-lts", "bash", "git", "ripgrep", "fd", "curl", "ca-certificates"]
 # Termux-environment glue we replace ourselves, or tools toybox already covers.
 SKIP = {"termux-tools", "resolv-conf", "less", "perl", "openssh"}
 
@@ -48,6 +48,7 @@ EXECUTABLES = {
     "bash": "bin/bash",
     "git": "bin/git",
     "rg": "bin/rg",
+    "fd": "bin/fd",
     "curl": "bin/curl",
     "git-remote-http": "libexec/git-core/git-remote-http",
 }
@@ -267,7 +268,7 @@ def main():
     # Versions shown in the app's About screen.
     versions = {p["package"]: p["version"].split(":")[-1] for p in lock}
     json.dump({k: versions.get(v) for k, v in {"node": "nodejs-lts", "bash": "bash", "git": "git",
-               "ripgrep": "ripgrep", "curl": "curl", "openssl": "openssl"}.items()},
+               "ripgrep": "ripgrep", "fd": "fd", "curl": "curl", "openssl": "openssl"}.items()},
               open(os.path.join(ASSETS, "runtime-info.json"), "w"))
     json.dump({"packages": lock, "executables": sorted(EXECUTABLES), "data": DATA},
               open(os.path.join(HERE, "termux.lock.json"), "w"), indent=1)

@@ -111,6 +111,7 @@ object UiStore : TaskManager.Listener {
         // bundles if new) right away, not only when the first task starts.
         Thread({ runCatching { PiRuntime.get(app).prepare() } }, "runtime-prepare").start()
         BrowserManager.init(app)
+        io.github.pimobile.browser.AppLinks.init(app)
         applySecrets()
         model = prefs.getString("model", null)
         TaskManager.tasks.forEach { ui(it) }

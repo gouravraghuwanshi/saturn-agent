@@ -31,6 +31,7 @@ class PiRuntime private constructor(private val ctx: Context) {
             "bash" to "libx_bash.so",
             "git" to "libx_git.so",
             "rg" to "libx_rg.so",
+            "fd" to "libx_fd.so",
             "curl" to "libx_curl.so",
         )
         /** git helpers it execs from GIT_EXEC_PATH */
@@ -94,6 +95,7 @@ class PiRuntime private constructor(private val ctx: Context) {
             if (runScripts) Os.symlink(script.path, File(bin, name).path)
         }
         writeConfig()
+        writeShims()
         prepared = true
     }
 
@@ -129,6 +131,10 @@ class PiRuntime private constructor(private val ctx: Context) {
         "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
         "NPM_CONFIG_FUND" to "false",
         "SATURN_ARTIFACTS" to artifacts.path,
+        // pi (and other CLIs) then use termux-clipboard-set/get and Termux-friendly TUI redraws;
+        // those commands are the app's own shims below, not Termux:API.
+        "TERMUX_VERSION" to "saturn",
+        "BROWSER" to "xdg-open",
     )
 
     private fun link(dir: File, entries: Map<String, String>) {
@@ -136,6 +142,28 @@ class PiRuntime private constructor(private val ctx: Context) {
             val path = File(dir, name)
             path.delete() // removes a stale symlink from a previous install
             Os.symlink(File(nativeDir, lib).path, path.path)
+        }
+    }
+
+    /**
+     * Links and clipboard for CLIs (pi's /login, /copy, `xdg-open url`): tiny
+     * scripts that hand the request to the app over its token-protected local
+     * bridge ($PIMOBILE_BROWSER_URL). Running them needs the exec shim.
+     */
+    private fun writeShims() {
+        val post = { route: String -> "curl -fsS -X POST --data-binary @- \"${'$'}PIMOBILE_BROWSER_URL/app/$route\" >/dev/null" }
+        val shims = mapOf(
+            "xdg-open" to "printf '%s' \"${'$'}1\" | ${post("open")}",
+            "termux-open-url" to "printf '%s' \"${'$'}1\" | ${post("open")}",
+            "termux-open" to "printf '%s' \"${'$'}1\" | ${post("open")}",
+            "termux-clipboard-set" to "if [ ${'$'}# -gt 0 ]; then printf '%s' \"${'$'}*\"; else cat; fi | ${post("clipboard")}",
+            "termux-clipboard-get" to "curl -fsS \"${'$'}PIMOBILE_BROWSER_URL/app/clipboard\"",
+        )
+        for ((name, body) in shims) {
+            val f = File(bin, name)
+            f.delete()
+            f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
+            f.setExecutable(true, false)
         }
     }
 

@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import io.github.pimobile.runtime.PiRuntime
 import io.github.pimobile.runtime.PiSession
 import io.github.pimobile.runtime.TaskManager
+import io.github.pimobile.runtime.PiService
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
@@ -30,7 +31,19 @@ object Control {
     class Login {
         var provider by mutableStateOf<Provider?>(null)
         var authType by mutableStateOf("")
-        var running by mutableStateOf(false)
+        private var _running by mutableStateOf(false)
+        /**
+         * While a login runs the user is in their browser: keep the foreground
+         * service up so Android doesn't freeze pi's localhost callback server.
+         */
+        var running: Boolean
+            get() = _running
+            set(v) {
+                if (_running == v) return
+                _running = v
+                TaskManager.extraActive = if (v) 1 else 0
+                PiService.sync(app, TaskManager.activeCount)
+            }
         var done by mutableStateOf(false)
         var error by mutableStateOf<String?>(null)
         var authUrl by mutableStateOf<String?>(null)
@@ -51,7 +64,7 @@ object Control {
     /** Provider ids with credentials in pi's auth.json. */
     var signedIn by mutableStateOf<Set<String>>(emptySet())
 
-    private lateinit var app: Context
+    internal lateinit var app: Context
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private var session: PiSession? = null

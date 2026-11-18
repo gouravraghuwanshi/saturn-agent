@@ -68,6 +68,18 @@ object BrowserBridge {
                 }
                 respond(out, 200, JSONObject().put("ws", "/$token/devtools/page/$target").toString())
             }
+            // xdg-open / termux-open-url shims: open a link in the user's browser.
+            rest.startsWith("/app/open") -> {
+                val url = body(req, input).trim()
+                if (!Regex("^(https?|mailto|tel|market|intent):.+", RegexOption.IGNORE_CASE).matches(url))
+                    return respond(out, 400, """{"error":"only http(s)/mailto/tel links"}""")
+                val ok = runCatching { AppLinks.open(url) }.isSuccess
+                respond(out, if (ok) 200 else 500, "{}")
+            }
+            // termux-clipboard-set / -get shims.
+            rest.startsWith("/app/clipboard") -> if (req.method == "POST") {
+                AppLinks.setClipboard(body(req, input)); respond(out, 200, "{}")
+            } else respondText(out, AppLinks.getClipboard())
             // DevTools serves its WebSocket targets under /devtools/page/<id>.
             rest.startsWith("/devtools/") -> proxy(req, rest, input, out)
             else -> respond(out, 404, "{}")
@@ -127,6 +139,20 @@ object BrowserBridge {
         val (method, path) = lines.first().split(" ").let { it[0] to it[1] }
         val headers = lines.drop(1).mapNotNull { l -> l.indexOf(':').takeIf { it > 0 }?.let { l.substring(0, it) to l.substring(it + 1).trim() } }
         return Request(method, path, headers)
+    }
+
+    private fun body(req: Request, input: InputStream): String {
+        val n = req.headers.firstOrNull { it.first.equals("content-length", true) }?.second?.toIntOrNull() ?: 0
+        val buf = ByteArray(n.coerceAtMost(1 shl 20))
+        var read = 0
+        while (read < buf.size) { val r = input.read(buf, read, buf.size - read); if (r < 0) break; read += r }
+        return String(buf, 0, read, Charsets.UTF_8)
+    }
+
+    private fun respondText(out: OutputStream, body: String) {
+        val bytes = body.toByteArray()
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write(bytes); out.flush()
     }
 
     private fun respond(out: OutputStream, code: Int, body: String) {

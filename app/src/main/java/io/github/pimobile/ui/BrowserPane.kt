@@ -57,7 +57,7 @@ fun BrowserHost(shownTaskId: String?) {
 
 /** The task's live browser: watch pi drive it, or take over. */
 @Composable
-fun BrowserPane(t: TaskUi, onTakeOver: () -> Unit) {
+fun BrowserPane(t: TaskUi, onClose: () -> Unit, onTakeOver: () -> Unit) {
     val page = BrowserManager.pages[t.task.id]
     DisposableEffect(t.task.id) {
         BrowserManager.shown = t.task.id
@@ -117,6 +117,10 @@ fun BrowserPane(t: TaskUi, onTakeOver: () -> Unit) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Ph.Raised).border(1.dp, Ph.LineStrong, RoundedCornerShape(16.dp))
                 .clickable(onClickLabel = "Reload page") { page?.view?.reload() }, contentAlignment = Alignment.Center) {
                 Text("↻", style = Ph.title.copy(color = Ph.TextSoft))
+            }
+            if (!t.browsing) Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Ph.Raised).border(1.dp, Ph.LineStrong, RoundedCornerShape(16.dp))
+                .clickable(onClickLabel = "Close browser") { onClose() }, contentAlignment = Alignment.Center) {
+                io.github.pimobile.ui.components.PhIcon(io.github.pimobile.ui.components.PhIcons.Close, Ph.TextSoft, 18.dp, "Close browser")
             }
         }
     }

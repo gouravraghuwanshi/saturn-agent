@@ -63,7 +63,10 @@ object TaskManager {
     fun addListener(l: Listener) = listeners.add(l)
     fun removeListener(l: Listener) = listeners.remove(l)
 
-    val activeCount get() = tasks.count { it.status in setOf(Status.STARTING, Status.RUNNING, Status.NEEDS_INPUT) }
+    /** Other work that must survive the app going to the background (e.g. a /login waiting for its browser callback). */
+    @Volatile var extraActive = 0
+
+    val activeCount get() = tasks.count { it.status in setOf(Status.STARTING, Status.RUNNING, Status.NEEDS_INPUT) } + extraActive
 
     /** Home-screen input: every new instruction becomes a new task. */
     fun createTask(prompt: String, cwd: File = runtime.projects): Task {

@@ -96,7 +96,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf("chat") }
     var holdBrowser by rememberSaveable { mutableStateOf(false) } // user took over
-    val showBrowserTab = t.browsing || holdBrowser
+    // Once the agent opened a page it stays until the user closes it: runs often end with
+    // "now you finish this in the browser" (sign in, pay, solve a captcha…).
+    val showBrowserTab = t.browsing || holdBrowser || io.github.pimobile.browser.BrowserManager.pages[t.task.id] != null
     LaunchedEffect(showBrowserTab) { if (!showBrowserTab && tab == "browser") tab = "chat" }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
@@ -200,7 +202,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 Header(t, onBack, onMenu = { sheet = "menu" })
                 Tabs(tab, showBrowserTab) { tab = it; if (it != "browser") holdBrowser = false }
                 if (tab == "browser") {
-                    BrowserPane(t) { holdBrowser = true; if (running) UiStore.stop(t) }
+                    BrowserPane(t, onClose = {
+                        holdBrowser = false; tab = "chat"; io.github.pimobile.browser.BrowserManager.close(t.task.id)
+                    }) { holdBrowser = true; if (running) UiStore.stop(t) }
                     return@Column
                 }
                 if (tab == "terminal") {
@@ -320,7 +324,7 @@ private fun Header(t: TaskUi, onBack: () -> Unit, onMenu: () -> Unit) {
     }
 }
 
-/** chat · terminal (the browser tab joins only while the agent is browsing). */
+/** chat · terminal (+ browser once the agent has opened a page, until the user closes it). */
 @Composable
 private fun Tabs(tab: String, browser: Boolean, onTab: (String) -> Unit) {
     Row(

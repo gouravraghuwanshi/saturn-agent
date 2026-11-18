@@ -71,7 +71,7 @@ export default function (pi) {
             signal?.removeEventListener("abort", onAbort);
           }
         },
-        notify(e) { emit(ctx, { type: "login_" + e.type, ...e }); },
+        notify(e) { emit(ctx, { ...e, type: "login_" + e.type }); }, // type last: e.type must not overwrite it
       };
       try {
         emit(ctx, { type: "login_started", provider, authType: type });

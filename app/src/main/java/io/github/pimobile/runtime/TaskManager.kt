@@ -30,6 +30,8 @@ object TaskManager {
         /** pi session this task is on; changes after /fork, /clone, /new, /resume. */
         @Volatile var sessionId: String = id
         @Volatile var status = Status.STOPPED
+        /** Swiped away into the home screen's Archived section. */
+        @Volatile var archived = false
         @Volatile var lastActivity: String = ""
         internal var session: PiSession? = null
     }
@@ -80,6 +82,7 @@ object TaskManager {
 
     /** Continue a task's conversation; starts/resumes its process if needed. */
     fun send(task: Task, text: String) {
+        if (task.archived) { task.archived = false; save() } // continuing it brings it back
         io.execute {
             ensureSession(task)
             val cmd = JSONObject().put("type", "prompt").put("message", text)
@@ -126,6 +129,12 @@ object TaskManager {
         save()
         emit(task, null, null)
         return task
+    }
+
+    fun setArchived(task: Task, archived: Boolean) {
+        task.archived = archived
+        save()
+        emit(task, null, null)
     }
 
     fun rename(task: Task, title: String) {
@@ -228,7 +237,7 @@ object TaskManager {
         val arr = JSONArray()
         tasks.forEach {
             arr.put(JSONObject().put("id", it.id).put("number", it.number).put("title", it.title)
-                .put("cwd", it.cwd.path).put("status", it.status.name).put("sessionId", it.sessionId))
+                .put("cwd", it.cwd.path).put("status", it.status.name).put("sessionId", it.sessionId).put("archived", it.archived))
         }
         runCatching { store.writeText(arr.toString()) }
     }
@@ -240,7 +249,7 @@ object TaskManager {
                 val o = arr.getJSONObject(i)
                 // Processes don't survive app death: a task that was active is now resumable.
                 _tasks.add(Task(o.getString("id"), o.getInt("number"), o.getString("title"), File(o.getString("cwd")), restored = true)
-                    .apply { sessionId = o.optString("sessionId").ifBlank { id } })
+                    .apply { sessionId = o.optString("sessionId").ifBlank { id }; archived = o.optBoolean("archived") })
             }
         }
     }

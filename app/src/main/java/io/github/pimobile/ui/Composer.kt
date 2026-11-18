@@ -1,5 +1,8 @@
 package io.github.pimobile.ui
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -111,6 +114,7 @@ fun Composer(
     extra: @Composable RowScope.() -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val text = value.text
     val showPalette = text.startsWith("/") && !text.contains(' ')
     fun send() {
@@ -137,6 +141,7 @@ fun Composer(
                 .shadow(28.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black, spotColor = Color.Black)
                 .clip(RoundedCornerShape(22.dp)).background(Ph.Raised)
                 .border(1.dp, if (showPalette) accent else Ph.LineStrong, RoundedCornerShape(22.dp))
+                .pointerInput(Unit) { detectTapGestures { focus.requestFocus(); keyboard?.show() } }
                 .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 10.dp)
         ) {
             BasicTextField(

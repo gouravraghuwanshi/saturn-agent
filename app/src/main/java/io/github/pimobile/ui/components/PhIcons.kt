@@ -49,6 +49,7 @@ object PhIcons {
     val Share = stroke("M12 15V4M8 8l4-4 4 4", "M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5")
     val Copy = stroke("M9 9h10v10H9z", "M5 15V5h10")
     val Trash = stroke("M4 7h16M10 11v6M14 11v6", "M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3")
+    val Archive = stroke("M3 5h18v4H3z", "M5 9v10h14V9M10 13h4")
     val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
 }
 

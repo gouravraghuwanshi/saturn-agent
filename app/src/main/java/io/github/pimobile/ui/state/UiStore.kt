@@ -47,6 +47,9 @@ class TaskUi(val task: TaskManager.Task) {
     val items = mutableStateListOf<Item>()
     var status by mutableStateOf(task.status)
     var title by mutableStateOf(task.title)
+    var archived by mutableStateOf(task.archived)
+    /** Swiped to delete; gone from the list while its undo is offered. */
+    var hidden by mutableStateOf(false)
     var cost by mutableStateOf(0.0)
     var contextTokens by mutableStateOf(0)
     var runStartedAt by mutableStateOf<Long?>(null)
@@ -184,6 +187,33 @@ object UiStore : TaskManager.Listener {
         TaskManager.rename(ui.task, title); ui.title = title
     }
 
+    /** A reversible home-screen action, shown as a bar with "Undo" for a few seconds. */
+    class Undo(val message: String, val revert: () -> Unit, val commit: () -> Unit = {})
+    var undo by mutableStateOf<Undo?>(null)
+    private val undoHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private fun offerUndo(u: Undo) {
+        undo?.commit?.invoke() // the previous action is final now
+        undo = u
+        undoHandler.removeCallbacksAndMessages(null)
+        undoHandler.postDelayed({ if (undo === u) { undo = null; u.commit() } }, 5000)
+    }
+
+    fun undoLast() { val u = undo ?: return; undo = null; undoHandler.removeCallbacksAndMessages(null); u.revert() }
+
+    /** Swipe-to-delete: hides the card now, deletes for real unless undone. */
+    fun deleteWithUndo(ui: TaskUi) {
+        ui.hidden = true
+        offerUndo(Undo("Task #${ui.task.number} deleted", revert = { ui.hidden = false }, commit = { delete(ui) }))
+    }
+
+    fun setArchived(ui: TaskUi, archived: Boolean, undoable: Boolean = true) {
+        ui.archived = archived
+        TaskManager.setArchived(ui.task, archived)
+        if (undoable) offerUndo(Undo("Task #${ui.task.number} " + if (archived) "archived" else "restored",
+            revert = { setArchived(ui, !archived, undoable = false) }))
+    }
+
     fun delete(ui: TaskUi) {
         BrowserManager.close(ui.task.id)
         TaskManager.delete(ui.task)
@@ -216,6 +246,7 @@ object UiStore : TaskManager.Listener {
         val ui = ui(task)
         ui.status = task.status
         ui.title = task.title
+        ui.archived = task.archived
         if (ui.status == Status.FAILED && log != null && ui.lastError == null && log.isNotBlank()) {
             ui.lastError = log.take(300)
         }

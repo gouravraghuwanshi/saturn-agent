@@ -41,6 +41,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +84,7 @@ fun HomeScreen(
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var project by rememberSaveable { mutableStateOf(UiStore.runtime.projects.path) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
+    var showArchived by rememberSaveable { mutableStateOf(false) }
     val activeCount = UiStore.tasks.count { it.status in ACTIVE }
     val spent = UiStore.tasks.sumOf { it.cost }
 
@@ -125,22 +131,28 @@ fun HomeScreen(
                 Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val (active, earlier) = UiStore.tasks.partition { it.status in ACTIVE }
+                val visible = UiStore.tasks.filterNot { it.hidden }
+                val active = visible.filter { it.status in ACTIVE }
+                val earlier = visible.filter { it.status !in ACTIVE && !it.archived }
+                val archived = visible.filter { it.status !in ACTIVE && it.archived }
                 val spentLabel = if (spent >= 0.005) String.format(Locale.US, "$%.2f spent", spent) else null
-                fun section(list: List<TaskUi>, key: String, title: String, trailing: String?, first: Boolean) {
+                fun section(list: List<TaskUi>, key: String, title: String, trailing: String?, first: Boolean,
+                            onHeader: (() -> Unit)? = null, collapsed: Boolean = false) {
                     if (list.isEmpty()) return
                     item(key = "h-$key") {
-                        Row(Modifier.animateItem().fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = if (first) 0.dp else 14.dp),
+                        Row(Modifier.animateItem().fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .then(if (onHeader != null) Modifier.clickable(onClickLabel = if (collapsed) "Show $key" else "Hide $key") { onHeader() } else Modifier)
+                            .padding(start = 4.dp, end = 4.dp, top = if (first) 0.dp else 14.dp, bottom = if (onHeader != null) 4.dp else 0.dp),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(title, style = Ph.label)
                             trailing?.let { Text(it, style = Ph.monoSmall) }
                         }
                     }
-                    items(list, key = { it.task.id }) { t ->
+                    if (!collapsed) items(list, key = { it.task.id }) { t ->
                         with(shared) {
                             Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
                                 clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
-                                TaskCard(t, onOpen = { onOpen(t) })
+                                SwipeCard(t) { TaskCard(t, onOpen = { onOpen(t) }) }
                             }
                         }
                     }
@@ -148,6 +160,8 @@ fun HomeScreen(
                 section(active, "active", "ACTIVE · ${active.size}", spentLabel, first = true)
                 section(earlier, "earlier", if (active.isEmpty()) "TASKS" else "EARLIER · ${earlier.size}",
                     spentLabel.takeIf { active.isEmpty() }, first = active.isEmpty())
+                section(archived, "archived", "ARCHIVED · ${archived.size}", if (showArchived) "hide" else "show",
+                    first = active.isEmpty() && earlier.isEmpty(), onHeader = { showArchived = !showArchived }, collapsed = !showArchived)
             }
         }
 
@@ -155,8 +169,12 @@ fun HomeScreen(
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .background(Brush.verticalGradient(0f to Ph.Ground.copy(alpha = 0f), 0.25f to Ph.Ground))
+                // Taps that miss the composer's controls must not reach the task card underneath.
+                .pointerInput(Unit) { detectTapGestures { } }
                 .imePadding().navigationBarsPadding().padding(top = 24.dp, bottom = 12.dp)
         ) {
+            UiStore.undo?.let { u -> UndoBar(u) }
+            Column {
             Composer(
                 value = input, onValue = { input = it },
                 placeholder = "Ask Saturn to do something…",
@@ -177,8 +195,9 @@ fun HomeScreen(
                         icon = PhIcons.Folder, description = "Choose project") { sheet = "project" }
                 },
             )
-            Text("↵ starts a new task · tap a task to continue it", style = Ph.monoSmall, textAlign = TextAlign.Center,
+            Text("swipe a task  ← delete  ·  archive →", style = Ph.monoSmall, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+            }
         }
     }
 
@@ -314,6 +333,7 @@ private fun TaskCard(t: TaskUi, onOpen: () -> Unit) {
     if (menu) TaskMenuSheet(t, buildList {
         add(MenuAction("Rename", PhIcons.Pencil) { rename = true })
         if (active) add(MenuAction("Stop run", PhIcons.Stop) { UiStore.stop(t) })
+        else add(MenuAction(if (t.archived) "Restore" else "Archive", PhIcons.Archive) { UiStore.setArchived(t, !t.archived) })
         add(MenuAction("Delete task", PhIcons.Trash, danger = true, confirm = "Tap again to delete") { UiStore.delete(t) })
     }) { menu = false }
     if (rename) RenameSheet(t) { rename = false }
@@ -335,5 +355,60 @@ private fun NeedsYou(t: TaskUi) {
                 }
             }
         } else Text("Tap to answer", style = Ph.monoSmall.copy(color = Ph.Amber))
+    }
+}
+
+/** Swipe left to delete (with undo), right to archive — or, in Archived, to restore. */
+@Composable
+private fun SwipeCard(t: TaskUi, content: @Composable () -> Unit) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val canArchive = t.status !in ACTIVE
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        when (v) {
+            SwipeToDismissBoxValue.EndToStart -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm); UiStore.deleteWithUndo(t) }
+            SwipeToDismissBoxValue.StartToEnd -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm); UiStore.setArchived(t, !t.archived) }
+            else -> {}
+        }
+        false // the card leaves its section on its own; snap back so a restored card looks right
+    })
+    SwipeToDismissBox(
+        state, enableDismissFromStartToEnd = canArchive,
+        backgroundContent = {
+            val dir = state.dismissDirection
+            val delete = dir == SwipeToDismissBoxValue.EndToStart
+            if (dir == SwipeToDismissBoxValue.Settled) return@SwipeToDismissBox
+            Row(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))
+                    .background(if (delete) Ph.RedWash else Ph.AmberWash)
+                    .border(1.dp, if (delete) androidx.compose.ui.graphics.Color(0xFF3A2A28) else Ph.AmberLine, RoundedCornerShape(18.dp))
+                    .padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (delete) Arrangement.End else Arrangement.Start,
+            ) {
+                val (icon, label, color) = when {
+                    delete -> Triple(PhIcons.Trash, "Delete", Ph.Red)
+                    t.archived -> Triple(PhIcons.Archive, "Restore", Ph.Amber)
+                    else -> Triple(PhIcons.Archive, "Archive", Ph.Amber)
+                }
+                if (delete) Text(label, style = Ph.mono.copy(color = color), modifier = Modifier.padding(end = 10.dp))
+                PhIcon(icon, color, 20.dp)
+                if (!delete) Text(label, style = Ph.mono.copy(color = color), modifier = Modifier.padding(start = 10.dp))
+            }
+        },
+    ) { content() }
+}
+
+@Composable
+private fun UndoBar(u: UiStore.Undo) {
+    Row(
+        Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(Ph.Raised).border(1.dp, Ph.LineStrong, RoundedCornerShape(14.dp))
+            .padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(u.message, style = Ph.body.copy(color = Ph.Text, fontSize = 14.sp), modifier = Modifier.weight(1f))
+        Text("Undo", style = Ph.mono.copy(color = Ph.Amber, fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Undo") { UiStore.undoLast() }
+                .padding(horizontal = 14.dp, vertical = 12.dp))
     }
 }

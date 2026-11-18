@@ -79,7 +79,7 @@ os.makedirs(os.path.join(OUT,"phoneScreenshots"),exist_ok=True)
 items=[
  ("01-home.png","Every ask becomes its own task","Fire off a few at once. Tap any card to pick it back up."),
  ("02-task.png","Doesn't just chat. Does stuff.","Runs real commands on your phone: battery, weather, files, git."),
- ("03-artifact.png","Makes things you can keep","Little web apps, notes and reports land in Artifacts, ready to share."),
+ ("08-browser.png","Browses the web while you watch","It opens pages, reads and clicks for you. Take over any time."),
  ("05-phone.png","Taps through your apps for you","There's always a Stop button, and it asks before it sends or pays."),
  ("06-store.png","Grab skills from pi.dev","Extensions, skills and themes for the Pi agent, one tap each."),
  ("07-terminal.png","And yes, a real terminal","bash, node, npm and git. No root, no extra apps."),

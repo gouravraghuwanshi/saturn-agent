@@ -64,6 +64,37 @@ class PiSession(
     }
 
     /** Orderly shutdown (stdin EOF), then SIGTERM, then SIGKILL. */
+    /**
+     * Hard stop for a run that won't abort: kills pi and everything it started
+     * (bash commands, node scripts…). The session file keeps the conversation.
+     */
+    fun kill() {
+        val p = proc ?: return
+        proc = null
+        runCatching { stdin?.close() }
+        stdin = null
+        val pid = runCatching { p.javaClass.getDeclaredField("pid").apply { isAccessible = true }.getInt(p) }.getOrNull()
+        if (pid != null) descendants(pid).reversed().forEach { runCatching { android.os.Process.killProcess(it) } }
+        p.destroyForcibly()
+    }
+
+    /** All processes below [root], parents before children (from /proc/<pid>/stat). */
+    private fun descendants(root: Int): List<Int> {
+        val parent = mutableMapOf<Int, Int>()
+        File("/proc").listFiles()?.forEach { d ->
+            val pid = d.name.toIntOrNull() ?: return@forEach
+            val stat = runCatching { File(d, "stat").readText() }.getOrNull() ?: return@forEach
+            stat.substringAfterLast(')').trim().split(' ').getOrNull(1)?.toIntOrNull()?.let { parent[pid] = it }
+        }
+        val out = mutableListOf<Int>()
+        var frontier = listOf(root)
+        while (frontier.isNotEmpty()) {
+            frontier = parent.filter { it.value in frontier }.keys.toList()
+            out += frontier
+        }
+        return out
+    }
+
     fun stop() {
         val p = proc ?: return
         proc = null

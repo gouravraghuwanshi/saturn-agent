@@ -92,6 +92,7 @@ private fun blocks(items: List<Item>): List<Block> {
 fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVisibilityScope,
                onOpenTask: (TaskUi) -> Unit = {}, onBack: () -> Unit) {
     var input by remember { mutableStateOf(TextFieldValue("")) }
+    val attachments = remember { androidx.compose.runtime.mutableStateListOf<UiStore.Attachment>() }
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf("chat") }
@@ -148,8 +149,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
             if (a.isNotBlank()) { UiStore.rename(t, a); UiStore.rpc(t, "set_session_name", "name" to a) } else sheet = "rename" },
         Builtin("session", "Session info and statistics") { sheet = "session" },
         Builtin("tree", "Navigate the session tree") { sheet = "tree" },
-        Builtin("fork", "New session from an earlier message") { sheet = "fork" },
-        Builtin("clone", "Duplicate this session at this point") { UiStore.rpc(t, "clone") },
+        Builtin("fork", "Branch from an earlier message into a new task") { sheet = "fork" },
+        Builtin("clone", "Branch this whole chat into a new task") { UiStore.branch(t) },
         Builtin("compact", "Compact context (optional instructions)", args = true) { a ->
             UiStore.rpc(t, "compact", "customInstructions" to a.ifBlank { null }) },
         Builtin("copy", "Copy the last reply") { t.responses.remove("get_last_assistant_text"); UiStore.rpc(t, "get_last_assistant_text") },
@@ -240,21 +241,29 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             Text(if (followUp) "sent when Saturn finishes" else "sent after current step", style = Ph.monoSmall)
                         }
                     }
+                    val pick = rememberAttachPicker { attachments.addAll(it) }
                     Composer(
                         value = input, onValue = { input = it },
                         placeholder = "Continue task #${t.task.number}…",
                         commands = commands,
+                        attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
                         onSend = { text ->
                             input = TextFieldValue("")
-                            if (!dispatchSlash(text, builtins)) UiStore.send(t, text, followUp)
+                            if (attachments.isNotEmpty() || !dispatchSlash(text, builtins)) {
+                                UiStore.send(t, text, followUp, attachments.toList()); attachments.clear()
+                            }
                         },
                         extra = {
-                            if (running) Box(
-                                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.RedWash)
+                            if (running) Row(
+                                Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.RedWash)
                                     .border(1.dp, Color(0xFF3A2A28), RoundedCornerShape(14.dp))
-                                    .clickable(onClickLabel = "Stop task") { UiStore.stop(t) },
-                                contentAlignment = Alignment.Center,
-                            ) { PhIcon(PhIcons.Stop, Ph.Red, 14.dp, "Stop task") }
+                                    .clickable(enabled = !t.stopping, onClickLabel = "Stop task") { UiStore.stop(t) }
+                                    .padding(horizontal = if (t.stopping) 12.dp else 15.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                if (t.stopping) { PulseDot(Ph.Red, 6); Text("stopping", style = Ph.monoSmall.copy(color = Ph.Red)) }
+                                else PhIcon(PhIcons.Stop, Ph.Red, 14.dp, "Stop task")
+                            }
                         },
                     )
                 }
@@ -283,6 +292,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 add(MenuAction("Session tree", PhIcons.Branch) { sheet = "tree" })
                 add(MenuAction("Copy last reply", PhIcons.Copy, run = cmd("copy")))
                 add(MenuAction("Export & share", PhIcons.Share, hint = "html", run = cmd("export")))
+                add(MenuAction("Branch chat", PhIcons.Fork) {
+                    if (running) UiStore.branchError = "wait until Saturn finishes, or stop it" else UiStore.branch(t)
+                })
                 if (running) add(MenuAction("Stop run", PhIcons.Stop) { UiStore.stop(t) })
                 add(MenuAction("Delete task", PhIcons.Trash, danger = true, confirm = "Tap again to delete") {
                     onBack(); UiStore.delete(t) })
@@ -376,7 +388,7 @@ private fun Toggle(label: String, on: Boolean, onClick: () -> Unit) {
 private fun Working(t: TaskUi) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulseDot(Ph.Amber, 7)
-        Text(if (t.status == Status.STARTING) "starting Saturn" else "working · ${elapsed(t.runStartedAt)}", style = Ph.mono.copy(color = Ph.Muted))
+        Text(when { t.stopping -> "stopping…"; t.status == Status.STARTING -> "starting Saturn"; else -> "working · ${elapsed(t.runStartedAt)}" }, style = Ph.mono.copy(color = Ph.Muted))
         BlinkCursor()
     }
 }
@@ -384,10 +396,7 @@ private fun Working(t: TaskUi) {
 @Composable
 private fun Row1(t: TaskUi, item: Item) {
     when (item) {
-        is Item.User -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("›", style = Ph.mono.copy(color = Ph.Amber, fontSize = 14.sp, lineHeight = 21.sp))
-            SelectionContainer { Text(item.text, style = Ph.body.copy(color = Ph.Text)) }
-        }
+        is Item.User -> UserMessage(t, item)
         is Item.Assistant -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (item.thinking.isNotBlank()) Thinking(item)
             if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text) }
@@ -443,5 +452,58 @@ private fun DialogCard(t: TaskUi, d: Item.Dialog) {
                 decorationBox = { inner -> Box { if (text.isEmpty()) Text(d.placeholder.ifBlank { "Your answer" }, style = Ph.body.copy(color = Ph.Muted)); inner() } })
             SendButton(text.isNotBlank()) { UiStore.answer(t, d, text) }
         }
+    }
+}
+
+
+/** Your message; tap it for Branch from here / Copy. Attached images show as thumbnails. */
+@Composable
+private fun UserMessage(t: TaskUi, item: Item.User) {
+    var open by remember { mutableStateOf(false) }
+    val lines = item.text.lines()
+    val images = lines.filter { it.startsWith(UiStore.IMAGE_NOTE) }.map { it.removePrefix(UiStore.IMAGE_NOTE).removeSuffix("]") }
+    val files = lines.filter { it.startsWith(UiStore.FILE_NOTE) }.map { it.removePrefix(UiStore.FILE_NOTE).removeSuffix("]") }
+    val text = lines.filterNot { it.startsWith(UiStore.IMAGE_NOTE) || it.startsWith(UiStore.FILE_NOTE) }.joinToString("\n").trim()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val copy = copier()
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Message actions") { open = !open }) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("›", style = Ph.mono.copy(color = Ph.Amber, fontSize = 14.sp, lineHeight = 21.sp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (text.isNotEmpty()) Text(text, style = Ph.body.copy(color = Ph.Text))
+                if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }
+                files.forEach { path ->
+                    FileChip(java.io.File(path).name, onClick = {
+                        runCatching {
+                            val f = java.io.File(path)
+                            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", f)
+                            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
+                            context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_VIEW)
+                                .setDataAndType(uri, mime).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), null))
+                        }.onFailure { android.widget.Toast.makeText(context, "Can't open this file", android.widget.Toast.LENGTH_SHORT).show() }
+                    })
+                }
+            }
+        }
+        AnimatedVisibility(open) {
+            Row(Modifier.padding(start = 18.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val index = t.items.filterIsInstance<Item.User>().indexOf(item)
+                MsgAction(PhIcons.Fork, if (UiStore.branching) "branching…" else "Branch from here") {
+                    if (t.status == Status.RUNNING || t.status == Status.NEEDS_INPUT) UiStore.branchError = "wait until Saturn finishes, or stop it"
+                    else { UiStore.branch(t, index, text); open = false }
+                }
+                MsgAction(PhIcons.Copy, "Copy") { copy(text); open = false }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MsgAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Row(Modifier.heightIn(min = 34.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, Ph.LineStrong, RoundedCornerShape(10.dp))
+        .clickable { onClick() }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        PhIcon(icon, Ph.TextSoft, 14.dp)
+        Text(label, style = Ph.body.copy(fontSize = 13.sp, color = Ph.TextSoft))
     }
 }

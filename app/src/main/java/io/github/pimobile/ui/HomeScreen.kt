@@ -120,6 +120,7 @@ fun HomeScreen(
         }
     }
     var input by remember { mutableStateOf(TextFieldValue("")) }
+    val attachments = remember { androidx.compose.runtime.mutableStateListOf<UiStore.Attachment>() }
     val projectDir = UiStore.currentProject
     val project = projectDir.path
     val isGeneral = projectDir.canonicalPath == UiStore.runtime.projects.canonicalPath
@@ -256,8 +257,10 @@ fun HomeScreen(
         ) {
             UiStore.undo?.let { u -> UndoBar(u) }
             Column {
+            val pick = rememberAttachPicker { attachments.addAll(it) }
             Composer(
                 value = input, onValue = { input = it },
+                attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
                 placeholder = "Ask Saturn to do something…",
                 commands = commands,
                 onSend = { text ->
@@ -268,7 +271,7 @@ fun HomeScreen(
                         // pi built-ins that act on one task: don't start a task (and an LLM call) by accident.
                         text.startsWith("/") && name in TASK_ONLY -> android.widget.Toast.makeText(context,
                             "Open a task to use /$name", android.widget.Toast.LENGTH_SHORT).show()
-                        else -> UiStore.newTask(text, File(project))
+                        else -> { UiStore.newTask(text, File(project), attachments.toList()); attachments.clear() }
                     }
                 },
                 leading = {

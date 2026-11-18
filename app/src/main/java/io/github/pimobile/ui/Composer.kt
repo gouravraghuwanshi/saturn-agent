@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -38,6 +42,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.launch
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -112,6 +118,9 @@ fun Composer(
     accent: Color = Ph.Amber,
     leading: @Composable RowScope.() -> Unit = {},
     extra: @Composable RowScope.() -> Unit = {},
+    attachments: List<UiStore.Attachment> = emptyList(),
+    attach: AttachPicker? = null,
+    onRemoveAttachment: (UiStore.Attachment) -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -119,7 +128,7 @@ fun Composer(
     val showPalette = text.startsWith("/") && !text.contains(' ')
     fun send() {
         val t = text.trim()
-        if (t.isEmpty()) return
+        if (t.isEmpty() && attachments.isEmpty()) return
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         onSend(t)
     }
@@ -144,6 +153,13 @@ fun Composer(
                 .pointerInput(Unit) { detectTapGestures { focus.requestFocus(); keyboard?.show() } }
                 .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 10.dp)
         ) {
+            if (attachments.isNotEmpty() || attach?.busy == true) Row(Modifier.padding(bottom = 10.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                attachments.forEach { a ->
+                    if (a.isImage) Thumb(a.path, 58) { onRemoveAttachment(a) } else FileChip(a.name, onRemove = { onRemoveAttachment(a) })
+                }
+                if (attach?.busy == true) Box(Modifier.size(58.dp), contentAlignment = Alignment.Center) { io.github.pimobile.ui.components.PulseDot(Ph.Amber, 7) }
+            }
             BasicTextField(
                 value = value, onValueChange = onValue,
                 textStyle = (if (text.startsWith("/")) Ph.mono.copy(fontSize = 16.sp) else Ph.body.copy(fontSize = 16.sp)).copy(color = Ph.Text),
@@ -165,10 +181,11 @@ fun Composer(
                     onValue(TextFieldValue("/", selection = androidx.compose.ui.text.TextRange(1)))
                     focus.requestFocus()
                 }
+                if (attach != null) AttachButton(attach)
                 leading()
                 Box(Modifier.weight(1f))
                 extra()
-                SendButton(enabled = text.isNotBlank(), color = accent) { send() }
+                SendButton(enabled = text.isNotBlank() || attachments.isNotEmpty(), color = accent) { send() }
             }
         }
     }
@@ -183,8 +200,9 @@ fun ChipButton(label: String, mono: Boolean = false, icon: androidx.compose.ui.g
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         icon?.let { PhIcon(it, Ph.TextSoft, 15.dp) }
-        Text(label, style = (if (mono) Ph.mono.copy(fontSize = 13.sp) else Ph.mono).copy(color = Ph.TextSoft),
+        if (label.isNotEmpty()) Text(label, style = (if (mono) Ph.mono.copy(fontSize = 13.sp) else Ph.mono).copy(color = Ph.TextSoft),
             modifier = Modifier.padding(vertical = 9.dp))
+        else Box(Modifier.padding(vertical = 9.dp).size(width = 1.dp, height = 18.dp))
     }
 }
 
@@ -196,4 +214,132 @@ fun SendButton(enabled: Boolean, color: Color = Ph.Amber, onClick: () -> Unit) {
             .clickable(enabled = enabled, onClickLabel = "Send") { onClick() },
         contentAlignment = Alignment.Center,
     ) { PhIcon(PhIcons.Send, if (enabled) Ph.AmberInk else Ph.Muted, 20.dp, "Send") }
+}
+
+
+/** A small image preview from a file; [onRemove] adds a × badge. */
+@Composable
+fun Thumb(path: String, size: Int, onRemove: (() -> Unit)? = null) {
+    val bmp = remember(path) {
+        runCatching {
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(path, o)
+            o.inSampleSize = maxOf(1, maxOf(o.outWidth, o.outHeight) / (size * 4))
+            o.inJustDecodeBounds = false
+            android.graphics.BitmapFactory.decodeFile(path, o)?.asImageBitmap()
+        }.getOrNull()
+    }
+    Box(Modifier.size(size.dp)) {
+        Box(Modifier.size(size.dp).clip(RoundedCornerShape(12.dp)).background(Ph.Chip).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))) {
+            if (bmp != null) androidx.compose.foundation.Image(bmp, null, Modifier.size(size.dp),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            else PhIcon(PhIcons.Image, Ph.Muted, 20.dp)
+        }
+        if (onRemove != null) Box(Modifier.align(Alignment.TopEnd).padding(3.dp).size(20.dp).clip(RoundedCornerShape(10.dp))
+            .background(Color(0xCC0B0C0F)).clickable(onClickLabel = "Remove image") { onRemove() }, contentAlignment = Alignment.Center) {
+            PhIcon(PhIcons.Close, Ph.Text, 12.dp)
+        }
+    }
+}
+
+/** The composer's + : photos, camera or any file. */
+class AttachPicker(val photos: () -> Unit, val camera: () -> Unit, val files: () -> Unit) {
+    var busy by androidx.compose.runtime.mutableStateOf(false)
+}
+
+@Composable
+fun rememberAttachPicker(onPicked: (List<UiStore.Attachment>) -> Unit): AttachPicker {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    lateinit var picker: AttachPicker
+    fun load(uris: List<android.net.Uri>, cleanup: () -> Unit = {}) {
+        if (uris.isEmpty()) return
+        picker.busy = true
+        scope.launch {
+            val results = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.map { u -> runCatching { UiStore.attach(u) } }.also { cleanup() }
+            }
+            picker.busy = false
+            results.mapNotNull { it.exceptionOrNull() }.firstOrNull()?.let {
+                android.widget.Toast.makeText(context, "Couldn't attach: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            onPicked(results.mapNotNull { it.getOrNull() })
+        }
+    }
+    val photos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(8)) { load(it) }
+    val files = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()) { load(it) }
+    var shot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<java.io.File?>(null) }
+    val camera = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture()) { ok ->
+        val f = shot ?: return@rememberLauncherForActivityResult
+        shot = null
+        if (ok && f.length() > 0) load(listOf(android.net.Uri.fromFile(f))) { f.delete() } else f.delete()
+    }
+    fun openCamera() {
+        val f = UiStore.cameraFile()
+        shot = f
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", f)
+        camera.launch(uri)
+    }
+    val cameraPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) openCamera()
+        else android.widget.Toast.makeText(context, "Camera permission is needed to take a photo", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    picker = androidx.compose.runtime.remember {
+        AttachPicker(
+            photos = { photos.launch(androidx.activity.result.PickVisualMediaRequest(
+                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            // Saturn declares CAMERA (for termux-camera-photo), so Android requires it for the camera app too.
+            camera = {
+                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED) openCamera()
+                else cameraPermission.launch(android.Manifest.permission.CAMERA)
+            },
+            files = { files.launch(arrayOf("*/*")) },
+        )
+    }
+    return picker
+}
+
+@Composable
+private fun AttachButton(picker: AttachPicker) {
+    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    Box {
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(if (open) Ph.AmberWash else Ph.Chip)
+            .clickable(onClickLabel = "Attach") { open = true }, contentAlignment = Alignment.Center) {
+            PhIcon(PhIcons.Plus, if (open) Ph.Amber else Ph.TextSoft, 18.dp, "Attach")
+        }
+        androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = Ph.Raised,
+            shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Ph.LineStrong)) {
+            listOf(Triple(PhIcons.Image, "Photos", picker.photos), Triple(PhIcons.Camera, "Camera", picker.camera),
+                Triple(PhIcons.File, "Files", picker.files)).forEach { (icon, label, action) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, style = Ph.body.copy(fontSize = 15.sp, color = Ph.Text)) },
+                    leadingIcon = { PhIcon(icon, Ph.TextSoft, 18.dp) },
+                    onClick = { open = false; action() },
+                )
+            }
+        }
+    }
+}
+
+/** A non-image attachment: icon, name, extension. */
+@Composable
+fun FileChip(name: String, onClick: (() -> Unit)? = null, onRemove: (() -> Unit)? = null) {
+    Row(Modifier.height(58.dp).widthIn(max = 220.dp).clip(RoundedCornerShape(12.dp)).background(Ph.Chip)
+        .border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
+        .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+        .padding(start = 12.dp, end = if (onRemove != null) 6.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        PhIcon(PhIcons.File, Ph.Amber, 20.dp)
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(name.substringBeforeLast('.'), style = Ph.body.copy(fontSize = 13.sp, color = Ph.Text), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name.substringAfterLast('.', "file").uppercase(), style = Ph.monoSmall)
+        }
+        if (onRemove != null) Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Remove file") { onRemove() },
+            contentAlignment = Alignment.Center) { PhIcon(PhIcons.Close, Ph.Muted, 13.dp) }
+    }
 }

@@ -62,6 +62,8 @@ class TaskUi(val task: TaskManager.Task) {
     /** Text to put into the composer (e.g. the message chosen in /fork or /tree). */
     var prefill by mutableStateOf<String?>(null)
     var thinkingLevel by mutableStateOf<String?>(null)
+    /** Stop was pressed; cleared when the run ends. */
+    var stopping by mutableStateOf(false)
     /** Bumped whenever the transcript is replaced from pi's history. */
     var rebuilds by mutableStateOf(0)
     internal var current: Item.Assistant? = null
@@ -143,24 +145,127 @@ object UiStore : TaskManager.Listener {
 
     // ---------------------------------------------------------------- actions
 
-    fun newTask(text: String, cwd: File): TaskUi {
+    fun newTask(text: String, cwd: File, images: List<Attachment> = emptyList()): TaskUi {
         io.github.pimobile.phone.PhoneControl.resume()
-        val t = TaskManager.createTask(text, cwd)
+        val t = TaskManager.createTask(withImages(text, images), cwd, imagesJson(images))
         val ui = ui(t)
-        addUser(ui, text)
+        addUser(ui, withImages(text, images))
         return ui
     }
 
-    fun send(ui: TaskUi, text: String, followUp: Boolean = false) {
+    fun send(ui: TaskUi, text: String, followUp: Boolean = false, images: List<Attachment> = emptyList()) {
         io.github.pimobile.phone.PhoneControl.resume()
-        addUser(ui, text)
+        val message = withImages(text, images)
+        addUser(ui, message)
         if (ui.status == Status.RUNNING) {
-            TaskManager.command(ui.task, JSONObject().put("type", "prompt").put("message", text)
-                .put("streamingBehavior", if (followUp) "followUp" else "steer"))
-        } else TaskManager.send(ui.task, text)
+            TaskManager.command(ui.task, JSONObject().put("type", "prompt").put("message", message)
+                .put("streamingBehavior", if (followUp) "followUp" else "steer")
+                .apply { imagesJson(images)?.let { put("images", it) } })
+        } else TaskManager.send(ui.task, message, imagesJson(images))
     }
 
-    fun stop(ui: TaskUi) = TaskManager.abort(ui.task)
+    fun stop(ui: TaskUi) {
+        if (ui.status != Status.RUNNING && ui.status != Status.NEEDS_INPUT && ui.status != Status.STARTING) return
+        ui.stopping = true
+        TaskManager.abort(ui.task)
+    }
+
+    // ------------------------------------------------------------- images
+
+    /**
+     * Something the user attached, saved under ~/uploads so the agent's tools
+     * can open it. Images also go to the model directly ([base64]).
+     */
+    class Attachment(val path: String, val base64: String?, val mime: String, val name: String) {
+        val isImage get() = base64 != null
+    }
+
+    private fun uploadsFile(name: String): File {
+        val dir = File(runtime.home, "uploads").apply { mkdirs() }
+        val clean = name.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifEmpty { "file" }
+        var f = File(dir, clean)
+        var n = 1
+        while (f.exists()) f = File(dir, clean.substringBeforeLast('.') + "-" + n++ + (clean.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }))
+        return f
+    }
+
+    /** A new file in ~/uploads for the camera to write into. */
+    fun cameraFile(): File = uploadsFile("Camera-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date()) + ".jpg")
+
+    /** Blocking; call off the main thread. */
+    fun attach(uri: android.net.Uri): Attachment {
+        val cr = app.contentResolver
+        val mime = cr.getType(uri)
+            ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(uri.toString().substringAfterLast('.', "").lowercase())
+            ?: "application/octet-stream"
+        val name = runCatching {
+            cr.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
+        // Photos (not GIF/SVG, which lose their point when re-encoded) are downscaled and also sent inline.
+        if (mime.startsWith("image/") && mime != "image/gif" && mime != "image/svg+xml") runCatching {
+            val bmp = android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(cr, uri)) { d, info, _ ->
+                val max = 1568 // larger images are downscaled by the model providers anyway
+                val (w, h) = info.size.width to info.size.height
+                val scale = minOf(1.0, max.toDouble() / maxOf(w, h))
+                d.setTargetSize((w * scale).toInt().coerceAtLeast(1), (h * scale).toInt().coerceAtLeast(1))
+                d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+            val f = uploadsFile(name.substringBeforeLast('.') + ".jpg")
+            val bytes = java.io.ByteArrayOutputStream().also { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+            f.writeBytes(bytes)
+            return Attachment(f.path, android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), "image/jpeg", f.name)
+        }
+        val f = uploadsFile(name)
+        cr.openInputStream(uri)?.use { input ->
+            f.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024); var total = 0L
+                while (true) {
+                    val n = input.read(buf); if (n < 0) break
+                    total += n
+                    if (total > 100L * 1024 * 1024) { out.close(); f.delete(); error("$name is over 100 MB") }
+                    out.write(buf, 0, n)
+                }
+            }
+        } ?: error("Couldn't read $name")
+        return Attachment(f.path, null, mime, f.name)
+    }
+
+    const val IMAGE_NOTE = "[Attached image: "
+    const val FILE_NOTE = "[Attached file: "
+
+    /** The message text pi gets: what the user wrote plus where each attachment is saved. */
+    private fun withImages(text: String, items: List<Attachment>) =
+        if (items.isEmpty()) text
+        else (if (text.isBlank()) "" else text + "\n\n") + items.joinToString("\n") { (if (it.isImage) IMAGE_NOTE else FILE_NOTE) + it.path + "]" }
+
+    private fun imagesJson(items: List<Attachment>) = items.filter { it.isImage }.let { images ->
+        if (images.isEmpty()) null else JSONArray().apply {
+            images.forEach { put(JSONObject().put("type", "image").put("data", it.base64).put("mimeType", it.mime)) }
+        }
+    }
+
+    // ------------------------------------------------------------ branches
+
+    /** Asks the App to open a task (e.g. a new branch). */
+    var openRequest by mutableStateOf<String?>(null)
+    var branchError by mutableStateOf<String?>(null)
+    var branching by mutableStateOf(false)
+
+    /**
+     * New task card from this one: before the [userIndex]-th message of yours
+     * (its text goes back in the box to edit), or a copy of the whole chat.
+     */
+    fun branch(ui: TaskUi, userIndex: Int? = null, userText: String? = null) {
+        if (branching) return
+        branching = true; branchError = null
+        TaskManager.branch(ui.task, userIndex, userText) { t, text, err ->
+            branching = false
+            if (t == null) { branchError = err; return@branch }
+            val nu = ui(t)
+            nu.prefill = text
+            openRequest = t.id
+        }
+    }
 
     fun answer(ui: TaskUi, d: Item.Dialog, value: String?) {
         d.answer = value ?: "dismissed"
@@ -326,7 +431,11 @@ object UiStore : TaskManager.Listener {
                 }
             }
             "agent_start" -> { ui.runStartedAt = System.currentTimeMillis(); ui.lastError = null }
-            "agent_settled" -> { ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
+            TaskManager.FORCE_STOPPED -> {
+                ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null
+                ui.items.add(Item.Notice(ui.key("n"), "Stopped. Saturn ended the run and everything it had started.", false))
+            }
+            "agent_settled" -> { ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return
                 when (m.optString("role")) {

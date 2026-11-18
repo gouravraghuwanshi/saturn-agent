@@ -247,6 +247,11 @@ class PiRuntime private constructor(private val ctx: Context) {
             |A Linux-like userland on Android: bash, node, npm/npx, git, curl, ripgrep. There is no apt/pkg,
             |no sudo and no python unless installed via npm packages. `npm i -g <pkg>` installs CLIs on PATH.
             |
+            |## Attachments
+            |Files the user attaches are saved in ~/uploads; their message ends with lines like
+            |"[Attached file: /path]" or "[Attached image: /path]" (images are also shown to you directly).
+            |Open them with your tools (read, bash) as needed.
+            |
             |## Phone features
             |You can use the phone itself through Termux:API-compatible commands (run them with bash):
             |termux-torch on|off · termux-battery-status · termux-vibrate [-d ms] · termux-volume [stream vol]

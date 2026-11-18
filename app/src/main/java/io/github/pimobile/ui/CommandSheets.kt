@@ -78,7 +78,7 @@ private fun Card(content: @Composable () -> Unit) = Column(
 ) { content() }
 
 @Composable
-private fun copier(): (String) -> Unit {
+internal fun copier(): (String) -> Unit {
     val ctx = LocalContext.current
     return { t -> ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Saturn", t)) }
 }
@@ -352,13 +352,14 @@ fun ForkSheet(t: TaskUi, onDismiss: () -> Unit) {
     LaunchedEffect(Unit) { t.responses.remove("get_fork_messages"); UiStore.rpc(t, "get_fork_messages") }
     val msgs = t.responses["get_fork_messages"]?.optJSONArray("messages")
     PhSheet(onDismiss) {
-        Title("Fork", "Start a new branch from one of your earlier messages.")
+        Title("Branch", "Pick one of your messages: a new task starts just before it, with the message ready to edit. This chat stays as it is.")
         if (msgs == null) Row(Modifier.padding(20.dp)) { PulseDot(Ph.Amber) }
         else LazyColumn(Modifier.heightIn(max = 520.dp)) {
-            items((0 until msgs.length()).map { msgs.getJSONObject(it) }.reversed(), key = { it.optString("entryId") }) { m ->
+            val all = (0 until msgs.length()).map { msgs.getJSONObject(it) }
+            items(all.reversed(), key = { it.optString("entryId") }) { m ->
                 Text(m.optString("text").lines().first().take(160), style = Ph.body.copy(fontSize = 13.sp, color = Ph.Text),
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().clickable { UiStore.rpc(t, "fork", "entryId" to m.optString("entryId")); onDismiss() }
+                    modifier = Modifier.fillMaxWidth().clickable { UiStore.branch(t, all.indexOf(m), m.optString("text")); onDismiss() }
                         .padding(horizontal = 20.dp, vertical = 12.dp))
             }
         }

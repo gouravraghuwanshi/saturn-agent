@@ -69,26 +69,27 @@ object TaskManager {
     val activeCount get() = tasks.count { it.status in setOf(Status.STARTING, Status.RUNNING, Status.NEEDS_INPUT) } + extraActive
 
     /** Home-screen input: every new instruction becomes a new task. */
-    fun createTask(prompt: String, cwd: File = runtime.projects): Task {
+    fun createTask(prompt: String, cwd: File = runtime.projects, images: JSONArray? = null): Task {
         val task = synchronized(_tasks) {
             Task(
                 id = "task-" + UUID.randomUUID().toString().take(8),
                 number = (_tasks.maxOfOrNull { it.number } ?: 0) + 1,
-                title = prompt.lineSequence().first().take(80),
+                title = (prompt.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("[Attached image:") && !it.startsWith("[Attached file:") } ?: "Attachment").take(80),
                 cwd = cwd,
             ).also { _tasks.add(0, it) }
         }
         save()
-        send(task, prompt)
+        send(task, prompt, images)
         return task
     }
 
     /** Continue a task's conversation; starts/resumes its process if needed. */
-    fun send(task: Task, text: String) {
+    fun send(task: Task, text: String, images: JSONArray? = null) {
         if (task.archived) { task.archived = false; save() } // continuing it brings it back
         io.execute {
             ensureSession(task)
             val cmd = JSONObject().put("type", "prompt").put("message", text)
+            if (images != null && images.length() > 0) cmd.put("images", images)
             // While a run is active pi requires a queueing mode; steer = after current step.
             if (task.status == Status.RUNNING) cmd.put("streamingBehavior", "steer")
             task.session?.send(cmd)
@@ -100,7 +101,83 @@ object TaskManager {
         task.session?.send(cmd)
     }
 
-    fun abort(task: Task) = task.session?.send(JSONObject().put("type", "abort"))
+    /**
+     * Stop button. Queued steer/follow-up messages are dropped first (pi's
+     * abort would otherwise carry on with them). If the run hasn't ended a few
+     * seconds later — e.g. a shell command that ignores the signal — pi and
+     * everything it started are killed; the conversation is in the session
+     * file and the next message picks it up.
+     */
+    fun abort(task: Task) {
+        val s = task.session ?: return
+        s.send(JSONObject().put("type", "clear_queue").put("id", "stop-q"))
+        s.send(JSONObject().put("type", "abort").put("id", "stop-a"))
+        main.postDelayed({
+            if (task.session === s && task.status in setOf(Status.RUNNING, Status.NEEDS_INPUT, Status.STARTING)) io.execute {
+                s.kill()
+                if (task.session === s) task.session = null
+                setStatus(task, Status.IDLE)
+                emit(task, JSONObject().put("type", FORCE_STOPPED), null)
+            }
+        }, 5000)
+    }
+
+    /** Synthetic record: the Stop button had to kill the run. */
+    const val FORCE_STOPPED = "app_force_stopped"
+
+    private val waiters = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<JSONObject>>()
+    private var requestIds = 0
+
+    /** Sends a command and waits for its response (off the main thread). Throws on failure. */
+    private fun request(task: Task, cmd: JSONObject, timeoutSec: Long = 30): JSONObject {
+        val id = "br-${requestIds++}"
+        val f = java.util.concurrent.CompletableFuture<JSONObject>()
+        waiters[id] = f
+        try {
+            task.session?.send(cmd.put("id", id)) ?: error("Saturn isn't running for this task")
+            val r = f.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            if (!r.optBoolean("success")) error(r.optString("error").ifBlank { "${cmd.optString("type")} failed" })
+            return r.optJSONObject("data") ?: JSONObject()
+        } finally { waiters.remove(id) }
+    }
+
+    /**
+     * Branches a task into a new task card, leaving the original as it was.
+     * [userIndex] = branch before that user message (pi's fork; its text comes
+     * back to edit); null = copy the whole conversation (pi's clone).
+     * Done in the task's own pi process: fork/clone moves it to the new
+     * session, then it switches straight back to the original.
+     */
+    fun branch(task: Task, userIndex: Int?, userText: String?, done: (Task?, String?, String?) -> Unit) = io.execute {
+        try {
+            if (task.status == Status.RUNNING || task.status == Status.NEEDS_INPUT) error("Wait until Saturn finishes (or stop it), then branch.")
+            ensureSession(task)
+            val original = request(task, JSONObject().put("type", "get_state")).optString("sessionFile")
+            if (original.isBlank()) error("This task has no saved conversation yet")
+            var text: String? = null
+            if (userIndex != null) {
+                val msgs = request(task, JSONObject().put("type", "get_fork_messages")).optJSONArray("messages") ?: JSONArray()
+                val list = (0 until msgs.length()).map { msgs.getJSONObject(it) }
+                val want = userText?.trim()?.take(60).orEmpty()
+                val pick = list.getOrNull(userIndex)?.takeIf { want.isEmpty() || it.optString("text").trim().startsWith(want) }
+                    ?: list.lastOrNull { it.optString("text").trim().startsWith(want) }
+                    ?: error("Couldn't find that message in the conversation")
+                val r = request(task, JSONObject().put("type", "fork").put("entryId", pick.optString("entryId")))
+                if (r.optBoolean("cancelled")) error("An extension cancelled the branch")
+                text = r.optString("text").ifBlank { null }
+            } else {
+                val r = request(task, JSONObject().put("type", "clone"))
+                if (r.optBoolean("cancelled")) error("An extension cancelled the branch")
+            }
+            val newId = request(task, JSONObject().put("type", "get_state")).optString("sessionId")
+            request(task, JSONObject().put("type", "switch_session").put("sessionPath", original))
+            if (newId.isBlank() || newId == task.sessionId) error("pi didn't create a new session")
+            val t = adopt(newId, "⑂ " + task.title.removePrefix("⑂ "), task.cwd)
+            main.post { done(t, text, null) }
+        } catch (e: Exception) {
+            main.post { done(null, null, e.message ?: e.toString()) }
+        }
+    }
 
     /** Answers a dialog `extension_ui_request` (select/confirm/input/editor). */
     fun answer(task: Task, requestId: String, response: JSONObject) {
@@ -211,6 +288,7 @@ object TaskManager {
     }
 
     private fun handle(task: Task, r: JSONObject) {
+        if (r.optString("type") == "response") waiters[r.optString("id")]?.let { it.complete(r); return }
         when (r.optString("type")) {
             "agent_start" -> setStatus(task, Status.RUNNING)
             "agent_settled" -> setStatus(task, Status.IDLE)

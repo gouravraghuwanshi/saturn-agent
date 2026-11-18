@@ -11,6 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,6 +33,11 @@ fun App() {
     PhosphorTheme {
         var openId by rememberSaveable { mutableStateOf<String?>(null) }
         BackHandler(enabled = openId != null) { openId = null }
+        // e.g. a new branch: open its card.
+        UiStore.openRequest?.let { id -> LaunchedEffect(id) { openId = id; UiStore.openRequest = null } }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        UiStore.branchError?.let { e -> LaunchedEffect(e) {
+            android.widget.Toast.makeText(ctx, "Couldn't branch: $e", android.widget.Toast.LENGTH_LONG).show(); UiStore.branchError = null } }
 
         // Live WebViews that aren't on screen keep rendering here, under the opaque UI.
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {

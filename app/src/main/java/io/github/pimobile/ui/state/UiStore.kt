@@ -207,6 +207,13 @@ object UiStore : TaskManager.Listener {
         offerUndo(Undo("Task #${ui.task.number} deleted", revert = { ui.hidden = false }, commit = { delete(ui) }))
     }
 
+    fun deleteManyWithUndo(list: List<TaskUi>) {
+        if (list.isEmpty()) return
+        list.forEach { it.hidden = true }
+        offerUndo(Undo(if (list.size == 1) "Task #${list[0].task.number} deleted" else "${list.size} tasks deleted",
+            revert = { list.forEach { it.hidden = false } }, commit = { list.forEach { delete(it) } }))
+    }
+
     fun setArchived(ui: TaskUi, archived: Boolean, undoable: Boolean = true) {
         ui.archived = archived
         TaskManager.setArchived(ui.task, archived)

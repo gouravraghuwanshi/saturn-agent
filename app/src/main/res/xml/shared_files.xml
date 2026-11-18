@@ -2,4 +2,5 @@
 <!-- Files the app shares with other apps (session exports). -->
 <paths>
     <cache-path name="exports" path="exports/" />
+    <files-path name="artifacts" path="home/artifacts/" />
 </paths>

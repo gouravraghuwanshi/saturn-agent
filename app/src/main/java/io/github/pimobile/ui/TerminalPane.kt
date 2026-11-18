@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +45,8 @@ import com.termux.terminal.TextStyle
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import io.github.pimobile.R
+import io.github.pimobile.ui.components.PhIcon
+import io.github.pimobile.ui.components.PhIcons
 import io.github.pimobile.runtime.TaskManager
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
@@ -56,7 +61,7 @@ private val main = android.os.Handler(android.os.Looper.getMainLooper())
  * process is stopped; on close the chat view re-reads the session.
  */
 @Composable
-fun TerminalPane(t: TaskUi) {
+fun TerminalPane(t: TaskUi?) {
     val ctx = LocalContext.current
     var generation by remember { mutableIntStateOf(0) } // bump to restart pi
     var exited by remember { mutableStateOf<Int?>(null) }
@@ -154,13 +159,17 @@ fun TerminalPane(t: TaskUi) {
         exited = null
         io.execute {
             stopAndWait(holder[0])
-            TaskManager.releaseForTerminal(t.task) // one pi process per session at a time
+            if (t != null) TaskManager.releaseForTerminal(t.task) // one pi process per session at a time
             val rt = UiStore.runtime
             rt.prepare()
-            val env = (rt.env() + TaskManager.envFor(t.task)).map { (k, v) -> "$k=$v" }.toTypedArray()
+            val env = (rt.env() + TaskManager.sessionEnv + (t?.let { TaskManager.envFor(it.task) } ?: emptyMap()))
+                .map { (k, v) -> "$k=$v" }.toTypedArray()
             view.post {
-                val s = TerminalSession(rt.node.path, t.task.cwd.path,
+                // A task opens pi's TUI on its session; the app Terminal is a plain bash shell.
+                val s = if (t != null) TerminalSession(rt.node.path, t.task.cwd.path,
                     arrayOf("pi", rt.piCli.path, "--session-id", t.task.sessionId), env, 3000, sessionClient)
+                else TerminalSession(java.io.File(rt.bin, "bash").path, rt.home.path,
+                    arrayOf("bash", "--rcfile", rt.bashrc.path, "-i"), env, 5000, sessionClient)
                 holder[0] = s
                 view.setTerminalViewClient(viewClient)
                 view.attachSession(s)
@@ -176,7 +185,7 @@ fun TerminalPane(t: TaskUi) {
             val s = holder[0]
             io.execute {
                 stopAndWait(s)
-                main.post { UiStore.terminalClosed(t) } // the view may be detached by now
+                if (t != null) main.post { UiStore.terminalClosed(t) } // the view may be detached by now
             }
         }
     }
@@ -188,7 +197,7 @@ fun TerminalPane(t: TaskUi) {
                 Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(16.dp)).background(Ph.Surface)
                     .border(1.dp, Ph.LineStrong, RoundedCornerShape(16.dp)).padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("pi exited ($code)", style = Ph.title)
+                    Text(if (t != null) "pi exited ($code)" else "shell exited ($code)", style = Ph.title)
                     Text("Restart", style = Ph.title.copy(color = Ph.AmberInk), textAlign = TextAlign.Center,
                         modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Amber)
                             .clickable { generation++ }.padding(horizontal = 18.dp, vertical = 10.dp))
@@ -252,4 +261,21 @@ private fun stopAndWait(s: TerminalSession?) {
     if (s.isRunning) android.os.Process.sendSignal(s.pid, 15)
     repeat(20) { if (!s.isRunning) return; Thread.sleep(100) }
     s.finishIfRunning()
+}
+
+/** The app-level Terminal: a bash shell in ~ (install tools with npm, use git, run node…). */
+@Composable
+fun ShellScreen(onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler { onBack() }
+    Column(Modifier.fillMaxSize().background(Ph.Ground).statusBarsPadding()) {
+        Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Back") { onBack() },
+                contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 22.dp, "Back") }
+            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                Text("Terminal", style = Ph.title.copy(fontSize = 16.sp))
+                Text("bash · ~ · npm i -g to install tools", style = Ph.monoSmall)
+            }
+        }
+        TerminalPane(null)
+    }
 }

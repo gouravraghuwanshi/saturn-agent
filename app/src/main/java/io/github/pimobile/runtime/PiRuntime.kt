@@ -50,6 +50,10 @@ class PiRuntime private constructor(private val ctx: Context) {
     val gitCore = File(usr, "libexec/git-core")
     val home = File(ctx.filesDir, "home")
     val projects = File(home, "projects")
+    /** Files Saturn makes for the user (documents, pages, images…); shown in the Artifacts screen. */
+    val artifacts = File(home, "artifacts")
+    /** Interactive shell profile for the app's Terminal. */
+    val bashrc = File(usr, "etc/saturn-bashrc")
     val tmp = File(ctx.cacheDir, "tmp")
     val piRoot = File(ctx.filesDir, "pi")
     val piCli get() = File(piRoot, "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js")
@@ -80,7 +84,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         if (prepared) return
         extractAsset("pi-bundle", piRoot, wipe = true, log)
         extractAsset("usr-data", usr, wipe = false, log)
-        listOf(home, projects, tmp, bin, gitCore, bashEnv.parentFile!!).forEach { it.mkdirs() }
+        listOf(home, projects, artifacts, tmp, bin, gitCore, bashEnv.parentFile!!).forEach { it.mkdirs() }
         link(bin, BIN)
         link(gitCore, GIT_CORE)
         // Real npm/npx commands (npm's own #!/usr/bin/env node scripts), so
@@ -106,6 +110,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         "SHELL" to File(bin, "bash").path,
         "LANG" to "en_US.UTF-8",
         "TERM" to "xterm-256color",
+        "TERMINFO" to File(usr, "share/terminfo").path,
         "COLORTERM" to "truecolor",
         // TLS: Termux builds look under /data/data/com.termux; point them at our copies.
         "OPENSSL_CONF" to opensslConf.path,
@@ -123,6 +128,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         // npm is bundled with the app; its "new version available" notice is noise here.
         "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
         "NPM_CONFIG_FUND" to "false",
+        "SATURN_ARTIFACTS" to artifacts.path,
     )
 
     private fun link(dir: File, entries: Map<String, String>) {
@@ -156,8 +162,36 @@ class PiRuntime private constructor(private val ctx: Context) {
         }
         // The app is called Saturn; pi stays unmodified and just learns its name here.
         File(home, ".pi/agent/APPEND_SYSTEM.md").writeText(
-            "You are running inside Saturn Agent, an Android app. In this app you are called Saturn; " +
-                "introduce yourself as Saturn if asked. The user works on a phone: keep answers concise.\n"
+            """
+            |You are running inside Saturn Agent, an Android app. In this app you are called Saturn;
+            |introduce yourself as Saturn if asked. The user works on a phone: keep answers concise.
+            |
+            |## Artifacts
+            |When the user asks you to make something for them to keep, view or share — a document,
+            |report, note, web page, chart, image, spreadsheet, slide deck, script, data file — save it in
+            |the artifacts folder: ${'$'}SATURN_ARTIFACTS (${artifacts.path}). Files there appear in the app's
+            |Artifacts screen, where the user can open, preview and share them.
+            |- Use clear, descriptive file names with the right extension (e.g. trip-plan.md, budget.csv).
+            |- For anything visual or interactive, prefer one self-contained .html file (inline CSS/JS;
+            |  it is previewed in an Android WebView, so make it look good on a phone screen).
+            |- Use a subfolder for a multi-file artifact. Do not put project source code here — code
+            |  belongs in the task's working directory.
+            |- After saving, tell the user the file name and that it is in Artifacts.
+            |
+            |## Environment
+            |A Linux-like userland on Android: bash, node, npm/npx, git, curl, ripgrep. There is no apt/pkg,
+            |no sudo and no python unless installed via npm packages. `npm i -g <pkg>` installs CLIs on PATH.
+            |""".trimMargin()
+        )
+        bashrc.parentFile?.mkdirs()
+        bashrc.writeText(
+            """
+            |[ -f "${'$'}BASH_ENV" ] && . "${'$'}BASH_ENV"
+            |cd ~
+            |PS1='\[\e[38;2;242;179;91m\]saturn\[\e[0m\] \[\e[38;2;111;183;204m\]\w\[\e[0m\] \$ '
+            |alias ls='ls --color=auto' ll='ls -la'
+            |echo -e "\e[2mSaturn terminal · bash, node, npm, git, curl, rg · npm i -g <pkg> to install tools\e[0m"
+            |""".trimMargin() + "\n"
         )
     }
 

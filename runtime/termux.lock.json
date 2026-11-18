@@ -123,5 +123,17 @@
   "git-remote-http",
   "node",
   "rg"
+ ],
+ "data": [
+  "etc/tls/cert.pem",
+  "share/git-core/templates",
+  "share/terminfo/x/xterm-256color",
+  "share/terminfo/x/xterm",
+  "share/terminfo/d/dumb",
+  "share/terminfo/v/vt100",
+  "share/terminfo/s/screen-256color",
+  "share/terminfo/s/screen",
+  "share/terminfo/t/tmux-256color",
+  "share/terminfo/l/linux"
  ]
 }

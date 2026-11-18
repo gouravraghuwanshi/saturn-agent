@@ -52,7 +52,10 @@ EXECUTABLES = {
     "git-remote-http": "libexec/git-core/git-remote-http",
 }
 # data files/dirs (inside the prefix) shipped in assets/usr-data.zip
-DATA = ["etc/tls/cert.pem", "share/git-core/templates"]
+DATA = ["etc/tls/cert.pem", "share/git-core/templates"] + [
+    # terminfo for the app's Terminal (bash/readline, less, git's pager)
+    "share/terminfo/" + e for e in ("x/xterm-256color", "x/xterm", "d/dumb", "v/vt100", "s/screen-256color",
+                                     "s/screen", "t/tmux-256color", "l/linux")]
 
 SYSTEM_LIBS = {"libc.so", "libm.so", "libdl.so", "liblog.so", "libandroid.so"}
 SH_FROM = (TERMUX_PREFIX + "/bin/sh").encode()
@@ -266,7 +269,7 @@ def main():
     json.dump({k: versions.get(v) for k, v in {"node": "nodejs-lts", "bash": "bash", "git": "git",
                "ripgrep": "ripgrep", "curl": "curl", "openssl": "openssl"}.items()},
               open(os.path.join(ASSETS, "runtime-info.json"), "w"))
-    json.dump({"packages": lock, "executables": sorted(EXECUTABLES)},
+    json.dump({"packages": lock, "executables": sorted(EXECUTABLES), "data": DATA},
               open(os.path.join(HERE, "termux.lock.json"), "w"), indent=1)
     h = hashlib.sha256(open(os.path.join(HERE, "termux.lock.json"), "rb").read()).hexdigest()[:12]
     open(os.path.join(ASSETS, "usr-data.version"), "w").write(h + "\n")

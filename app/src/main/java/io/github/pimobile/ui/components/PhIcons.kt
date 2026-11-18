@@ -50,6 +50,12 @@ object PhIcons {
     val Copy = stroke("M9 9h10v10H9z", "M5 15V5h10")
     val Trash = stroke("M4 7h16M10 11v6M14 11v6", "M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3")
     val Archive = stroke("M3 5h18v4H3z", "M5 9v10h14V9M10 13h4")
+    val Terminal = stroke("M4 5h16v14H4z", "M8 10l3 2-3 2M13 15h3")
+    val Sparkle = stroke("M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z")
+    val External = stroke("M14 4h6v6M20 4l-9 9", "M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4")
+    val Import = stroke("M12 4v11M8 11l4 4 4-4", "M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3")
+    val Check = stroke("M5 12l5 5 9-10", width = 2.4f)
+    val Close = stroke("M6 6l12 12M18 6L6 18")
     val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
 }
 

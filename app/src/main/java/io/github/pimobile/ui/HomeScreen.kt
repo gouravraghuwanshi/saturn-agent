@@ -64,6 +64,8 @@ import io.github.pimobile.ui.state.ToolState
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.heightIn
 import java.io.File
 import java.util.Locale
 
@@ -79,8 +81,43 @@ fun HomeScreen(
     shared: SharedTransitionScope,
     visibility: AnimatedVisibilityScope,
     onStore: () -> Unit,
+    onTerminal: () -> Unit,
+    onArtifacts: () -> Unit,
     onOpen: (TaskUi) -> Unit,
 ) {
+    val selected = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+    val selecting = selected.isNotEmpty()
+    androidx.activity.compose.BackHandler(enabled = selecting) { selected.clear() }
+    fun toggle(t: TaskUi) { if (t.task.id in selected) selected.remove(t.task.id) else selected.add(t.task.id) }
+    val ctxT = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun toast(msg: String) = android.widget.Toast.makeText(ctxT, msg, android.widget.Toast.LENGTH_SHORT).show()
+    val exportTo = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val list = UiStore.tasks.filter { it.task.id in selected }.map { it.task }
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { io.github.pimobile.runtime.Transfer.export(ctxT, list, uri) } }
+            r.onSuccess { n -> toast(if (n == 1) "Exported 1 task" else "Exported $n tasks"); selected.clear() }
+                .onFailure { toast("Export failed: ${it.message}") }
+        }
+    }
+    val importFrom = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { io.github.pimobile.runtime.Transfer.import(ctxT, uri) } }
+            r.onSuccess { res ->
+                res.added.forEach { UiStore.ui(it) }
+                toast(buildString {
+                    append(if (res.added.size == 1) "Imported 1 task" else "Imported ${res.added.size} tasks")
+                    if (res.skipped > 0) append(" · ${res.skipped} already here or unreadable")
+                })
+            }.onFailure { toast("Import failed: ${it.message}") }
+        }
+    }
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var project by rememberSaveable { mutableStateOf(UiStore.runtime.projects.path) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
@@ -105,10 +142,28 @@ fun HomeScreen(
 
     Box(Modifier.fillMaxSize().background(Ph.Ground)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            // ---- header
-            Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            // ---- header (a selection bar while tasks are selected)
+            if (selecting) Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IconBox(PhIcons.Close, "Clear selection") { selected.clear() }
+                Column(Modifier.weight(1f)) {
+                    Text("${selected.size} selected", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
+                    val visibleIds = UiStore.tasks.filterNot { it.hidden }.map { it.task.id }
+                    Text(if (selected.size < visibleIds.size) "select all" else "select none", style = Ph.monoSmall.copy(color = Ph.Amber),
+                        modifier = Modifier.clickable {
+                            if (selected.size < visibleIds.size) { selected.clear(); selected.addAll(visibleIds) } else selected.clear()
+                        }.padding(vertical = 2.dp))
+                }
+                IconBox(PhIcons.Share, "Export selected") {
+                    exportTo.launch("saturn-tasks-" + java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date()) + ".zip")
+                }
+                IconBox(PhIcons.Trash, "Delete selected") {
+                    UiStore.deleteManyWithUndo(UiStore.tasks.filter { it.task.id in selected }); selected.clear()
+                }
+            } else Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Ph.Amber), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Ph.Amber)
+                    .clickable(onClickLabel = "Saturn menu") { sheet = "saturn" }, contentAlignment = Alignment.Center) {
                     androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
                 }
                 Column(Modifier.weight(1f).clickable { sheet = "model" }) {
@@ -152,7 +207,10 @@ fun HomeScreen(
                         with(shared) {
                             Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
                                 clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
-                                SwipeCard(t) { TaskCard(t, onOpen = { onOpen(t) }) }
+                                SwipeCard(t, enabled = !selecting) {
+                                    TaskCard(t, selected = if (selecting) t.task.id in selected else null,
+                                        onOpen = { if (selecting) toggle(t) else onOpen(t) }, onSelect = { toggle(t) })
+                                }
                             }
                         }
                     }
@@ -195,7 +253,7 @@ fun HomeScreen(
                         icon = PhIcons.Folder, description = "Choose project") { sheet = "project" }
                 },
             )
-            Text("swipe a task  ← delete  ·  archive →", style = Ph.monoSmall, textAlign = TextAlign.Center,
+            Text(if (selecting) "tap tasks to select · back to cancel" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
             }
         }
@@ -209,6 +267,49 @@ fun HomeScreen(
         "logout" -> LoginSheet(logoutMode = true) { sheet = null }
         "resume" -> ResumeSheet(onOpen = { onOpen(it) }) { sheet = null }
         "changelog" -> ChangelogSheet { sheet = null }
+        "saturn" -> SaturnSheet(
+            onTerminal = onTerminal, onArtifacts = onArtifacts, onStore = onStore,
+            onImport = { importFrom.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/json", "*/*")) },
+            onSelect = { UiStore.tasks.firstOrNull { !it.hidden }?.let { selected.add(it.task.id) } },
+        ) { sheet = null }
+    }
+}
+
+/** Tapping the Saturn mark: the app's own places, away from the task list. */
+@Composable
+private fun SaturnSheet(onTerminal: () -> Unit, onArtifacts: () -> Unit, onStore: () -> Unit,
+                        onImport: () -> Unit, onSelect: () -> Unit, onDismiss: () -> Unit) {
+    val artifacts = remember { UiStore.runtime.artifacts.listFiles()?.count { !it.name.startsWith(".") } ?: 0 }
+    PhSheet(onDismiss) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Ph.Amber)) {
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_foreground), null, Modifier.fillMaxSize())
+            }
+            Column {
+                Text("Saturn", style = Ph.heading)
+                Text("${UiStore.tasks.size} tasks · $artifacts artifacts", style = Ph.monoSmall)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        listOf(
+            Triple(PhIcons.Sparkle, "Artifacts", "Files Saturn made for you") to onArtifacts,
+            Triple(PhIcons.Terminal, "Terminal", "bash · npm · git · node") to onTerminal,
+            Triple(PhIcons.Cube, "Extension store", "Packages from pi.dev") to onStore,
+            Triple(PhIcons.Check, "Select tasks", "Export or delete several") to onSelect,
+            Triple(PhIcons.Import, "Import tasks", "From a Saturn export or pi session") to onImport,
+        ).forEach { (row, action) ->
+            val (icon, title, sub) = row
+            Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable(onClickLabel = title) { onDismiss(); action() }
+                .padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(Ph.Raised).border(1.dp, Ph.Line, RoundedCornerShape(11.dp)),
+                    contentAlignment = Alignment.Center) { PhIcon(icon, if (title == "Artifacts") Ph.Amber else Ph.TextSoft, 19.dp) }
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = Ph.body.copy(color = Ph.Text, fontSize = 15.sp))
+                    Text(sub, style = Ph.monoSmall)
+                }
+            }
+        }
     }
 }
 
@@ -258,9 +359,8 @@ fun elapsed(since: Long?): String {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TaskCard(t: TaskUi, onOpen: () -> Unit) {
-    var menu by remember { mutableStateOf(false) }
-    var rename by remember { mutableStateOf(false) }
+private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect: () -> Unit) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val active = t.status in ACTIVE
     val needs = t.status == Status.NEEDS_INPUT
     val shape = RoundedCornerShape(18.dp)
@@ -268,13 +368,19 @@ private fun TaskCard(t: TaskUi, onOpen: () -> Unit) {
 
     Box {
         Column(
-            Modifier.fillMaxWidth().clip(shape).background(if (active) Ph.Surface else Ph.Ground)
-                .border(1.dp, when { needs -> Color3A3222; active -> Ph.LineStrong; else -> Ph.Line }, shape)
-                .combinedClickable(onClick = onOpen, onLongClick = { menu = true }, onClickLabel = "Open task")
+            Modifier.fillMaxWidth().clip(shape).background(when { selected == true -> Ph.AmberWash; active -> Ph.Surface; else -> Ph.Ground })
+                .border(1.dp, when { selected == true -> Ph.AmberLine; needs -> Color3A3222; active -> Ph.LineStrong; else -> Ph.Line }, shape)
+                .combinedClickable(onClick = onOpen, onClickLabel = if (selected != null) "Select task" else "Open task",
+                    onLongClick = { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onSelect() },
+                    onLongClickLabel = "Select task")
                 .animateContentSize()
         ) {
             Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = if (active) 0.dp else 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (selected != null) Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp))
+                    .background(if (selected) Ph.Amber else androidx.compose.ui.graphics.Color.Transparent)
+                    .border(1.5.dp, if (selected) Ph.Amber else Ph.LineStrong, RoundedCornerShape(11.dp)),
+                    contentAlignment = Alignment.Center) { if (selected) PhIcon(PhIcons.Check, Ph.AmberInk, 14.dp) }
                 Text("#${t.task.number}", style = Ph.mono.copy(fontWeight = FontWeight.SemiBold,
                     color = if (t.status == Status.RUNNING || t.status == Status.STARTING) Ph.Amber else Ph.Muted))
                 Text(t.title, style = if (active) Ph.title else Ph.title.copy(fontWeight = FontWeight.Normal, color = Ph.TextSoft, fontSize = 14.sp),
@@ -330,13 +436,6 @@ private fun TaskCard(t: TaskUi, onOpen: () -> Unit) {
             }
         }
     }
-    if (menu) TaskMenuSheet(t, buildList {
-        add(MenuAction("Rename", PhIcons.Pencil) { rename = true })
-        if (active) add(MenuAction("Stop run", PhIcons.Stop) { UiStore.stop(t) })
-        else add(MenuAction(if (t.archived) "Restore" else "Archive", PhIcons.Archive) { UiStore.setArchived(t, !t.archived) })
-        add(MenuAction("Delete task", PhIcons.Trash, danger = true, confirm = "Tap again to delete") { UiStore.delete(t) })
-    }) { menu = false }
-    if (rename) RenameSheet(t) { rename = false }
 }
 
 private val Color3A3222 = androidx.compose.ui.graphics.Color(0xFF3A3222)
@@ -360,7 +459,7 @@ private fun NeedsYou(t: TaskUi) {
 
 /** Swipe left to delete (with undo), right to archive — or, in Archived, to restore. */
 @Composable
-private fun SwipeCard(t: TaskUi, content: @Composable () -> Unit) {
+private fun SwipeCard(t: TaskUi, enabled: Boolean, content: @Composable () -> Unit) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val canArchive = t.status !in ACTIVE
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
@@ -372,7 +471,7 @@ private fun SwipeCard(t: TaskUi, content: @Composable () -> Unit) {
         false // the card leaves its section on its own; snap back so a restored card looks right
     })
     SwipeToDismissBox(
-        state, enableDismissFromStartToEnd = canArchive,
+        state, enableDismissFromStartToEnd = canArchive && enabled, enableDismissFromEndToStart = enabled,
         backgroundContent = {
             val dir = state.dismissDirection
             val delete = dir == SwipeToDismissBoxValue.EndToStart

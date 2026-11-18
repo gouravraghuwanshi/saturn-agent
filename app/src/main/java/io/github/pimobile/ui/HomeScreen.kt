@@ -26,8 +26,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,18 +107,17 @@ fun HomeScreen(
                 }
                 Column(Modifier.weight(1f).clickable { sheet = "model" }) {
                     Text("Saturn", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
-                    Text(UiStore.model ?: if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "auto model" else "not signed in · /login",
+                    val label = io.github.pimobile.ui.state.modelLabel(UiStore.model)
+                    if (label != null) Text(androidx.compose.ui.text.buildAnnotatedString {
+                        withStyle(androidx.compose.ui.text.SpanStyle(color = Ph.TextSoft)) { append(label.first) }
+                        append(" · ${label.second}")
+                    }, style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) else Text(if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "auto model" else "not signed in · /login",
                         style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconBox(PhIcons.Cube, "Extension store") { onStore() }
                 IconBox(PhIcons.Settings, "Settings") { sheet = "settings" }
             }
 
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(if (activeCount > 0) "TASKS · $activeCount ACTIVE" else "TASKS", style = Ph.label)
-                if (spent >= 0.005) Text(String.format(Locale.US, "$%.2f spent", spent), style = Ph.monoSmall)
-            }
 
             // ---- tasks
             if (UiStore.tasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) { sheet = "login" }
@@ -127,14 +125,29 @@ fun HomeScreen(
                 Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(UiStore.tasks, key = { it.task.id }) { t ->
-                    with(shared) {
-                        Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
-                            clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
-                            TaskCard(t, onOpen = { onOpen(t) })
+                val (active, earlier) = UiStore.tasks.partition { it.status in ACTIVE }
+                val spentLabel = if (spent >= 0.005) String.format(Locale.US, "$%.2f spent", spent) else null
+                fun section(list: List<TaskUi>, key: String, title: String, trailing: String?, first: Boolean) {
+                    if (list.isEmpty()) return
+                    item(key = "h-$key") {
+                        Row(Modifier.animateItem().fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = if (first) 0.dp else 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(title, style = Ph.label)
+                            trailing?.let { Text(it, style = Ph.monoSmall) }
+                        }
+                    }
+                    items(list, key = { it.task.id }) { t ->
+                        with(shared) {
+                            Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
+                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
+                                TaskCard(t, onOpen = { onOpen(t) })
+                            }
                         }
                     }
                 }
+                section(active, "active", "ACTIVE · ${active.size}", spentLabel, first = true)
+                section(earlier, "earlier", if (active.isEmpty()) "TASKS" else "EARLIER · ${earlier.size}",
+                    spentLabel.takeIf { active.isEmpty() }, first = active.isEmpty())
             }
         }
 
@@ -297,12 +310,12 @@ private fun TaskCard(t: TaskUi, onOpen: () -> Unit) {
                 }
             }
         }
-        DropdownMenu(menu, onDismissRequest = { menu = false }, containerColor = Ph.Raised) {
-            DropdownMenuItem(text = { Text("Rename", style = Ph.body.copy(color = Ph.Text)) }, onClick = { menu = false; rename = true })
-            if (active) DropdownMenuItem(text = { Text("Stop", style = Ph.body.copy(color = Ph.Text)) }, onClick = { menu = false; UiStore.stop(t) })
-            DropdownMenuItem(text = { Text("Delete", style = Ph.body.copy(color = Ph.Red)) }, onClick = { menu = false; UiStore.delete(t) })
-        }
     }
+    if (menu) TaskMenuSheet(t, buildList {
+        add(MenuAction("Rename", PhIcons.Pencil) { rename = true })
+        if (active) add(MenuAction("Stop run", PhIcons.Stop) { UiStore.stop(t) })
+        add(MenuAction("Delete task", PhIcons.Trash, danger = true, confirm = "Tap again to delete") { UiStore.delete(t) })
+    }) { menu = false }
     if (rename) RenameSheet(t) { rename = false }
 }
 

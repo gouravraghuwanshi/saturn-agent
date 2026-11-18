@@ -197,7 +197,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 .background(Ph.Ground)
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                Header(t, onBack, onMenu = { sheet = "rename" })
+                Header(t, onBack, onMenu = { sheet = "menu" })
                 Tabs(tab, showBrowserTab) { tab = it; if (it != "browser") holdBrowser = false }
                 if (tab == "browser") {
                     BrowserPane(t) { holdBrowser = true; if (running) UiStore.stop(t) }
@@ -269,6 +269,20 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         "fork" -> ForkSheet(t) { sheet = null }
         "resume" -> ResumeSheet(onOpen = { other -> if (other !== t) onOpenTask(other) }) { sheet = null }
         "changelog" -> ChangelogSheet { sheet = null }
+        "menu" -> {
+            fun cmd(name: String) = { builtins.first { it.name == name }.run("") }
+            TaskMenuSheet(t, buildList {
+                add(MenuAction("Rename", PhIcons.Pencil) { sheet = "rename" })
+                add(MenuAction("Model", PhIcons.Cube, hint = io.github.pimobile.ui.state.modelLabel(UiStore.model)?.first) { sheet = "model" })
+                add(MenuAction("Session info", PhIcons.Info) { sheet = "session" })
+                add(MenuAction("Session tree", PhIcons.Branch) { sheet = "tree" })
+                add(MenuAction("Copy last reply", PhIcons.Copy, run = cmd("copy")))
+                add(MenuAction("Export & share", PhIcons.Share, hint = "html", run = cmd("export")))
+                if (running) add(MenuAction("Stop run", PhIcons.Stop) { UiStore.stop(t) })
+                add(MenuAction("Delete task", PhIcons.Trash, danger = true, confirm = "Tap again to delete") {
+                    onBack(); UiStore.delete(t) })
+            }) { if (sheet == "menu") sheet = null }
+        }
     }
 }
 
@@ -301,7 +315,7 @@ private fun Header(t: TaskUi, onBack: () -> Unit, onMenu: () -> Unit) {
                 Text(parts.joinToString(" · "), style = Ph.monoSmall, maxLines = 1)
             }
         }
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Rename task") { onMenu() },
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Task options") { onMenu() },
             contentAlignment = Alignment.Center) { PhIcon(PhIcons.More, Ph.TextSoft, 20.dp, "Task options") }
     }
 }

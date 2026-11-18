@@ -46,6 +46,7 @@ import io.github.pimobile.ui.components.PhIcon
 import io.github.pimobile.ui.components.PhIcons
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
+import io.github.pimobile.ui.state.modelLabel
 import io.github.pimobile.ui.theme.Ph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -313,5 +314,41 @@ private fun About() {
                 modifier = Modifier.clickable { uri.openUri(link) }.padding(vertical = 2.dp))
         }
         Box(Modifier.size(1.dp))
+    }
+}
+
+// --------------------------------------------------------------- task menu
+
+/** One row of a task's action sheet. [confirm] asks for a second tap first. */
+class MenuAction(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val hint: String? = null,
+                 val danger: Boolean = false, val confirm: String? = null, val run: () -> Unit)
+
+@Composable
+fun TaskMenuSheet(task: TaskUi, actions: List<MenuAction>, onDismiss: () -> Unit) {
+    var armed by remember { mutableStateOf<String?>(null) }
+    PhSheet(onDismiss) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("#${task.task.number} ", style = Ph.heading.copy(fontFamily = Ph.Mono, color = Ph.Muted))
+            Text(task.title, style = Ph.heading, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(task.task.cwd.name,
+            style = Ph.monoSmall, modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 10.dp))
+        actions.forEachIndexed { i, a ->
+            if (a.danger && i > 0) Box(Modifier.padding(vertical = 6.dp, horizontal = 20.dp).fillMaxWidth().heightIn(min = 1.dp, max = 1.dp).background(Ph.Line))
+            val isArmed = armed == a.label
+            val color = if (a.danger) Ph.Red else Ph.Text
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                    .background(if (isArmed) Ph.RedWash else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable(onClickLabel = a.label) {
+                        if (a.confirm != null && !isArmed) armed = a.label else { onDismiss(); a.run() }
+                    }.padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                PhIcon(a.icon, if (a.danger) Ph.Red else Ph.TextSoft, 20.dp)
+                Text(if (isArmed) a.confirm!! else a.label, style = Ph.body.copy(color = color, fontSize = 15.sp), modifier = Modifier.weight(1f))
+                (if (isArmed) "session kept on disk" else a.hint)?.let { Text(it, style = Ph.monoSmall) }
+            }
+        }
     }
 }

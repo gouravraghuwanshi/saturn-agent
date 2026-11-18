@@ -43,6 +43,12 @@ object PhIcons {
     val Cube = stroke("M12 3l8 4.5v9L12 21l-8-4.5v-9z", "M12 12l8-4.5M12 12v9M12 12L4 7.5", width = 1.7f)
     val Warning = stroke("M12 3l9 16H3z", "M12 10v4M12 17h.01")
     val Chevron = stroke("M6 9l6 6 6-6")
+    val Pencil = stroke("M4 20h4L19 9l-4-4L4 16z", "M13 7l4 4")
+    val Info = stroke(circle(12f, 12f, 9f), "M12 11v5M12 8h.01")
+    val Branch = stroke(circle(6f, 6f, 2f), circle(6f, 18f, 2f), circle(18f, 8f, 2f), "M6 8v8M18 10c0 4-6 3-12 6")
+    val Share = stroke("M12 15V4M8 8l4-4 4 4", "M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5")
+    val Copy = stroke("M9 9h10v10H9z", "M5 15V5h10")
+    val Trash = stroke("M4 7h16M10 11v6M14 11v6", "M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3")
     val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
 }
 

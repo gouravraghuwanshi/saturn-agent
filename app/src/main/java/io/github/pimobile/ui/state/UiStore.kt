@@ -446,3 +446,13 @@ object UiStore : TaskManager.Listener {
             .takeLast(4000)
     }
 }
+
+/** "openrouter/deepseek/deepseek-v4-flash" → ("deepseek-v4-flash", "openrouter"). */
+fun modelLabel(model: String?): Pair<String, String>? {
+    model ?: return null
+    val provider = model.substringBefore('/')
+    val id = model.substringAfter('/').substringAfterLast('/')
+    // OpenRouter-style variants (":free", ":nitro") read better next to the provider.
+    val variant = id.substringAfter(':', "")
+    return id.substringBefore(':').ifBlank { model } to (if (variant.isNotEmpty()) "$provider $variant" else provider)
+}

@@ -421,6 +421,8 @@ private fun About() {
             style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.TextSoft))
         Text("Open source", style = Ph.title.copy(fontSize = 13.sp), modifier = Modifier.padding(top = 4.dp))
         listOf(
+            "Saturn source code — Apache-2.0" to "https://github.com/gouravraghuwanshi/saturn-agent",
+            "Privacy" to "https://github.com/gouravraghuwanshi/saturn-agent/blob/main/PRIVACY.md",
             "Pi coding agent — MIT" to "https://pi.dev",
             "Node.js — MIT" to "https://nodejs.org",
             "npm — Artistic-2.0" to "https://github.com/npm/cli",

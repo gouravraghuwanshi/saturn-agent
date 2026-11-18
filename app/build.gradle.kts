@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -9,12 +11,31 @@ android {
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "io.github.pimobile.spike"
+        applicationId = (findProperty("appId") as String?) ?: "io.github.gouravraghuwanshi.saturn" // -PappId=… for the old dev install
         minSdk = 29
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.1.0-dev"
+        versionCode = 3
+        versionName = "0.1.0"
         ndk { abiFilters += "arm64-v8a" }
+    }
+
+    // Release signing: keystore.properties lives outside the repo (see RELEASING.md).
+    val signing = rootProject.file("keystore.properties").takeIf { it.exists() }
+        ?: file(System.getProperty("user.home") + "/saturn-keys/keystore.properties").takeIf { it.exists() }
+    signingConfigs {
+        if (signing != null) create("release") {
+            val p = Properties().apply { signing.inputStream().use { load(it) } }
+            storeFile = file(p.getProperty("storeFile"))
+            storePassword = p.getProperty("storePassword")
+            keyAlias = p.getProperty("keyAlias")
+            keyPassword = p.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false // reflection + JSON everywhere; size is dominated by the runtime anyway
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
 
     buildFeatures { compose = true }

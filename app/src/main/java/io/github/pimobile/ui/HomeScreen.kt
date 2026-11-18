@@ -469,7 +469,7 @@ private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect
             } else {
                 val last = t.lastError ?: (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text
                 last?.takeIf { it.isNotBlank() }?.let {
-                    Text(it.lines().firstOrNull { l -> l.isNotBlank() }.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    Text(plainPreview(it), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = Ph.monoSmall.copy(color = if (t.lastError != null) Ph.Red else Ph.Muted),
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp))
                 }
@@ -551,3 +551,11 @@ private fun UndoBar(u: UiStore.Undo) {
                 .padding(horizontal = 14.dp, vertical = 12.dp))
     }
 }
+
+
+/** First line of a reply without markdown marks, for the card preview. */
+private fun plainPreview(md: String): String =
+    md.lines().map { it.trim() }.firstOrNull { it.isNotBlank() && !it.startsWith("```") && !it.matches(Regex("[-*_|: ]+")) }.orEmpty()
+        .replace(Regex("^(#{1,6}\\s+|[-*+]\\s+|>\\s*|\\d+\\.\\s+)"), "")
+        .replace(Regex("\\[([^]]*)]\\([^)]*\\)"), "$1")
+        .replace(Regex("[*_`~]{1,3}"), "")

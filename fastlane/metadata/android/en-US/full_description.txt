@@ -1,0 +1,23 @@
+Saturn is an AI agent that actually lives on your phone.
+
+Not a chat window that sends everything to a server and back. Saturn runs the real Pi coding agent right on your device, with its own little Linux toolbox: bash, node, npm, git, curl and ripgrep. You bring the brains (any model you like: OpenRouter, Claude, ChatGPT, Gemini, DeepSeek and lots more) and Saturn does the work.
+
+<b>What it can do</b>
+• Every request becomes its own task. Start a few at once, check back later, tap a card to keep going.
+• Build things you can keep: small web apps, notes, reports and scripts land in Artifacts, ready to open or share.
+• Use your phone: torch, camera, battery, location, notifications, text-to-speech, sensors and more.
+• Set timers and repeating jobs ("turn the torch off in 10 minutes", "every weekday at 9, summarise the news"). They run even when the app is closed.
+• Tap through your other apps for you, if you turn that on. There's always a Stop button, and it asks before sending, paying or deleting anything.
+• Browse the web in a built-in browser you can watch, and take over whenever you want.
+• Send it photos and files: PDFs, docs, spreadsheets, code, whatever.
+• Branch a conversation to try a different idea without losing the original.
+• Install extensions, skills and themes from pi.dev with one tap.
+• Open a real terminal whenever you want to poke around yourself.
+
+<b>Your stuff stays yours</b>
+Saturn is open source. Your files, projects and keys stay on your phone, and keys are encrypted with the Android Keystore. There are no accounts, no ads, no analytics and no Saturn server. The only thing that leaves your phone is what the agent sends to the AI provider you picked, so it can think.
+
+<b>Heads up</b>
+Saturn needs an AI model to work. Sign in with a subscription you already have, or paste an API key. Some providers have free models.
+
+Source code, issues and ideas: https://github.com/gouravraghuwanshi/saturn-agent

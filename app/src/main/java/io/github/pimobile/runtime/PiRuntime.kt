@@ -25,6 +25,8 @@ class PiRuntime private constructor(private val ctx: Context) {
             instance ?: PiRuntime(ctx.applicationContext).also { instance = it }
         }
 
+        const val GENERAL = "general"
+
         /** command name -> packaged executable in the native lib dir */
         private val BIN = mapOf(
             "node" to "libx_node.so",
@@ -53,6 +55,19 @@ class PiRuntime private constructor(private val ctx: Context) {
     val projects = File(home, "projects")
     /** Files Saturn makes for the user (documents, pages, images…); shown in the Artifacts screen. */
     val artifacts = File(home, "artifacts")
+    /** Project name for a working directory: its top folder under ~/projects ("general" for the root). */
+    fun projectName(cwd: File): String {
+        val rel = runCatching { cwd.canonicalFile.relativeTo(projects.canonicalFile).path }.getOrNull()
+        return when {
+            rel == null || rel.startsWith("..") -> cwd.name
+            rel.isEmpty() -> GENERAL
+            else -> rel.substringBefore('/')
+        }
+    }
+
+    /** Where a project's artifacts go. */
+    fun artifactsFor(cwd: File) = File(artifacts, projectName(cwd))
+
     /** Interactive shell profile for the app's Terminal. */
     val bashrc = File(usr, "etc/saturn-bashrc")
     val tmp = File(ctx.cacheDir, "tmp")
@@ -96,6 +111,10 @@ class PiRuntime private constructor(private val ctx: Context) {
         }
         writeConfig()
         writeShims()
+        // Artifacts are grouped by project; files from before that belong to "general".
+        artifacts.listFiles()?.filter { it.isFile }?.forEach { f ->
+            File(artifacts, GENERAL).mkdirs(); f.renameTo(File(artifacts, "$GENERAL/${f.name}"))
+        }
         prepared = true
     }
 
@@ -197,8 +216,9 @@ class PiRuntime private constructor(private val ctx: Context) {
             |## Artifacts
             |When the user asks you to make something for them to keep, view or share — a document,
             |report, note, web page, chart, image, spreadsheet, slide deck, script, data file — save it in
-            |the artifacts folder: ${'$'}SATURN_ARTIFACTS (${artifacts.path}). Files there appear in the app's
-            |Artifacts screen, where the user can open, preview and share them.
+            |the current project's artifacts folder: the path in ${'$'}SATURN_ARTIFACTS, also given in the
+            |<saturn-artifacts> section. Files there appear in the app's Artifacts screen, marked with
+            |this project, where the user can open, preview and share them.
             |- Use clear, descriptive file names with the right extension (e.g. trip-plan.md, budget.csv).
             |- For anything visual or interactive, prefer one self-contained .html file (inline CSS/JS;
             |  it is previewed in an Android WebView, so make it look good on a phone screen).

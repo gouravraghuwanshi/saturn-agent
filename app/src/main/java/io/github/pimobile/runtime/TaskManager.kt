@@ -111,7 +111,11 @@ object TaskManager {
     private val DIALOG_METHODS = setOf("select", "confirm", "input", "editor")
 
     /** Environment for a task's pi process (RPC or TUI): credentials + app integration. */
-    fun envFor(task: Task): Map<String, String> = sessionEnv + ("PIMOBILE_TASK_ID" to task.id)
+    fun envFor(task: Task): Map<String, String> = sessionEnv + mapOf(
+        "PIMOBILE_TASK_ID" to task.id,
+        "SATURN_PROJECT" to runtime.projectName(task.cwd),
+        "SATURN_ARTIFACTS" to runtime.artifactsFor(task.cwd).apply { mkdirs() }.path,
+    )
 
     /** Synthetic record emitted after a task's pi process is up. */
     const val SESSION_STARTED = "app_session_started"

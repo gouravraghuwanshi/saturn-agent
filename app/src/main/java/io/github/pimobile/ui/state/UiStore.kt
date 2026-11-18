@@ -114,6 +114,7 @@ object UiStore : TaskManager.Listener {
         io.github.pimobile.browser.AppLinks.init(app)
         applySecrets()
         model = prefs.getString("model", null)
+        project = prefs.getString("project", null)?.let { File(it) }
         TaskManager.tasks.forEach { ui(it) }
         TaskManager.addListener(this)
     }
@@ -220,6 +221,28 @@ object UiStore : TaskManager.Listener {
         TaskManager.setArchived(ui.task, archived)
         if (undoable) offerUndo(Undo("Task #${ui.task.number} " + if (archived) "archived" else "restored",
             revert = { setArchived(ui, !archived, undoable = false) }))
+    }
+
+    // ------------------------------------------------------------- projects
+
+    /** The project the home screen shows (its tasks) and new tasks start in. */
+    var project by mutableStateOf<File?>(null)
+        private set
+    val currentProject: File get() = project?.takeIf { it.isDirectory } ?: runtime.projects
+
+    fun selectProject(dir: File) {
+        project = dir
+        prefs.edit().putString("project", dir.path).apply()
+    }
+
+    fun tasksIn(dir: File) = tasks.filter { runtime.projectName(it.task.cwd) == runtime.projectName(dir) }
+
+    /** Deletes a project folder and its task cards (pi's session files and the artifacts are kept). */
+    fun deleteProject(dir: File) {
+        if (dir.canonicalFile == runtime.projects.canonicalFile) return
+        tasksIn(dir).forEach { delete(it) }
+        Thread { dir.deleteRecursively() }.start()
+        if (currentProject.canonicalFile == dir.canonicalFile) selectProject(runtime.projects)
     }
 
     /** An installed package whose extension stops pi from starting (seen in a task's error output). */

@@ -17,6 +17,18 @@ export default function (pi) {
 
   let loginAbort = null;
 
+  // Each task saves artifacts in its project's folder; say where, every run.
+  if (process.env.SATURN_ARTIFACTS) {
+    pi.on("before_agent_start", async (event) => {
+      const o = event.systemPromptOptions;
+      if (o) {
+        o.sections ??= {};
+        o.sections["saturn-artifacts"] =
+          `Project: ${process.env.SATURN_PROJECT ?? "general"}\nArtifacts folder: ${process.env.SATURN_ARTIFACTS}`;
+      }
+    });
+  }
+
   pi.registerCommand("pimobile-providers", {
     description: "(Saturn app) list login providers",
     handler: async (_args, ctx) => {

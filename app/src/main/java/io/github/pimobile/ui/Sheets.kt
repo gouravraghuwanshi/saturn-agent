@@ -231,25 +231,46 @@ fun ModelSheet(task: TaskUi?, onDismiss: () -> Unit) {
 @Composable
 fun ProjectSheet(current: File, onPick: (File) -> Unit, onDismiss: () -> Unit) {
     val root = UiStore.runtime.projects
-    var dirs by remember { mutableStateOf(root.listFiles { f -> f.isDirectory }?.sortedBy { it.name } ?: emptyList()) }
+    fun scan() = root.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }?.sortedBy { it.name.lowercase() } ?: emptyList()
+    var dirs by remember { mutableStateOf(scan()) }
     var name by remember { mutableStateOf("") }
+    var armed by remember { mutableStateOf<String?>(null) } // project whose delete was tapped once
     PhSheet(onDismiss) {
-        SheetTitle("Project", "Each task runs in a project folder. Tasks can clone repos into it.")
-        (listOf(root) + dirs).forEach { d ->
-            val label = if (d == root) "~/projects" else d.name
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(d); onDismiss() }.padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                PhIcon(PhIcons.Folder, if (d == current) Ph.Amber else Ph.Muted, 18.dp)
-                Text(label, style = Ph.mono.copy(fontSize = 14.sp, color = if (d == current) Ph.Amber else Ph.Text),
-                    modifier = Modifier.padding(start = 12.dp))
+        SheetTitle("Projects", "Each project has its own tasks and artifacts.")
+        LazyColumn(Modifier.heightIn(max = 440.dp)) {
+            items(listOf(root) + dirs, key = { it.path }) { d ->
+                val isRoot = d == root
+                val on = d.canonicalPath == current.canonicalPath
+                val tasks = UiStore.tasksIn(d)
+                val running = tasks.count { it.status == io.github.pimobile.runtime.TaskManager.Status.RUNNING }
+                val isArmed = armed == d.path
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .background(if (isArmed) Ph.RedWash else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable { armed = null; onPick(d); onDismiss() }.padding(start = 20.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    PhIcon(PhIcons.Folder, if (on) Ph.Amber else Ph.Muted, 18.dp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(if (isRoot) "General" else d.name, style = Ph.mono.copy(fontSize = 14.sp, color = if (on) Ph.Amber else Ph.Text),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (isArmed) "Deletes its files" + (if (tasks.isEmpty()) "" else " and ${tasks.size} task${if (tasks.size == 1) "" else "s"}") + " · tap again"
+                            else buildString {
+                                append(if (tasks.size == 1) "1 task" else "${tasks.size} tasks")
+                                if (running > 0) append(" · $running running")
+                                if (isRoot) append(" · ~/projects")
+                            }, style = Ph.monoSmall.copy(color = if (isArmed) Ph.Red else Ph.Muted))
+                    }
+                    if (!isRoot) Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Delete project ${d.name}") {
+                        if (isArmed) { UiStore.deleteProject(d); dirs = dirs - d; armed = null } else armed = d.path
+                    }, contentAlignment = Alignment.Center) { PhIcon(PhIcons.Trash, if (isArmed) Ph.Red else Ph.Muted, 18.dp, "Delete project") }
+                }
             }
         }
         Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { Field(name, { name = it.filter { c -> c.isLetterOrDigit() || c in "-_." } }, "new-project") }
-            PrimaryButton("Create", enabled = name.isNotBlank()) {
+            PrimaryButton("Create", enabled = name.isNotBlank() && !name.equals(io.github.pimobile.runtime.PiRuntime.GENERAL, true)) {
                 val d = File(root, name).apply { mkdirs() }
-                dirs = root.listFiles { f -> f.isDirectory }?.sortedBy { it.name } ?: emptyList()
+                dirs = scan()
                 onPick(d); onDismiss()
             }
         }

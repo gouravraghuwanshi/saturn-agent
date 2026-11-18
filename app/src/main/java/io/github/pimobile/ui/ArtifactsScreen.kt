@@ -95,42 +95,77 @@ private fun mime(f: File) = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
 
 private fun uriOf(ctx: android.content.Context, f: File) = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
 
-/** Files Saturn made (in $SATURN_ARTIFACTS). Tap to preview; share or open them elsewhere. */
+private const val ALL = "*"
+
+/**
+ * Files Saturn made, grouped by project (artifacts/<project>/). Opens on the
+ * current project; chips switch projects or show everything, each card marked
+ * with its project. Tap to preview; share or open them elsewhere.
+ */
 @Composable
 fun ArtifactsScreen(onBack: () -> Unit) {
-    val root = UiStore.runtime.artifacts
-    var path by rememberSaveable { mutableStateOf(root.path) }
+    val all = UiStore.runtime.artifacts
+    val current = UiStore.runtime.projectName(UiStore.currentProject)
+    var scope by rememberSaveable { mutableStateOf(current) }
+    var path by rememberSaveable { mutableStateOf<String?>(null) } // a subfolder being browsed
     var open by rememberSaveable { mutableStateOf<String?>(null) }
-    val dir = File(path)
-    BackHandler { if (open != null) open = null else if (dir != root) path = dir.parent ?: root.path else onBack() }
+    val root = if (scope == ALL) all else File(all, scope)
+    val dir = path?.let { File(it) } ?: root
+    fun up() { path = dir.parentFile?.takeIf { it.path.startsWith(root.path) && it != root }?.path }
+    BackHandler { if (open != null) open = null else if (dir != root) up() else onBack() }
 
     // Saturn may be writing files right now: keep the grid fresh while it's on screen.
-    val files by produceState(emptyList<File>(), path) {
+    val files by produceState(emptyList<File>(), scope, path) {
         while (true) {
-            val next = withContext(Dispatchers.IO) { root.mkdirs(); list(File(path)) }
+            val next = withContext(Dispatchers.IO) {
+                all.mkdirs()
+                if (scope == ALL && path == null) all.listFiles { f -> f.isDirectory }.orEmpty().flatMap { list(it) }
+                    .sortedWith(compareByDescending<File> { it.isDirectory }.thenByDescending { it.lastModified() })
+                else list(dir)
+            }
             if (next.map { it.path to it.lastModified() } != value.map { it.path to it.lastModified() }) value = next
             delay(1500)
+        }
+    }
+    val projects by produceState(listOf(current), files) {
+        value = withContext(Dispatchers.IO) {
+            (listOf(current) + all.listFiles { f -> f.isDirectory && f.listFiles()?.isNotEmpty() == true }.orEmpty().map { it.name }).distinct()
         }
     }
 
     open?.let { p -> ArtifactViewer(File(p), onClose = { open = null }); return }
 
     Column(Modifier.fillMaxSize().background(Ph.Ground).statusBarsPadding()) {
-        Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
-                .clickable(onClickLabel = "Back") { if (dir != root) path = dir.parent ?: root.path else onBack() },
+                .clickable(onClickLabel = "Back") { if (dir != root) up() else onBack() },
                 contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 22.dp, "Back") }
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                 Text(if (dir == root) "Artifacts" else dir.name, style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (dir == root) "${files.size} ${if (files.size == 1) "item" else "items"} · made by Saturn" else "artifacts/" + dir.relativeTo(root).path,
-                    style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (dir == root) "${files.size} ${if (files.size == 1) "item" else "items"} · " + (if (scope == ALL) "all projects" else label(scope))
+                    else "artifacts/" + dir.relativeTo(all).path, style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        // project chips
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (projects + ALL).forEach { name ->
+                val on = scope == name
+                Row(Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) Ph.AmberWash else Ph.Surface)
+                    .border(1.dp, if (on) Ph.AmberLine else Ph.Line, RoundedCornerShape(10.dp))
+                    .clickable(onClickLabel = "Show ${label(name)}") { scope = name; path = null }
+                    .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (name != ALL) PhIcon(PhIcons.Folder, if (on) Ph.Amber else Ph.Muted, 14.dp)
+                    Text(if (name == ALL) "All" else label(name), style = Ph.mono.copy(color = if (on) Ph.Amber else Ph.TextSoft))
+                }
             }
         }
         if (files.isEmpty()) {
             Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 PhIcon(PhIcons.Sparkle, Ph.LineStrong, 64.dp)
                 Spacer(Modifier.height(16.dp))
-                Text("Nothing here yet", style = Ph.title.copy(fontSize = 18.sp))
+                Text(if (scope == ALL) "Nothing here yet" else "No artifacts in ${label(scope)} yet", style = Ph.title.copy(fontSize = 18.sp))
                 Spacer(Modifier.height(8.dp))
                 Text("Ask Saturn to make something — a web page, a report, a chart, a CSV. It lands here, ready to preview and share.",
                     style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center)
@@ -144,14 +179,18 @@ fun ArtifactsScreen(onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(files, key = { it.path }) { f ->
-                ArtifactCard(f) { if (f.isDirectory) path = f.path else open = f.path }
+                // Mark the project when files from several projects share the grid.
+                val project = if (scope == ALL) f.relativeTo(all).path.substringBefore('/') else null
+                ArtifactCard(f, project?.let { label(it) }) { if (f.isDirectory) path = f.path else open = f.path }
             }
         }
     }
 }
 
+private fun label(project: String) = if (project == io.github.pimobile.runtime.PiRuntime.GENERAL) "General" else project
+
 @Composable
-private fun ArtifactCard(f: File, onClick: () -> Unit) {
+private fun ArtifactCard(f: File, project: String?, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     val ext = f.extension.lowercase()
     Column(Modifier.clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape).clickable(onClickLabel = "Open ${f.name}") { onClick() }) {
@@ -186,6 +225,12 @@ private fun ArtifactCard(f: File, onClick: () -> Unit) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(f.name, style = Ph.body.copy(color = Ph.Text, fontSize = 13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${size(f)} · ${SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date(f.lastModified()))}", style = Ph.monoSmall.copy(fontSize = 10.sp), maxLines = 1)
+            project?.let {
+                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    PhIcon(PhIcons.Folder, Ph.Amber, 11.dp)
+                    Text(it, style = Ph.monoSmall.copy(fontSize = 10.sp, color = Ph.Amber), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }

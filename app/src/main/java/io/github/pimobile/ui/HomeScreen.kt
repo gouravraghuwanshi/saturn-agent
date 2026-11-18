@@ -66,6 +66,7 @@ import io.github.pimobile.ui.theme.Ph
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import java.io.File
 import java.util.Locale
 
@@ -119,11 +120,16 @@ fun HomeScreen(
         }
     }
     var input by remember { mutableStateOf(TextFieldValue("")) }
-    var project by rememberSaveable { mutableStateOf(UiStore.runtime.projects.path) }
+    val projectDir = UiStore.currentProject
+    val project = projectDir.path
+    val isGeneral = projectDir.canonicalPath == UiStore.runtime.projects.canonicalPath
+    val projectLabel = if (isGeneral) "General" else projectDir.name
+    val projectTasks = UiStore.tasksIn(projectDir)
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var showArchived by rememberSaveable { mutableStateOf(false) }
-    val activeCount = UiStore.tasks.count { it.status in ACTIVE }
-    val spent = UiStore.tasks.sumOf { it.cost }
+    val spent = projectTasks.sumOf { it.cost }
+    // Work going on in other projects stays visible from here.
+    val elsewhere = UiStore.tasks.count { it.status in ACTIVE } - projectTasks.count { it.status in ACTIVE }
 
     var loginArg by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -148,7 +154,7 @@ fun HomeScreen(
                 IconBox(PhIcons.Close, "Clear selection") { selected.clear() }
                 Column(Modifier.weight(1f)) {
                     Text("${selected.size} selected", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
-                    val visibleIds = UiStore.tasks.filterNot { it.hidden }.map { it.task.id }
+                    val visibleIds = projectTasks.filterNot { it.hidden }.map { it.task.id }
                     Text(if (selected.size < visibleIds.size) "select all" else "select none", style = Ph.monoSmall.copy(color = Ph.Amber),
                         modifier = Modifier.clickable {
                             if (selected.size < visibleIds.size) { selected.clear(); selected.addAll(visibleIds) } else selected.clear()
@@ -181,17 +187,33 @@ fun HomeScreen(
 
 
             io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
+            // ---- project switcher: the list below is this project's tasks
+            Row(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = "Switch project") { sheet = "project" }.padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PhIcon(PhIcons.Folder, Ph.Amber, 16.dp)
+                    Text(projectLabel, style = Ph.mono.copy(color = Ph.Text, fontWeight = FontWeight.SemiBold), maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+                    PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp)
+                }
+                Spacer(Modifier.weight(1f))
+                if (elsewhere > 0) Text("$elsewhere running elsewhere", style = Ph.monoSmall.copy(color = Ph.Amber),
+                    modifier = Modifier.clickable { sheet = "project" })
+                else if (spent >= 0.005) Text(String.format(Locale.US, "$%.2f spent", spent), style = Ph.monoSmall)
+            }
             // ---- tasks
-            if (UiStore.tasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) { sheet = "login" }
+            if (projectTasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
+                project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() }) { sheet = "login" }
             else LazyColumn(
                 Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val visible = UiStore.tasks.filterNot { it.hidden }
+                val visible = projectTasks.filterNot { it.hidden }
                 val active = visible.filter { it.status in ACTIVE }
                 val earlier = visible.filter { it.status !in ACTIVE && !it.archived }
                 val archived = visible.filter { it.status !in ACTIVE && it.archived }
-                val spentLabel = if (spent >= 0.005) String.format(Locale.US, "$%.2f spent", spent) else null
+                val spentLabel: String? = null // shown next to the project switcher
                 fun section(list: List<TaskUi>, key: String, title: String, trailing: String?, first: Boolean,
                             onHeader: (() -> Unit)? = null, collapsed: Boolean = false) {
                     if (list.isEmpty()) return
@@ -250,7 +272,7 @@ fun HomeScreen(
                     }
                 },
                 leading = {
-                    ChipButton(File(project).let { if (it == UiStore.runtime.projects) "projects" else it.name },
+                    ChipButton(projectLabel,
                         icon = PhIcons.Folder, description = "Choose project") { sheet = "project" }
                 },
             )
@@ -263,7 +285,7 @@ fun HomeScreen(
     when (sheet) {
         "settings" -> SettingsSheet { sheet = null }
         "model" -> ModelSheet(null) { sheet = null }
-        "project" -> ProjectSheet(File(project), { project = it.path }) { sheet = null }
+        "project" -> ProjectSheet(projectDir, { selected.clear(); UiStore.selectProject(it) }) { sheet = null }
         "login" -> LoginSheet(initialQuery = loginArg) { sheet = null }
         "logout" -> LoginSheet(logoutMode = true) { sheet = null }
         "resume" -> ResumeSheet(onOpen = { onOpen(it) }) { sheet = null }
@@ -271,7 +293,7 @@ fun HomeScreen(
         "saturn" -> SaturnSheet(
             onTerminal = onTerminal, onArtifacts = onArtifacts, onStore = onStore,
             onImport = { importFrom.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/json", "*/*")) },
-            onSelect = { UiStore.tasks.firstOrNull { !it.hidden }?.let { selected.add(it.task.id) } },
+            onSelect = { projectTasks.firstOrNull { !it.hidden }?.let { selected.add(it.task.id) } },
         ) { sheet = null }
     }
 }
@@ -280,7 +302,7 @@ fun HomeScreen(
 @Composable
 private fun SaturnSheet(onTerminal: () -> Unit, onArtifacts: () -> Unit, onStore: () -> Unit,
                         onImport: () -> Unit, onSelect: () -> Unit, onDismiss: () -> Unit) {
-    val artifacts = remember { UiStore.runtime.artifacts.listFiles()?.count { !it.name.startsWith(".") } ?: 0 }
+    val artifacts = remember { UiStore.runtime.artifacts.walkTopDown().maxDepth(2).count { it.isFile && !it.name.startsWith(".") } }
     PhSheet(onDismiss) {
         Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -324,12 +346,12 @@ fun IconBox(icon: androidx.compose.ui.graphics.vector.ImageVector, description: 
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier, hasKey: Boolean, onSettings: () -> Unit) {
+private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = null, onSettings: () -> Unit) {
     Column(modifier.fillMaxWidth().padding(horizontal = 32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
         androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_glyph), contentDescription = null, tint = Ph.LineStrong, modifier = Modifier.size(84.dp))
         Spacer(Modifier.height(16.dp))
-        Text(if (hasKey) "What should Saturn work on?" else "Connect a model to begin",
+        Text(if (!hasKey) "Connect a model to begin" else if (project != null) "No tasks in $project yet" else "What should Saturn work on?",
             style = Ph.title.copy(fontSize = 18.sp), textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Text(

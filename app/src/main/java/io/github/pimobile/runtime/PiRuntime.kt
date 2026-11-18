@@ -154,10 +154,10 @@ class PiRuntime private constructor(private val ctx: Context) {
         for (name in listOf("pimobile-browser.js", "pimobile-app.js")) {
             ctx.assets.open(name).use { i -> File(ext, name).outputStream().use { i.copyTo(it) } }
         }
-        // The app is called Phi; pi stays unmodified and just learns its name here.
+        // The app is called Saturn; pi stays unmodified and just learns its name here.
         File(home, ".pi/agent/APPEND_SYSTEM.md").writeText(
-            "You are running inside Phi, an Android app. In this app you are called Phi; " +
-                "introduce yourself as Phi if asked. The user works on a phone: keep answers concise.\n"
+            "You are running inside Saturn Agent, an Android app. In this app you are called Saturn; " +
+                "introduce yourself as Saturn if asked. The user works on a phone: keep answers concise.\n"
         )
     }
 

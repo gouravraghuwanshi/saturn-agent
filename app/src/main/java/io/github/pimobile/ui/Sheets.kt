@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -118,7 +119,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
 
     PhSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            SheetTitle("Settings", "Keys are encrypted with the Android Keystore and only passed to Phi's engine. For subscriptions use /login.")
+            SheetTitle("Settings", "Keys are encrypted with the Android Keystore and only passed to Saturn's engine. For subscriptions use /login.")
             Text("API KEYS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp))
             PROVIDERS.forEach { (name, env) ->
                 val set = secrets[env]
@@ -287,14 +288,14 @@ private fun About() {
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(Ph.Amber), contentAlignment = Alignment.Center) {
-                Text("φ", style = Ph.mono.copy(fontSize = 20.sp, color = Ph.AmberInk))
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
             }
             Column {
-                Text("Phi $app", style = Ph.title)
+                Text("Saturn Agent $app", style = Ph.title)
                 Text("powered by the Pi coding agent $pi", style = Ph.monoSmall)
             }
         }
-        Text("Phi runs the real, unmodified Pi on your phone, with its own Linux userland.",
+        Text("Saturn runs the real, unmodified Pi on your phone, with its own Linux userland.",
             style = Ph.body.copy(fontSize = 13.sp))
         Text(listOfNotNull("pi $pi", "node ${rt?.optString("node")}", "npm $npm", "bash ${rt?.optString("bash")}",
             "git ${rt?.optString("git")}", "ripgrep ${rt?.optString("ripgrep")}", "curl ${rt?.optString("curl")}").joinToString(" · "),

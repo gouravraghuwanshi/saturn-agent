@@ -80,7 +80,7 @@ private fun Card(content: @Composable () -> Unit) = Column(
 @Composable
 private fun copier(): (String) -> Unit {
     val ctx = LocalContext.current
-    return { t -> ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Phi", t)) }
+    return { t -> ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Saturn", t)) }
 }
 
 // ------------------------------------------------------------------- login
@@ -288,7 +288,7 @@ fun TreeSheet(t: TaskUi, onDismiss: () -> Unit) {
                         onDismiss()
                     }.padding(start = (20 + r.depth * 14).dp, end = 20.dp, top = 9.dp, bottom = 9.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (r.user) "›" else "φ", style = Ph.mono.copy(color = if (r.onPath) Ph.Amber else Ph.Muted), modifier = Modifier.width(12.dp))
+                        Text(if (r.user) "›" else "◦", style = Ph.mono.copy(color = if (r.onPath) Ph.Amber else Ph.Muted), modifier = Modifier.width(12.dp))
                         Text(r.text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                             style = (if (r.user) Ph.body else Ph.mono).copy(fontSize = 13.sp, color = if (r.onPath) Ph.Text else Ph.TextBody))
                         if (r.leaf) Text("● here", style = Ph.monoSmall.copy(color = Ph.Amber))
@@ -379,7 +379,7 @@ fun SessionSheet(t: TaskUi, onDismiss: () -> Unit) {
             val ctx = d.optJSONObject("contextUsage")
             fun k(n: Long) = if (n >= 1000) String.format(Locale.US, "%.1fk", n / 1000.0) else "$n"
             val rows = listOf(
-                "Messages" to "${d.optInt("userMessages")} you · ${d.optInt("assistantMessages")} Phi · ${d.optInt("toolCalls")} tool calls",
+                "Messages" to "${d.optInt("userMessages")} you · ${d.optInt("assistantMessages")} Saturn · ${d.optInt("toolCalls")} tool calls",
                 "Tokens" to "${k(tok.optLong("input"))} in · ${k(tok.optLong("output"))} out · ${k(tok.optLong("cacheRead"))} cached",
                 "Cost" to String.format(Locale.US, "$%.4f", d.optDouble("cost", 0.0)),
                 "Context" to (ctx?.let { "${k(it.optLong("tokens"))}" + (it.optDouble("percent", -1.0).takeIf { p -> p >= 0 }?.let { p -> String.format(Locale.US, " (%.1f%%)", p) } ?: "") } ?: "—"),

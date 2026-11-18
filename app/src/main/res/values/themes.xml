@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Dark from the first frame: no white flash before Compose draws. -->
-    <style name="Theme.Phi" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/phi_ground</item>
+    <style name="Theme.Saturn" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/brand_ground</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

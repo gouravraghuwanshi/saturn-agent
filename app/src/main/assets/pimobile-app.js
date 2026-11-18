@@ -1,4 +1,4 @@
-// pimobile-app — built-in extension of the Phi Android app.
+// pimobile-app — built-in extension of the Saturn Agent Android app.
 // Bridges pi built-ins that RPC mode does not expose (login/logout with pi's
 // own provider flows, session-tree navigation, reload) to the app's native UI.
 // The app invokes these hidden commands via RPC `prompt`; results go back as
@@ -13,12 +13,12 @@ const emit = (ctx, payload) => ctx.ui.notify("pimobile:" + JSON.stringify(payloa
 const parse = (args) => { try { return JSON.parse(args || "{}"); } catch { return {}; } };
 
 export default function (pi) {
-  if (!process.env.PIMOBILE_TASK_ID && !process.env.PIMOBILE_CONTROL) return; // not inside the Phi app
+  if (!process.env.PIMOBILE_TASK_ID && !process.env.PIMOBILE_CONTROL) return; // not inside the Saturn app
 
   let loginAbort = null;
 
   pi.registerCommand("pimobile-providers", {
-    description: "(Phi app) list login providers",
+    description: "(Saturn app) list login providers",
     handler: async (_args, ctx) => {
       try {
         const reg = ctx.modelRegistry;
@@ -45,7 +45,7 @@ export default function (pi) {
   });
 
   pi.registerCommand("pimobile-login", {
-    description: "(Phi app) log in with pi's provider flow",
+    description: "(Saturn app) log in with pi's provider flow",
     handler: async (args, ctx) => {
       const { provider, type } = parse(args);
       loginAbort?.abort();
@@ -86,12 +86,12 @@ export default function (pi) {
   });
 
   pi.registerCommand("pimobile-login-cancel", {
-    description: "(Phi app) cancel the running login",
+    description: "(Saturn app) cancel the running login",
     handler: async () => { loginAbort?.abort(); },
   });
 
   pi.registerCommand("pimobile-logout", {
-    description: "(Phi app) log out of a provider",
+    description: "(Saturn app) log out of a provider",
     handler: async (args, ctx) => {
       const { provider } = parse(args);
       try {
@@ -104,7 +104,7 @@ export default function (pi) {
   });
 
   pi.registerCommand("pimobile-tree", {
-    description: "(Phi app) move to another point of the session tree",
+    description: "(Saturn app) move to another point of the session tree",
     handler: async (args, ctx) => {
       const { entryId, summarize } = parse(args);
       try {
@@ -118,7 +118,7 @@ export default function (pi) {
   });
 
   pi.registerCommand("pimobile-reload", {
-    description: "(Phi app) reload extensions, skills, prompts and context files",
+    description: "(Saturn app) reload extensions, skills, prompts and context files",
     handler: async (_args, ctx) => {
       try { await ctx.reload(); emit(ctx, { type: "reloaded" }); }
       catch (e) { emit(ctx, { type: "error", scope: "reload", message: String(e?.message ?? e) }); }

@@ -1,6 +1,6 @@
-# Phi (pi-android)
+# Saturn Agent (pi-android)
 
-**Phi** is a standalone Android app running the real, unmodified
+**Saturn Agent** is a standalone Android app running the real, unmodified
 [Pi Coding Agent](https://pi.dev) (`@earendil-works/pi-coding-agent`) on-device.
 
 ## Status

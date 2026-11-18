@@ -167,7 +167,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         LaunchedEffect(r) {
             val text = r.optString("text").takeIf { it.isNotBlank() && it != "null" }
             if (text != null) ctx.getSystemService(android.content.ClipboardManager::class.java)
-                .setPrimaryClip(android.content.ClipData.newPlainText("Phi", text))
+                .setPrimaryClip(android.content.ClipData.newPlainText("Saturn", text))
             android.widget.Toast.makeText(ctx, if (text != null) "Copied the last reply" else "No reply to copy yet", android.widget.Toast.LENGTH_SHORT).show()
             t.responses.remove("get_last_assistant_text")
         }
@@ -232,7 +232,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             Toggle("steer", !followUp) { followUp = false }
                             Toggle("follow-up", followUp) { followUp = true }
                             Box(Modifier.weight(1f))
-                            Text(if (followUp) "sent when Phi finishes" else "sent after current step", style = Ph.monoSmall)
+                            Text(if (followUp) "sent when Saturn finishes" else "sent after current step", style = Ph.monoSmall)
                         }
                     }
                     Composer(
@@ -335,7 +335,7 @@ private fun TerminalBusy(onStop: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
         PulseDot(Ph.Amber, 9)
-        Text("Phi is working on this task", style = Ph.title, modifier = Modifier.padding(top = 16.dp))
+        Text("Saturn is working on this task", style = Ph.title, modifier = Modifier.padding(top = 16.dp))
         Text("The terminal opens this same session in pi's own TUI once the run is idle.",
             style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
@@ -357,7 +357,7 @@ private fun Toggle(label: String, on: Boolean, onClick: () -> Unit) {
 private fun Working(t: TaskUi) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulseDot(Ph.Amber, 7)
-        Text(if (t.status == Status.STARTING) "starting Phi" else "working · ${elapsed(t.runStartedAt)}", style = Ph.mono.copy(color = Ph.Muted))
+        Text(if (t.status == Status.STARTING) "starting Saturn" else "working · ${elapsed(t.runStartedAt)}", style = Ph.mono.copy(color = Ph.Muted))
         BlinkCursor()
     }
 }
@@ -406,7 +406,7 @@ private fun DialogCard(t: TaskUi, d: Item.Dialog) {
             .border(1.dp, if (d.answer == null) Ph.AmberLine else Ph.Line, shape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(d.title.ifBlank { "Phi needs your input" }, style = Ph.title.copy(fontSize = 14.sp))
+        Text(d.title.ifBlank { "Saturn needs your input" }, style = Ph.title.copy(fontSize = 14.sp))
         if (d.message.isNotBlank()) Text(d.message, style = Ph.body.copy(fontSize = 13.sp))
         val answered = d.answer
         if (answered != null) Text("→ $answered", style = Ph.mono.copy(color = Ph.Green))

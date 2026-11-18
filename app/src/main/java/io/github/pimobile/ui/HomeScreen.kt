@@ -104,10 +104,10 @@ fun HomeScreen(
             Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Ph.Amber), contentAlignment = Alignment.Center) {
-                    Text("φ", style = Ph.mono.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ph.AmberInk))
+                    androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
                 }
                 Column(Modifier.weight(1f).clickable { sheet = "model" }) {
-                    Text("Phi", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
+                    Text("Saturn", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
                     Text(UiStore.model ?: if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "auto model" else "not signed in · /login",
                         style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -146,7 +146,7 @@ fun HomeScreen(
         ) {
             Composer(
                 value = input, onValue = { input = it },
-                placeholder = "Ask Phi to do something…",
+                placeholder = "Ask Saturn to do something…",
                 commands = commands,
                 onSend = { text ->
                     input = TextFieldValue("")
@@ -193,9 +193,9 @@ fun IconBox(icon: androidx.compose.ui.graphics.vector.ImageVector, description: 
 private fun EmptyState(modifier: Modifier, hasKey: Boolean, onSettings: () -> Unit) {
     Column(modifier.fillMaxWidth().padding(horizontal = 32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("φ", style = Ph.mono.copy(fontSize = 56.sp, color = Ph.LineStrong))
+        androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_glyph), contentDescription = null, tint = Ph.LineStrong, modifier = Modifier.size(84.dp))
         Spacer(Modifier.height(16.dp))
-        Text(if (hasKey) "What should Phi work on?" else "Connect a model to begin",
+        Text(if (hasKey) "What should Saturn work on?" else "Connect a model to begin",
             style = Ph.title.copy(fontSize = 18.sp), textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Text(

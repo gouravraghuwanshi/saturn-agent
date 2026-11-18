@@ -201,6 +201,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(t, onBack, onMenu = { sheet = "menu" })
                 Tabs(tab, showBrowserTab) { tab = it; if (it != "browser") holdBrowser = false }
+                io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 if (tab == "browser") {
                     BrowserPane(t, onClose = {
                         holdBrowser = false; tab = "chat"; io.github.pimobile.browser.BrowserManager.close(t.task.id)

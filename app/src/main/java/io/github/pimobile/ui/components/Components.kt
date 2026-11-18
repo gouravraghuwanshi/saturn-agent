@@ -271,3 +271,22 @@ fun ToolPanel(tools: List<Item.Tool>) {
             .border(1.dp, Ph.Line, RoundedCornerShape(14.dp))
     ) { tools.forEachIndexed { i, t -> ToolRow(t, divider = i < tools.lastIndex) } }
 }
+
+/** Shown when an installed package keeps pi from starting: name it and offer the fix. */
+@androidx.compose.runtime.Composable
+fun BrokenPackageBanner(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    val spec = io.github.pimobile.ui.state.UiStore.brokenPackage ?: return
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+    androidx.compose.foundation.layout.Column(
+        modifier.fillMaxWidth().clip(shape).background(Ph.RedWash).border(1.dp, androidx.compose.ui.graphics.Color(0xFF3A2A28), shape).padding(14.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+    ) {
+        Text("pi can't start", style = Ph.title.copy(fontSize = 14.sp, color = Ph.Red))
+        Text("The package ${spec.removePrefix("npm:")} fails to load on this phone, and pi stops when an extension fails — so no task can run.",
+            style = Ph.body.copy(fontSize = 13.sp))
+        val busy = io.github.pimobile.ui.state.UiStore.repairing
+        Text(if (busy) "Removing…" else "Remove ${spec.removePrefix("npm:")}", style = Ph.title.copy(fontSize = 14.sp, color = Ph.AmberInk),
+            modifier = androidx.compose.ui.Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(Ph.Amber)
+                .clickable(enabled = !busy) { io.github.pimobile.ui.state.UiStore.removeBroken() }.padding(horizontal = 16.dp, vertical = 10.dp))
+    }
+}

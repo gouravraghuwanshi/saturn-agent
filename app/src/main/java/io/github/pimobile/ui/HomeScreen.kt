@@ -180,6 +180,7 @@ fun HomeScreen(
             }
 
 
+            io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
             // ---- tasks
             if (UiStore.tasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) { sheet = "login" }
             else LazyColumn(

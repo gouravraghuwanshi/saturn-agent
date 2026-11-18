@@ -222,6 +222,28 @@ object UiStore : TaskManager.Listener {
             revert = { setArchived(ui, !archived, undoable = false) }))
     }
 
+    /** An installed package whose extension stops pi from starting (seen in a task's error output). */
+    var brokenPackage by mutableStateOf<String?>(null)
+    var repairing by mutableStateOf(false)
+
+    fun removeBroken() {
+        val spec = brokenPackage ?: return
+        repairing = true
+        Thread {
+            val code = runCatching { io.github.pimobile.store.Store.run(runtime, "remove", spec) {} }.getOrDefault(1)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                repairing = false
+                if (code == 0) {
+                    brokenPackage = null
+                    // Their history couldn't load while pi was failing: fetch it again.
+                    tasks.filter { it.status == Status.FAILED }.forEach { it.lastError = null; if (it.items.isEmpty()) it.historyLoaded = false }
+                    lastOpened?.let { if (it.status == Status.FAILED) open(it) }
+                }
+                android.widget.Toast.makeText(app, if (code == 0) "Removed $spec — tasks will start again" else "Couldn't remove $spec", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+
     fun delete(ui: TaskUi) {
         BrowserManager.close(ui.task.id)
         TaskManager.delete(ui.task)
@@ -236,7 +258,10 @@ object UiStore : TaskManager.Listener {
     }
 
     /** Opening a restored task: start its process so history can be fetched. */
+    private var lastOpened: TaskUi? = null
+
     fun open(ui: TaskUi) {
+        lastOpened = ui
         if (ui.task.restored && !ui.historyLoaded && ui.items.isEmpty()) {
             TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
         }
@@ -255,6 +280,7 @@ object UiStore : TaskManager.Listener {
         ui.status = task.status
         ui.title = task.title
         ui.archived = task.archived
+        log?.let { io.github.pimobile.store.Store.packageInError(it) }?.let { brokenPackage = it }
         if (ui.status == Status.FAILED && log != null && ui.lastError == null && log.isNotBlank()) {
             ui.lastError = log.take(300)
         }

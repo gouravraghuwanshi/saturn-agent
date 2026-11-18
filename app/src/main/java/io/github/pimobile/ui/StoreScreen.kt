@@ -232,6 +232,10 @@ private fun PackageSheet(p: Store.Pkg, isInstalled: Boolean, onDismiss: () -> Un
                 installedNow = action == "install"
                 log.add(if (installedNow) "✓ Installed. Tasks load it on their next message." else "✓ Removed.")
                 onChanged()
+            } else if (code == Store.REJECTED) {
+                installedNow = false
+                log.add("✗ Not installed — this package stops pi from starting on this phone, so Saturn removed it again.")
+                onChanged()
             } else log.add("✗ pi $action failed (exit $code)")
         }
     }

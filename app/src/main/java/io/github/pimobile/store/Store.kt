@@ -91,6 +91,8 @@ object Store {
             }
         }
         val deps = v.optJSONObject("dependencies")?.keys()?.asSequence()?.toList().orEmpty()
+        val keywords = v.optJSONArray("keywords")?.strings().orEmpty().map { it.lowercase() }
+        val forOmp = keywords.any { it == "omp" || it == "oh-my-pi" || it == "ohmypi" }
         return Details(
             readme = doc.optString("readme").ifBlank { v.optString("description") }.take(20_000),
             contents = contents,
@@ -98,7 +100,8 @@ object Store {
             imageUrl = pi?.optString("image")?.takeIf { it.startsWith("https://") },
             repository = (v.opt("repository") as? JSONObject)?.optString("url")
                 ?.removePrefix("git+")?.removeSuffix(".git")?.takeIf { it.startsWith("https://") },
-            mobileWarnings = deps.mapNotNull { d -> RISKY[d]?.let { "$d — $it" } },
+            mobileWarnings = listOfNotNull("Made for Oh My Pi (a different fork of pi) — it may not load in pi"
+                .takeIf { forOmp }) + deps.mapNotNull { d -> RISKY[d]?.let { "$d — $it" } },
         )
     }
 
@@ -123,16 +126,70 @@ object Store {
      * exit code. Afterwards idle task processes are restarted so they load
      * the change (busy ones pick it up on their next start).
      */
+    /** [run] result when an install was rolled back because pi could no longer start. */
+    const val REJECTED = 90
+
     fun run(rt: PiRuntime, action: String, spec: String, onLine: (String) -> Unit): Int {
+        val code = exec(rt, action, spec, onLine)
+        if (code == 0 && action == "install") {
+            onLine("Checking that pi still starts with it…")
+            val err = startupError(rt)
+            if (err != null) {
+                onLine("✗ pi can't start with this package:")
+                onLine(err)
+                onLine("Removing it again…")
+                exec(rt, "remove", spec, onLine)
+                TaskManager.restartIdle()
+                return REJECTED
+            }
+        }
+        if (code == 0) TaskManager.restartIdle()
+        return code
+    }
+
+    /**
+     * Starts pi the way tasks do and asks for its state. Returns pi's error
+     * output if it exits instead (a broken extension stops pi from starting,
+     * which would take down every task), or null when it answers.
+     */
+    fun startupError(rt: PiRuntime, timeoutMs: Long = 120_000): String? {
+        val pb = ProcessBuilder(rt.node.path, rt.piCli.path, "--mode", "rpc", "--no-session")
+            .directory(rt.projects).redirectErrorStream(true)
+        pb.environment().putAll(rt.env() + TaskManager.sessionEnv)
+        val p = pb.start()
+        val out = StringBuilder()
+        var ok = false
+        val reader = Thread {
+            runCatching {
+                p.inputStream.bufferedReader().forEachLine { l ->
+                    if (l.contains("\"type\":\"response\"") && l.contains("\"id\":\"saturn-check\"")) { ok = true; p.destroy() }
+                    else if (!l.startsWith("{")) out.appendLine(l)
+                }
+            }
+        }.apply { start() }
+        runCatching {
+            p.outputStream.write("{\"type\":\"get_state\",\"id\":\"saturn-check\"}\n".toByteArray()); p.outputStream.flush()
+        }
+        if (!p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) { p.destroy(); return null } // slow, not broken
+        reader.join(2000)
+        return if (ok) null else out.toString().trim().ifBlank { "pi exited (${p.exitValue()})" }.take(2000)
+    }
+
+    /** The npm package behind a pi "Extension \"…/node_modules/<pkg>/…\" error". */
+    fun packageInError(text: String): String? {
+        val path = Regex("Extension \"([^\"]+)\" error").find(text)?.groupValues?.get(1) ?: return null
+        val m = Regex("/node_modules/((?:@[^/]+/)?[^/]+)/").find(path) ?: return null
+        return "npm:" + m.groupValues[1]
+    }
+
+    private fun exec(rt: PiRuntime, action: String, spec: String, onLine: (String) -> Unit): Int {
         rt.prepare()
         val pb = ProcessBuilder(rt.node.path, rt.piCli.path, action, spec)
             .directory(rt.home).redirectErrorStream(true)
         pb.environment().putAll(rt.env() + TaskManager.sessionEnv)
         val p = pb.start()
         p.inputStream.bufferedReader().forEachLine { onLine(it.replace(Regex("\u001B\\[[0-9;]*[A-Za-z]"), "")) }
-        val code = p.waitFor()
-        if (code == 0) TaskManager.restartIdle()
-        return code
+        return p.waitFor()
     }
 
     private fun get(url: String): String = (URL(url).openConnection() as HttpURLConnection).run {

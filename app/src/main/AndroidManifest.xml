@@ -24,6 +24,7 @@
     <queries>
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
         <intent><action android:name="android.intent.action.DIAL" /></intent>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="smsto" /></intent>
     </queries>
 
@@ -56,6 +57,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/shared_files" />
         </provider>
+
+        <service
+            android:name=".phone.PhoneControlService"
+            android:label="@string/phone_control_label"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/phone_control" />
+        </service>
 
         <receiver android:name=".runtime.JobReceiver" android:exported="false" />
         <receiver android:name=".runtime.BootReceiver" android:exported="false">

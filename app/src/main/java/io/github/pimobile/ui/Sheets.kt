@@ -99,7 +99,7 @@ private fun Field(value: String, onValue: (String) -> Unit, placeholder: String,
 }
 
 @Composable
-private fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp)).background(if (enabled) Ph.Amber else Ph.Chip)
             .clickable(enabled = enabled) { onClick() }.padding(horizontal = 18.dp),
@@ -170,6 +170,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                         uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
             }
 
+            PhoneControlRow()
             PhoneFeatures()
 
             Text("DIAGNOSTICS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
@@ -295,6 +296,31 @@ fun RenameSheet(task: TaskUi, onDismiss: () -> Unit) {
 }
 
 // -------------------------------------------------------------------- about
+
+@Composable
+private fun PhoneControlRow() {
+    var open by remember { mutableStateOf(false) }
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); tick++ } }
+    val on = remember(tick, open) { io.github.pimobile.phone.PhoneControl.enabled }
+    val service = remember(tick) { io.github.pimobile.phone.PhoneControl.serviceOn }
+    Text("PHONE CONTROL", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
+    Row(Modifier.fillMaxWidth().clickable { open = true }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("Let Saturn use your apps", style = Ph.title.copy(fontSize = 14.sp))
+            Text(when {
+                on && service -> "On · Saturn can tap and type in other apps when you ask"
+                on -> "Needs one more step in Android's Accessibility settings"
+                else -> "Off · tap to see how it works"
+            }, style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = if (on && !service) Ph.Amber else Ph.Muted))
+        }
+        androidx.compose.material3.Switch(checked = on && service, onCheckedChange = null,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedTrackColor = Ph.Amber, checkedThumbColor = Ph.AmberInk,
+                uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
+    }
+    if (open) PhoneControlSheet { open = false }
+}
 
 @Composable
 private fun PhoneFeatures() {

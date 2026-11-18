@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_control_label">Saturn: use your apps</string>
+    <string name="phone_control_summary">Lets Saturn tap, type and read the screen when you ask it to do something in another app.</string>
+    <string name="phone_control_description">Saturn Agent uses this only when you ask it to do something on your phone, such as "open Maps and find a café". It then reads the screen and taps, types and swipes for you, with a Stop button on screen. What it reads is sent to the AI model provider you chose. It never types passwords, never works on the lock screen, never answers permission prompts, and asks you before sending, paying, deleting or installing.</string>
+</resources>

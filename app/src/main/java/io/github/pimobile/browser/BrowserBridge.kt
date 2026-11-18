@@ -88,6 +88,13 @@ object BrowserBridge {
                     .onSuccess { respondText(out, it) }
                     .onFailure { e -> respondText(out, (e.message ?: e.toString()), 400) }
             }
+            // saturn-phone <command> …: body = cwd \0 artifacts \0 command \0 args…
+            rest.startsWith("/app/phone") -> {
+                val argv = body(req, input).split('\u0000').let { if (it.lastOrNull() == "") it.dropLast(1) else it }
+                runCatching { io.github.pimobile.phone.PhoneControl.run(argv.getOrElse(2) { "help" }, argv.take(2) + argv.drop(3)) }
+                    .onSuccess { respondText(out, it) }
+                    .onFailure { e -> respondText(out, (e.message ?: e.toString()), 400) }
+            }
             // saturn-schedule: body = cwd \0 artifacts \0 args…
             rest.startsWith("/app/schedule") -> {
                 val argv = body(req, input).split('\u0000').let { if (it.lastOrNull() == "") it.dropLast(1) else it }

@@ -186,7 +186,7 @@ class PiRuntime private constructor(private val ctx: Context) {
                 else -> ""
             }
             stdin + """
-                |out=${'$'}(printf '%s\0' "${'$'}PWD" "${'$'}SATURN_ARTIFACTS" "${'$'}@" | curl -sS --fail-with-body -X POST --data-binary @- "${'$'}PIMOBILE_BROWSER_URL/app/device/$name" 2>&1)
+                |out=${'$'}(printf '%s\0' "${'$'}PWD" "${'$'}SATURN_ARTIFACTS" "${'$'}@" | curl -s --fail-with-body -X POST --data-binary @- "${'$'}PIMOBILE_BROWSER_URL/app/device/$name" 2>&1)
                 |rc=${'$'}?
                 |if [ ${'$'}rc -ne 0 ]; then printf '$name: %s\n' "${'$'}{out:-Saturn is not responding}" >&2; exit 1; fi
                 |[ -n "${'$'}out" ] && printf '%s\n' "${'$'}out"
@@ -194,7 +194,8 @@ class PiRuntime private constructor(private val ctx: Context) {
                 """.trimMargin()
         }
         val schedule = "saturn-schedule" to device.getValue("termux-torch").replace("/app/device/termux-torch", "/app/schedule").replace("termux-torch: ", "saturn-schedule: ")
-        for ((name, body) in shims + device + schedule) {
+        val phone = "saturn-phone" to device.getValue("termux-torch").replace("/app/device/termux-torch", "/app/phone").replace("termux-torch: ", "saturn-phone: ")
+        for ((name, body) in shims + device + schedule + phone) {
             val f = File(bin, name)
             f.delete()
             f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
@@ -268,6 +269,18 @@ class PiRuntime private constructor(private val ctx: Context) {
             |  saturn-schedule list · saturn-schedule rm <id> · saturn-schedule log <id>
             |`-- <command>` runs a shell command (in the current directory); `--prompt "…"` starts a new Saturn
             |task with that prompt. Times are the phone's local time. Tell the user what you scheduled and when.
+            |
+            |## Using the phone's apps
+            |When the user asks you to do something in another app (and phone control is on), drive it with
+            |`saturn-phone`: `saturn-phone open <app>` → read the numbered list → `saturn-phone tap <n>`,
+            |`type <n> <text>`, `enter`, `swipe up|down`, `scroll <n> down`, `back`, `home`; `saturn-phone help`
+            |lists everything. Every action prints the new screen, so you rarely need `screen` on its own.
+            |Element numbers change after every action — always use the numbers from the latest output.
+            |Use `saturn-phone screenshot` (then read the image) only when the list isn't enough.
+            |Rules: do only what the user asked; one step at a time, checking the result. Taps on Send, Pay,
+            |Delete, Install and the like show the user a confirmation — if they don't allow it, stop and ask.
+            |Never try to work around a refusal (password fields, lock screen, permission prompts, Stop).
+            |If the user pressed Stop, don't use the phone again until they ask. When done, say what you did.
             |""".trimMargin()
         )
         bashrc.parentFile?.mkdirs()

@@ -41,8 +41,7 @@ object Control {
             set(v) {
                 if (_running == v) return
                 _running = v
-                TaskManager.extraActive = if (v) 1 else 0
-                PiService.sync(app, TaskManager.activeCount)
+                TaskManager.hold("login", v)
             }
         var done by mutableStateOf(false)
         var error by mutableStateOf<String?>(null)

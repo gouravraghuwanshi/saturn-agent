@@ -18,12 +18,12 @@ object Tools {
     fun init(ctx: Context) { app = ctx.applicationContext }
     private val rt get() = PiRuntime.get(app)
 
-    fun process(args: List<String>, cwd: File = rt.home): Process {
+    fun process(args: List<String>, cwd: File = rt.home, extraEnv: Map<String, String> = emptyMap()): Process {
         rt.prepare()
         // The app's own PATH doesn't include Saturn's usr/bin: resolve bundled tools to their full path.
         val exe = args.first().let { n -> if ('/' in n) n else File(rt.bin, n).takeIf { it.exists() }?.path ?: n }
         return ProcessBuilder(listOf(exe) + args.drop(1)).directory(cwd).redirectErrorStream(true)
-            .apply { environment().clear(); environment().putAll(rt.env() + TaskManager.sessionEnv + ("GH_PROMPT_DISABLED" to "1")) }
+            .apply { environment().clear(); environment().putAll(rt.env() + TaskManager.sessionEnv + ("GH_PROMPT_DISABLED" to "1") + extraEnv) }
             .start().also { it.outputStream.close() }
     }
 
@@ -69,8 +69,11 @@ object GitHub {
         if (signingIn) return
         error = null; code = null; url = null; signingIn = true
         io.execute {
-            val p = runCatching { Tools.process(listOf("gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", "--skip-ssh-key")) }
-                .getOrElse { e -> main.post { error = e.message; signingIn = false }; return@execute }
+            main.post { TaskManager.hold("github", true) }
+            // gh would open the browser itself right away; Saturn shows the code first and opens it on tap.
+            val p = runCatching { Tools.process(listOf("gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", "--skip-ssh-key"),
+                extraEnv = mapOf("BROWSER" to "true", "GH_BROWSER" to "true")) }
+                .getOrElse { e -> main.post { error = e.message; signingIn = false; TaskManager.hold("github", false) }; return@execute }
             login = p
             val log = StringBuilder()
             p.inputStream.bufferedReader().forEachLine { line ->
@@ -92,6 +95,7 @@ object GitHub {
                 }
             }
             main.post {
+                TaskManager.hold("github", false)
                 signingIn = false; code = null; url = null
                 if (!ok) error = log.lines().lastOrNull { it.isNotBlank() && !it.startsWith("!") }?.takeIf { it.isNotBlank() } ?: "Sign-in didn't complete"
             }
@@ -99,7 +103,7 @@ object GitHub {
         }
     }
 
-    fun cancel() { login?.destroy(); login = null; signingIn = false; code = null; url = null }
+    fun cancel() { login?.destroy(); login = null; signingIn = false; code = null; url = null; TaskManager.hold("github", false) }
 
     fun signOut() = io.execute {
         Tools.run("gh", "auth", "logout", "--hostname", "github.com")

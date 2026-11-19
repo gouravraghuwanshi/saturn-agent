@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -17,14 +19,16 @@ import io.github.pimobile.R
 
 /** "Phosphor": a premium terminal. Amber means only "pi is working / needs you". */
 object Ph {
-    val Ground = Color(0xFF0B0C0F)
-    val Deep = Color(0xFF08090B)
-    val Surface = Color(0xFF14161B)
-    val Raised = Color(0xFF16181E)
-    val Chip = Color(0xFF1E2128)
-    val Selected = Color(0xFF23262E)
-    val Line = Color(0xFF22262E)
-    val LineStrong = Color(0xFF2E333D)
+    /** Pure-black surfaces for OLED screens (Settings → Appearance). Reading any color below in a composable follows it. */
+    var amoled by androidx.compose.runtime.mutableStateOf(false)
+    val Ground get() = if (amoled) Color(0xFF000000) else Color(0xFF0B0C0F)
+    val Deep get() = if (amoled) Color(0xFF000000) else Color(0xFF08090B)
+    val Surface get() = if (amoled) Color(0xFF09090A) else Color(0xFF14161B)
+    val Raised get() = if (amoled) Color(0xFF0E0F11) else Color(0xFF16181E)
+    val Chip get() = if (amoled) Color(0xFF17181C) else Color(0xFF1E2128)
+    val Selected get() = if (amoled) Color(0xFF1C1E23) else Color(0xFF23262E)
+    val Line get() = if (amoled) Color(0xFF1A1B20) else Color(0xFF22262E)
+    val LineStrong get() = if (amoled) Color(0xFF26282F) else Color(0xFF2E333D)
     val Text = Color(0xFFE9E6DF)
     val TextSoft = Color(0xFFC9C5BD)
     val TextBody = Color(0xFFA9AEB7)

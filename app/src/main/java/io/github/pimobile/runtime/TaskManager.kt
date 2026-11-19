@@ -65,7 +65,14 @@ object TaskManager {
     fun removeListener(l: Listener) = listeners.remove(l)
 
     /** Other work that must survive the app going to the background (e.g. a /login waiting for its browser callback). */
-    @Volatile var extraActive = 0
+    /** Background work that must keep the foreground service up (a /login or GitHub sign-in waiting on the browser). */
+    private val holds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val extraActive get() = holds.size
+    /** Main thread. Keeps Saturn running while the user is away in the browser. */
+    fun hold(key: String, on: Boolean) {
+        if (on) holds.add(key) else holds.remove(key)
+        PiService.sync(app, activeCount)
+    }
 
     val activeCount get() = tasks.count { it.status in setOf(Status.STARTING, Status.RUNNING, Status.NEEDS_INPUT) } + extraActive
 

@@ -123,6 +123,7 @@ object UiStore : TaskManager.Listener {
         Thread { runCatching { io.github.pimobile.runtime.Computers.writeConfig() } }.start()
         applySecrets()
         loadDefaults()
+        io.github.pimobile.ui.theme.Ph.amoled = prefs.getBoolean("amoled", false)
         project = prefs.getString("project", null)?.let { File(it) }
         TaskManager.tasks.forEach { ui(it) }
         TaskManager.addListener(this)
@@ -330,6 +331,8 @@ object UiStore : TaskManager.Listener {
         }
         TaskManager.answer(ui.task, d.requestId, r)
     }
+
+    fun setAmoled(on: Boolean) { io.github.pimobile.ui.theme.Ph.amoled = on; prefs.edit().putBoolean("amoled", on).apply() }
 
     /** The app-wide default thinking level (pi's defaultThinkingLevel), or null for pi's own default. */
     var thinkingDefault by mutableStateOf<String?>(null)

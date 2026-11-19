@@ -469,10 +469,13 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
     val text = lines.filterNot { it.startsWith(UiStore.IMAGE_NOTE) || it.startsWith(UiStore.FILE_NOTE) }.joinToString("\n").trim()
     val context = androidx.compose.ui.platform.LocalContext.current
     val copy = copier()
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Message actions") { open = !open }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("›", style = Ph.mono.copy(color = Ph.Amber, fontSize = 14.sp, lineHeight = 21.sp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Your messages: a soft bubble on the right, so the conversation reads at a glance.
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+        Row(Modifier.fillMaxWidth(0.86f), horizontalArrangement = Arrangement.End) {
+            Column(Modifier.clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp))
+                .background(Ph.Raised).border(1.dp, Ph.Line, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp))
+                .clickable(onClickLabel = "Message actions") { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (text.isNotEmpty()) Text(text, style = Ph.body.copy(color = Ph.Text))
                 if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }
                 files.forEach { path ->
@@ -489,7 +492,7 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
             }
         }
         AnimatedVisibility(open) {
-            Row(Modifier.padding(start = 18.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val index = t.items.filterIsInstance<Item.User>().indexOf(item)
                 MsgAction(PhIcons.Fork, if (UiStore.branching) "branching…" else "Branch from here") {
                     if (t.status == Status.RUNNING || t.status == Status.NEEDS_INPUT) UiStore.branchError = "wait until Saturn finishes, or stop it"

@@ -87,6 +87,10 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 if (features) { Divider(); Item(PhIcons.Lock, "Permissions", "What Saturn may use") { open = "permissions" } }
             }
 
+            Group("Appearance") {
+                Toggle(PhIcons.Sparkle, "Pure black", "True black, saves battery", Ph.amoled) { UiStore.setAmoled(it) }
+            }
+
             Group("Advanced") {
                 var runScripts by remember { mutableStateOf(UiStore.runtime.runScripts) }
                 Toggle(PhIcons.Terminal, "Run scripts directly", "For scripts and npx tools", runScripts) {

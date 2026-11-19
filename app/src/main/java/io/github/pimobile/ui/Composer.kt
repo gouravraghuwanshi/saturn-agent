@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -214,14 +215,17 @@ fun Composer(
                 },
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                IconGhost(description = "Commands", onClick = {
-                    onValue(TextFieldValue("/", selection = androidx.compose.ui.text.TextRange(1)))
-                    focus.requestFocus()
-                }) { Text("/", style = Ph.mono.copy(fontSize = 17.sp, color = Ph.TextSoft)) }
-                if (attach != null) AttachButton(attach)
-                leading()
-                Box(Modifier.weight(1f))
-                extra()
+                if (dictation.listening) VoiceWave(dictation, Modifier.weight(1f).padding(end = 6.dp))
+                else {
+                    IconGhost(description = "Commands", onClick = {
+                        onValue(TextFieldValue("/", selection = androidx.compose.ui.text.TextRange(1)))
+                        focus.requestFocus()
+                    }) { Text("/", style = Ph.mono.copy(fontSize = 17.sp, color = Ph.TextSoft)) }
+                    if (attach != null) AttachButton(attach)
+                    leading()
+                    Box(Modifier.weight(1f))
+                    extra()
+                }
                 // One round button: the mic while the box is empty, Send once there's something to send.
                 if (dictation.listening || (text.isBlank() && attachments.isEmpty())) MicButton(dictation) {
                     if (dictation.listening) dictation.stop() else startDictation()
@@ -414,4 +418,32 @@ fun IconGhost(description: String, active: Boolean = false, onClick: () -> Unit,
         .border(1.dp, if (active) Ph.AmberLine else Ph.Line, androidx.compose.foundation.shape.CircleShape)
         .background(if (active) Ph.AmberWash else androidx.compose.ui.graphics.Color.Transparent)
         .clickable(onClickLabel = description) { onClick() }, contentAlignment = Alignment.Center) { content() }
+}
+
+
+/**
+ * A live waveform while dictating: bars scroll in from the right, each as
+ * tall as your voice was at that moment (like a voice-note recorder).
+ */
+@Composable
+private fun VoiceWave(d: Dictation, modifier: Modifier) {
+    val bars = 32
+    val history = remember { androidx.compose.runtime.mutableStateListOf<Float>().apply { repeat(bars) { add(0f) } } }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        var t = 0
+        while (true) {
+            // A touch of movement even in silence, so it reads as "listening".
+            val idle = 0.06f + 0.04f * kotlin.math.sin(t++ / 2.0).toFloat()
+            history.removeAt(0); history.add(maxOf(idle, d.level * (0.75f + 0.5f * kotlin.random.Random.nextFloat())))
+            kotlinx.coroutines.delay(70)
+        }
+    }
+    Row(modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        history.forEachIndexed { i, v ->
+            val h by androidx.compose.animation.core.animateFloatAsState(v, androidx.compose.animation.core.tween(90), label = "bar")
+            // Older bars fade toward the left edge.
+            Box(Modifier.width(3.dp).height((4 + h.coerceIn(0f, 1f) * 32).dp).clip(RoundedCornerShape(2.dp))
+                .background(Ph.TextSoft.copy(alpha = 0.25f + 0.65f * (i + 1) / bars)))
+        }
+    }
 }

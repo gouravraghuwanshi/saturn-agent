@@ -1,0 +1,1 @@
+Pure black (AMOLED) theme. A live waveform while you talk. Your messages show as bubbles. GitHub sign-in shows the code first and keeps working while you are in the browser.

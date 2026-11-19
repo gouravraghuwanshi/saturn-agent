@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,8 +44,6 @@ internal fun GitHubSheet(onDismiss: () -> Unit) {
     val uri = LocalUriHandler.current
     val copy = copier()
     var armed by remember { mutableStateOf(false) }
-    // Opening the device page right away saves a tap; the code stays on screen.
-    LaunchedEffect(GitHub.url) { GitHub.url?.let { runCatching { uri.openUri(it) } } }
     PhSheet({ if (GitHub.signingIn) GitHub.cancel(); onDismiss() }) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("GitHub", style = Ph.heading)
@@ -60,7 +60,10 @@ internal fun GitHubSheet(onDismiss: () -> Unit) {
                 }
                 GitHub.signingIn -> {
                     Text("Enter this code on GitHub", style = Ph.title)
-                    Text(GitHub.code ?: "…", style = Ph.mono.copy(fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Ph.Amber, letterSpacing = 3.sp))
+                    Text(GitHub.code ?: "…", style = Ph.mono.copy(fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Ph.Amber, letterSpacing = 3.sp),
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = GitHub.code != null) { GitHub.code?.let(copy) }.padding(6.dp))
+                    Text("Tap the code to copy it, then paste it on GitHub. Saturn signs in by itself when you approve.",
+                        style = Ph.body.copy(fontSize = 13.sp, color = Ph.Muted))
                     Pill("Copy code & open GitHub", primary = true, enabled = GitHub.code != null) {
                         GitHub.code?.let(copy); runCatching { uri.openUri(GitHub.url ?: "https://github.com/login/device") }
                     }
@@ -96,7 +99,10 @@ internal fun ComputersSheet(onDismiss: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var armed by remember { mutableStateOf<String?>(null) }
     PhSheet(onDismiss) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Fixed height: the key, test results and keyboard change the content, and a sheet that
+        // re-measures to fit its content while scrolling bounces up and down.
+        Column(Modifier.fillMaxHeight(0.92f).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Your computers", style = Ph.heading)
             Text("Saturn can work on your laptop or a server over SSH: you chat on the phone, the commands run there. " +
                 "The computer needs SSH turned on and must be reachable (same Wi-Fi, or a VPN like Tailscale).",

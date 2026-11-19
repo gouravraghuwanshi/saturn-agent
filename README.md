@@ -26,7 +26,7 @@ No root. No Termux. Just install it.
 - **It makes things you can keep.** Small web apps, notes, reports and scripts end up in **Artifacts**, ready to open or share.
 - **It can use your phone:** torch, camera, mic, battery, location, notifications, text-to-speech, sensors, contacts and sharing. The commands are Termux:API-compatible, so scripts written for Termux just work.
 - **Timers and cron jobs.** "Turn the torch off in 10 minutes" really happens, even with the app closed.
-- **It can tap through your other apps** (opt-in). A Stop button floats on screen the whole time. It asks before it sends, pays, deletes or installs anything, and it flat-out refuses password fields, the lock screen and permission prompts.
+- **Want it to tap through your other apps too?** Install the separate [Phone Control](#phone-control-companion-app) app (below).
 - **A built-in browser** the agent drives while you watch. You can take over any time.
 - **Photos and files.** Attach images, PDFs, docs, spreadsheets, whatever.
 - **Branch a chat** to try another idea without losing the original.
@@ -45,11 +45,20 @@ Grab the latest APK from [Releases](../../releases). Android 10 or newer, 64-bit
 
 Then open Saturn, tap **Sign in**, and either log in with a subscription you already have or paste an API key. OpenRouter has free models if you just want to try it.
 
-> Turning on "Let Saturn use your apps" on Android 13+: if the switch is greyed out ("restricted setting"), open *App info → ⋮ → Allow restricted settings* first. Android does that to every app installed from a file. Saturn walks you through it.
+## Phone Control (companion app)
+
+`phonecontrol/` is a second, tiny app: an **MCP server that lets any AI agent on your phone read the screen and tap, type and swipe in other apps**, Saturn included. It's separate on purpose. Any MCP client can use it, it's off until you switch it on in Android's Accessibility settings, and Saturn itself never touches the Accessibility API.
+
+- Tools: `phone_screen`, `phone_tap`, `phone_type`, `phone_enter`, `phone_swipe`, `phone_scroll`, `phone_key`, `phone_open_app`, `phone_list_apps`, `phone_wait`, `phone_screenshot` (returns an image).
+- A Stop button floats on screen while an agent works; Send/Pay/Delete/Install-type taps wait for your Allow; it refuses password fields, the lock screen and permission prompts.
+- Listens on `127.0.0.1` only and needs the token shown in the app. Tap **Copy config** and add it to `~/.pi/agent/mcp.json` in Saturn (or any MCP client's config).
+- On Android 13+, if the Accessibility switch is greyed out, open *App info → ⋮ → Allow restricted settings* first.
+
+It's GitHub-only: Google Play doesn't allow AI agents to drive apps through Accessibility.
 
 ## How it works (the short version)
 
-Android won't let apps run programs from their own storage, but it *does* run native libraries shipped inside the APK. So Saturn packs node, bash, git and friends (built by the Termux project) as `lib*.so` files and links them into a small Linux-style `usr/` folder when it starts. Each task is its own `pi --mode rpc` process; the Compose UI talks to it over JSON. Phone features and app control go through a local, token-protected bridge back into the app. More in [RELEASING.md](RELEASING.md) and the source.
+Android won't let apps run programs from their own storage, but it *does* run native libraries shipped inside the APK. So Saturn packs node, bash, git and friends (built by the Termux project) as `lib*.so` files and links them into a small Linux-style `usr/` folder when it starts. Each task is its own `pi --mode rpc` process; the Compose UI talks to it over JSON. Phone features go through a local, token-protected bridge back into the app. More in [RELEASING.md](RELEASING.md) and the source.
 
 ## Build it yourself
 

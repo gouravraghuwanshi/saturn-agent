@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="service_label">Phone Control (MCP)</string>
+    <string name="service_summary">Lets AI agents on this phone read the screen and tap, type and swipe when you ask them to.</string>
+    <string name="service_description">Phone Control runs a small MCP server that only apps on this phone can reach, and only with its secret token. When an AI agent you set up asks to, it reads what is on screen and taps, types and swipes. A Stop button stays on screen while it works. It asks you before sending, paying, deleting or installing, and it never types passwords, never works on the lock screen and never answers permission prompts. What it reads goes to the agent that asked, and from there to that agent\'s AI provider.</string>
+</resources>

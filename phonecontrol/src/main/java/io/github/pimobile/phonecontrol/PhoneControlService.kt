@@ -1,8 +1,7 @@
-package io.github.pimobile.phone
+package io.github.pimobile.phonecontrol
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -15,15 +14,16 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * The accessibility service behind "Let Saturn use your apps". It does
- * nothing on its own: it only acts when a `saturn-phone` command arrives
- * (PhoneControl), and it shows a Stop pill on screen while it does.
+ * Android's half of Phone Control. While the user has it on in Accessibility
+ * settings it hosts the local MCP server; it never acts on its own, only on
+ * tool calls, and shows a Stop pill on screen while it does.
  */
 class PhoneControlService : AccessibilityService() {
     companion object {
@@ -38,9 +38,15 @@ class PhoneControlService : AccessibilityService() {
     private var pillParams: WindowManager.LayoutParams? = null
     private val hidePill = Runnable { removePill() }
 
-    override fun onServiceConnected() { instance = this }
-    override fun onDestroy() { instance = null; removePill(); super.onDestroy() }
-    override fun onUnbind(intent: android.content.Intent?): Boolean { instance = null; main.post { removePill() }; return super.onUnbind(intent) }
+    override fun onServiceConnected() {
+        instance = this
+        PhoneControl.init(this)
+        PhoneControl.loadPrefs()
+        McpServer.start(this)
+    }
+    override fun onUnbind(intent: android.content.Intent?): Boolean { shutdown(); return super.onUnbind(intent) }
+    override fun onDestroy() { shutdown(); super.onDestroy() }
+    private fun shutdown() { instance = null; McpServer.stop(); main.post { removePill() } }
     override fun onInterrupt() {}
 
     /** Only timestamps are kept, to know when the screen has settled after an action. */
@@ -49,10 +55,10 @@ class PhoneControlService : AccessibilityService() {
     private val wm get() = getSystemService(WindowManager::class.java)
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    private fun overlayParams(gravity: Int, focusable: Boolean = false) = WindowManager.LayoutParams(
+    private fun overlayParams(gravity: Int) = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-        (if (focusable) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         PixelFormat.TRANSLUCENT,
     ).apply { this.gravity = gravity }
 
@@ -65,7 +71,7 @@ class PhoneControlService : AccessibilityService() {
         if (mono) typeface = android.graphics.Typeface.MONOSPACE
     }
 
-    /** Shows (or keeps) the "Saturn is using your phone · Stop" pill; it hides itself after a quiet spell. */
+    /** Shows (or keeps) the "An agent is using your phone · Stop" pill; it hides itself after a quiet spell. */
     fun showPill() = main.post {
         main.removeCallbacks(hidePill)
         main.postDelayed(hidePill, 12_000)
@@ -74,11 +80,11 @@ class PhoneControlService : AccessibilityService() {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             background = bg(0xF0141519.toInt(), 22, 0xFF2A2C33.toInt())
             setPadding(dp(14), dp(8), dp(8), dp(8))
-            addView(View(context).apply { background = bg(0xFFF2B35B.toInt(), 5) }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(10) })
-            addView(label("Saturn is using your phone", 13f, 0xFFE9E6DF.toInt()))
-            addView(label("Stop", 13f, 0xFF16120A.toInt()).apply {
-                background = bg(0xFFF2B35B.toInt(), 16); setPadding(dp(14), dp(6), dp(14), dp(6))
-                setOnClickListener { PhoneControl.stop(); removePill() }
+            addView(View(context).apply { background = bg(0xFF6FB7CC.toInt(), 5) }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(10) })
+            addView(label("An agent is using your phone", 13f, 0xFFE9E6DF.toInt()))
+            addView(label("Stop", 13f, 0xFF0E1A1E.toInt()).apply {
+                background = bg(0xFF6FB7CC.toInt(), 16); setPadding(dp(14), dp(6), dp(14), dp(6))
+                setOnClickListener { PhoneControl.stopped = true; removePill() }
             }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(12) })
         }
         val p = overlayParams(Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { y = dp(40) }
@@ -113,10 +119,10 @@ class PhoneControlService : AccessibilityService() {
     }
 
     /**
-     * Asks the user, on top of whatever app is open, whether Saturn may do
-     * [action]. Blocks until they answer; no answer within a minute is "no".
+     * Asks the user, on top of whatever app is open, whether the agent may do
+     * [action]. Blocks until they answer; no answer within 45 s is "no"
+     * (MCP clients usually give up on a call after 60 s).
      */
-    @SuppressLint("SetTextI18n")
     fun confirm(action: String, where: String): Boolean {
         val latch = CountDownLatch(1)
         var allowed = false
@@ -124,17 +130,17 @@ class PhoneControlService : AccessibilityService() {
         main.post {
             val box = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                background = bg(0xFA141519.toInt(), 20, 0xFF3A3328.toInt())
+                background = bg(0xFA141519.toInt(), 20, 0xFF28414A.toInt())
                 setPadding(dp(20), dp(18), dp(20), dp(16))
-                addView(label("SATURN WANTS TO", 11f, 0xFFF2B35B.toInt(), mono = true))
+                addView(label("AN AGENT WANTS TO", 11f, 0xFF6FB7CC.toInt(), mono = true))
                 addView(label(action, 17f, 0xFFE9E6DF.toInt()).apply { setPadding(0, dp(6), 0, dp(2)) })
                 addView(label(where, 13f, 0xFF8C8A85.toInt()))
                 addView(LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END
                     setPadding(0, dp(16), 0, 0)
                     fun button(text: String, primary: Boolean, onClick: () -> Unit) = label(text, 14f,
-                        if (primary) 0xFF16120A.toInt() else 0xFFE9E6DF.toInt()).apply {
-                        background = if (primary) bg(0xFFF2B35B.toInt(), 12) else bg(Color.TRANSPARENT, 12, 0xFF3A3C44.toInt())
+                        if (primary) 0xFF0E1A1E.toInt() else 0xFFE9E6DF.toInt()).apply {
+                        background = if (primary) bg(0xFF6FB7CC.toInt(), 12) else bg(Color.TRANSPARENT, 12, 0xFF3A3C44.toInt())
                         setPadding(dp(18), dp(10), dp(18), dp(10)); gravity = Gravity.CENTER
                         setOnClickListener { onClick() }
                     }
@@ -142,14 +148,11 @@ class PhoneControlService : AccessibilityService() {
                     addView(button("Allow", true) { allowed = true; latch.countDown() }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(10) })
                 })
             }
-            val p = overlayParams(Gravity.BOTTOM).apply {
-                width = WindowManager.LayoutParams.MATCH_PARENT; y = dp(32)
-                flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
-            }
-            val wrap = android.widget.FrameLayout(this).apply { setPadding(dp(14), 0, dp(14), 0); addView(box) }
+            val p = overlayParams(Gravity.BOTTOM).apply { width = WindowManager.LayoutParams.MATCH_PARENT; y = dp(32) }
+            val wrap = FrameLayout(this).apply { setPadding(dp(14), 0, dp(14), 0); addView(box) }
             runCatching { wm.addView(wrap, p); card = wrap }.onFailure { latch.countDown() }
         }
-        latch.await(60, TimeUnit.SECONDS)
+        latch.await(45, TimeUnit.SECONDS)
         main.post { card?.let { runCatching { wm.removeView(it) } } }
         return allowed
     }

@@ -194,8 +194,7 @@ class PiRuntime private constructor(private val ctx: Context) {
                 """.trimMargin()
         }
         val schedule = "saturn-schedule" to device.getValue("termux-torch").replace("/app/device/termux-torch", "/app/schedule").replace("termux-torch: ", "saturn-schedule: ")
-        val phone = "saturn-phone" to device.getValue("termux-torch").replace("/app/device/termux-torch", "/app/phone").replace("termux-torch: ", "saturn-phone: ")
-        for ((name, body) in shims + device + schedule + phone) {
+        for ((name, body) in shims + device + schedule) {
             val f = File(bin, name)
             f.delete()
             f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
@@ -275,17 +274,10 @@ class PiRuntime private constructor(private val ctx: Context) {
             |`-- <command>` runs a shell command (in the current directory); `--prompt "…"` starts a new Saturn
             |task with that prompt. Times are the phone's local time. Tell the user what you scheduled and when.
             |
-            |## Using the phone's apps
-            |When the user asks you to do something in another app (and phone control is on), drive it with
-            |`saturn-phone`: `saturn-phone open <app>` → read the numbered list → `saturn-phone tap <n>`,
-            |`type <n> <text>`, `enter`, `swipe up|down`, `scroll <n> down`, `back`, `home`; `saturn-phone help`
-            |lists everything. Every action prints the new screen, so you rarely need `screen` on its own.
-            |Element numbers change after every action — always use the numbers from the latest output.
-            |Use `saturn-phone screenshot` (then read the image) only when the list isn't enough.
-            |Rules: do only what the user asked; one step at a time, checking the result. Taps on Send, Pay,
-            |Delete, Install and the like show the user a confirmation — if they don't allow it, stop and ask.
-            |Never try to work around a refusal (password fields, lock screen, permission prompts, Stop).
-            |If the user pressed Stop, don't use the phone again until they ask. When done, say what you did.
+            |## Using other apps
+            |If an MCP server named "phone" is connected (the separate Phone Control app), its phone_* tools
+            |let you read the screen and tap/type in other apps. Use them only when the user asks you to do
+            |something in another app; follow that server's instructions and respect every refusal.
             |""".trimMargin()
         )
         bashrc.parentFile?.mkdirs()

@@ -116,7 +116,6 @@ object UiStore : TaskManager.Listener {
         io.github.pimobile.browser.AppLinks.init(app)
         io.github.pimobile.device.Device.init(app)
         io.github.pimobile.runtime.Scheduler.init(app)
-        io.github.pimobile.phone.PhoneControl.init(app)
         applySecrets()
         model = prefs.getString("model", null)
         project = prefs.getString("project", null)?.let { File(it) }
@@ -146,7 +145,6 @@ object UiStore : TaskManager.Listener {
     // ---------------------------------------------------------------- actions
 
     fun newTask(text: String, cwd: File, images: List<Attachment> = emptyList()): TaskUi {
-        io.github.pimobile.phone.PhoneControl.resume()
         val t = TaskManager.createTask(withImages(text, images), cwd, imagesJson(images))
         val ui = ui(t)
         addUser(ui, withImages(text, images))
@@ -154,7 +152,6 @@ object UiStore : TaskManager.Listener {
     }
 
     fun send(ui: TaskUi, text: String, followUp: Boolean = false, images: List<Attachment> = emptyList()) {
-        io.github.pimobile.phone.PhoneControl.resume()
         val message = withImages(text, images)
         addUser(ui, message)
         if (ui.status == Status.RUNNING) {

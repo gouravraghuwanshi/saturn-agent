@@ -3,7 +3,7 @@
 Everything here is ready to copy-paste. Steps you have to do yourself are marked **you**.
 
 ## 0. Read this first: what blocks Play (checked Nov 2026)
-- **Phone control can't ship on Play.** Since 28 Jan 2026 Google's Accessibility policy prohibits "any use of the API that enables an app to autonomously initiate, plan, and execute actions". An AI agent tapping through apps is exactly that. The Play build must leave the accessibility service out entirely (it stays in the GitHub build).
+- **Phone control lives in a separate app (Phone Control, GitHub-only).** Since 28 Jan 2026 Google's Accessibility policy prohibits "any use of the API that enables an app to autonomously initiate, plan, and execute actions". Saturn no longer contains any accessibility code, so this doesn't affect it. Don't submit Phone Control to Play, and don't link to it from Saturn's listing.
 - **AI-generated content needs an in-app Report button** so users can flag offensive replies without leaving the app.
 - **Data safety: Saturn does "collect" data** in Google's sense (anything the app sends off the device, including to the AI provider the user picks). Declare it; see section 3.
 - **Downloaded code is a judgment call.** Bundled tools are fine. npm and pi.dev packages are JavaScript run by node; the policy only clearly exempts interpreters with *indirect* Android API access (like a WebView). The Play build should block native addons (`node --no-addons`) and say plainly in the listing that extensions are user-installed.
@@ -39,7 +39,7 @@ Copy from `fastlane/metadata/android/en-US/`:
 **Foreground service (specialUse)** declaration:
 > Saturn runs AI agent tasks the user started (for example building a web page or running a script). The task keeps running while the user switches apps and stops as soon as it finishes. Users can see and stop running tasks from the notification and in the app.
 
-**Accessibility API:** not used in the Play build (see section 0). Don't upload a build that contains `PhoneControlService`.
+**Accessibility API:** not used by Saturn.
 
 **Exact alarm** (if asked): user-scheduled timers, reminders and repeating jobs created in chat.
 

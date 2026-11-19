@@ -1,0 +1,1 @@
+Phone control moved out into its own app, Phone Control (an MCP server any agent on your phone can use). Also: Stop that really stops, attachments with the + button (photos, camera, any file), and branch a chat into a new task.

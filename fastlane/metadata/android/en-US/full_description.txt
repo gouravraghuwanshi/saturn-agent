@@ -7,7 +7,6 @@ Not a chat window that sends everything to a server and back. Saturn runs the re
 • Build things you can keep: small web apps, notes, reports and scripts land in Artifacts, ready to open or share.
 • Use your phone: torch, camera, battery, location, notifications, text-to-speech, sensors and more.
 • Set timers and repeating jobs ("turn the torch off in 10 minutes", "every weekday at 9, summarise the news"). They run even when the app is closed.
-• Tap through your other apps for you, if you turn that on. There's always a Stop button, and it asks before sending, paying or deleting anything.
 • Browse the web in a built-in browser you can watch, and take over whenever you want.
 • Send it photos and files: PDFs, docs, spreadsheets, code, whatever.
 • Branch a conversation to try a different idea without losing the original.

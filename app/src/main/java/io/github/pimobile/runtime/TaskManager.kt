@@ -76,7 +76,7 @@ object TaskManager {
                 number = (_tasks.maxOfOrNull { it.number } ?: 0) + 1,
                 title = (prompt.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("[Attached image:") && !it.startsWith("[Attached file:") } ?: "Attachment").take(80),
                 cwd = cwd,
-            ).also { _tasks.add(0, it) }
+            ).also { it.sessionId = UUID.randomUUID().toString(); _tasks.add(0, it) }
         }
         save()
         send(task, prompt, images)
@@ -280,11 +280,33 @@ object TaskManager {
         try {
             session.start(envFor(task))
             setStatus(task, Status.IDLE)
+            migrateSessionId(task)
             emit(task, JSONObject().put("type", SESSION_STARTED), null)
         } catch (e: Exception) {
             setStatus(task, Status.FAILED)
             emit(task, null, "start failed: $e")
         }
+    }
+
+    private val UUID_RE = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    /**
+     * Tasks from before 0.2.1 used "task-xxxxxxxx" as pi's session id. Some
+     * providers send it on (ChatGPT's backend puts it in a session-id header
+     * and rejects anything that isn't a UUID), so move such a task onto a
+     * copy of its conversation under a proper UUID (pi's own clone).
+     */
+    private fun migrateSessionId(task: Task) {
+        if (UUID_RE.matches(task.sessionId)) return
+        runCatching {
+            val st = request(task, JSONObject().put("type", "get_state"))
+            val current = st.optString("sessionId")
+            if (UUID_RE.matches(current)) { setSessionId(task, current); return }
+            // Empty session: just start a fresh one; otherwise copy the conversation.
+            request(task, JSONObject().put("type", if (st.optInt("messageCount", 1) == 0) "new_session" else "clone"))
+            val fresh = request(task, JSONObject().put("type", "get_state")).optString("sessionId")
+            if (UUID_RE.matches(fresh)) setSessionId(task, fresh)
+        }.onFailure { emit(task, null, "session id migration skipped: ${it.message}") }
     }
 
     private fun handle(task: Task, r: JSONObject) {

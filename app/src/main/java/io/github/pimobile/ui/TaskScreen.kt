@@ -400,6 +400,7 @@ private fun Row1(t: TaskUi, item: Item) {
         is Item.Assistant -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (item.thinking.isNotBlank()) Thinking(item)
             if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text) }
+            if (item.text.isNotBlank() && !item.streaming && endOfTurn(t, item)) ReplyActions(t, item)
         }
         is Item.Notice -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (item.error) PhIcon(PhIcons.Warning, Ph.Red, 16.dp)
@@ -506,4 +507,34 @@ private fun MsgAction(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
         PhIcon(icon, Ph.TextSoft, 14.dp)
         Text(label, style = Ph.body.copy(fontSize = 13.sp, color = Ph.TextSoft))
     }
+}
+
+
+/** The last reply before your next message (or the end): where Copy · Report go. */
+private fun endOfTurn(t: TaskUi, item: Item.Assistant): Boolean {
+    val i = t.items.indexOf(item)
+    if (i < 0) return false
+    for (j in i + 1 until t.items.size) when (t.items[j]) {
+        is Item.User -> return true
+        is Item.Assistant -> if ((t.items[j] as Item.Assistant).text.isNotBlank()) return false
+        else -> {}
+    }
+    return true
+}
+
+@Composable
+private fun ReplyActions(t: TaskUi, item: Item.Assistant) {
+    val copy = copier()
+    var report by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Copy reply") { copy(item.text) }.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            PhIcon(PhIcons.Copy, Ph.Muted, 13.dp); Text("copy", style = Ph.monoSmall)
+        }
+        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Report reply") { report = true }.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            PhIcon(PhIcons.Flag, Ph.Muted, 13.dp); Text("report", style = Ph.monoSmall)
+        }
+    }
+    if (report) ReportSheet(t, item.text) { report = false }
 }

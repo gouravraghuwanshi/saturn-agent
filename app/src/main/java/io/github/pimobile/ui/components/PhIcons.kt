@@ -62,6 +62,7 @@ object PhIcons {
     val Image = stroke("M4 5h16v14H4z", circle(9f, 10f, 1.6f), "M4 17l5-5 4 4 2.5-2.5L20 17")
     val Fork = stroke(circle(6f, 5f, 2f), circle(6f, 19f, 2f), circle(18f, 7f, 2f), "M6 7v10M18 9c0 4-4 4-8 5.5L6 17")
     val Clock = stroke(circle(12f, 12f, 8.5f), "M12 7.5V12l3 2")
+    val Flag = stroke("M6 21V4M6 4h11l-2 4 2 4H6")
     val Lock = stroke("M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3")
 }
 

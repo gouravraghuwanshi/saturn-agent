@@ -14,8 +14,8 @@ android {
         applicationId = (findProperty("appId") as String?) ?: "io.github.gouravraghuwanshi.saturn" // -PappId=… for the old dev install
         minSdk = 29
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.2.0"
+        versionCode = 5
+        versionName = "0.2.1"
         ndk { abiFilters += "arm64-v8a" }
     }
 
@@ -38,7 +38,22 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    // Two builds from one codebase:
+    //  github: everything (GitHub Releases / F-Droid)
+    //  play:   Google Play policy: no contacts, node never loads downloaded native add-ons
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            buildConfigField("boolean", "PLAY", "false")
+        }
+        create("play") {
+            dimension = "store"
+            buildConfigField("boolean", "PLAY", "true")
+        }
+    }
+
+    buildFeatures { compose = true; buildConfig = true }
 
     externalNativeBuild {
         cmake { path = file("src/main/cpp/CMakeLists.txt") }

@@ -1,0 +1,1 @@
+ChatGPT sign-in works again (sessions now use proper IDs). New: report a reply from Copy · Report under each answer.

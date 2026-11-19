@@ -72,9 +72,9 @@ object Device {
         "termux-torch", "termux-battery-status", "termux-vibrate", "termux-volume", "termux-tts-speak",
         "termux-notification", "termux-notification-remove", "termux-toast", "termux-location",
         "termux-camera-info", "termux-camera-photo", "termux-microphone-record", "termux-sensor",
-        "termux-contact-list", "termux-wifi-connectioninfo", "termux-telephony-call", "termux-sms-send",
+        "termux-wifi-connectioninfo", "termux-telephony-call", "termux-sms-send",
         "termux-share",
-    )
+    ) + if (io.github.pimobile.BuildConfig.PLAY) emptyList() else listOf("termux-contact-list")
 
     /**
      * Runs one command. [argv] is: the caller's working directory, its
@@ -104,7 +104,7 @@ object Device {
                 a.opt("f")?.let(::path) ?: File(artifacts ?: cwd, "recording-${stamp()}.m4a"),
                 (a.opt("l")?.toIntOrNull() ?: 10).coerceIn(1, 600))
             "termux-sensor" -> sensors(a.flag("l"), a.opt("s"), (a.opt("n")?.toIntOrNull() ?: 1).coerceIn(1, 50), a.flag("a"))
-            "termux-contact-list" -> contacts()
+            "termux-contact-list" -> if (io.github.pimobile.BuildConfig.PLAY) throw Fail("Contacts aren't available in this version of Saturn.") else contacts()
             "termux-wifi-connectioninfo" -> wifi()
             "termux-telephony-call" -> dial(a.positional.firstOrNull() ?: throw Fail("usage: termux-telephony-call <number>"))
             "termux-sms-send" -> sms(a.opt("n") ?: throw Fail("usage: termux-sms-send -n <number> <text>"), a.positional.joinToString(" "))

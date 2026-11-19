@@ -10,16 +10,21 @@ them you can't ship updates to GitHub users with the same signature, and for Pla
 ask Google to reset the upload key. Never commit them.
 
 ## Build
+Two flavors from one codebase (see `productFlavors` in `app/build.gradle.kts`):
+- **github**: everything. Goes to GitHub Releases (and F-Droid).
+- **play**: Google Play policy: no contacts permission, and node runs with `--no-addons` so it never loads native code from downloaded packages.
+
 ```sh
-./gradlew assembleRelease bundleRelease
-# app/build/outputs/apk/release/app-release.apk     -> GitHub Releases
-# app/build/outputs/bundle/release/app-release.aab  -> Google Play
+./gradlew assembleGithubRelease bundlePlayRelease
+# app/build/outputs/apk/github/release/app-github-release.apk   -> GitHub Releases
+# app/build/outputs/bundle/playRelease/app-play-release.aab      -> Google Play
 ```
+Code that differs between them checks `BuildConfig.PLAY`; Play-only manifest changes live in `app/src/play/AndroidManifest.xml`.
 Bump `versionCode` and `versionName` in `app/build.gradle.kts` first, and add
 `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`.
 
 To update the old dev install (`io.github.pimobile.spike`) instead of installing a second app:
-`./gradlew assembleDebug -PappId=io.github.pimobile.spike`.
+`./gradlew assembleGithubDebug -PappId=io.github.pimobile.spike`.
 
 ## Store images
 `fastlane/metadata/android/en-US/` holds the listing text, icon, feature graphic and phone

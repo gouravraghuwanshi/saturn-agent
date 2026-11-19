@@ -138,7 +138,8 @@ class PiRuntime private constructor(private val ctx: Context) {
         "SSL_CERT_FILE" to certs.path,
         "CURL_CA_BUNDLE" to certs.path,
         "GIT_SSL_CAINFO" to certs.path,
-        "NODE_OPTIONS" to "--use-bundled-ca",
+        // Play build: node never loads native add-ons (.node machine code) from downloaded packages.
+        "NODE_OPTIONS" to if (io.github.pimobile.BuildConfig.PLAY) "--use-bundled-ca --no-addons" else "--use-bundled-ca",
         // git
         "GIT_EXEC_PATH" to gitCore.path,
         "GIT_TEMPLATE_DIR" to File(usr, "share/git-core/templates").path,
@@ -257,12 +258,12 @@ class PiRuntime private constructor(private val ctx: Context) {
             |· termux-tts-speak <text> · termux-notification -t <title> -c <text> [--id id] · termux-toast <text>
             |· termux-location [-p gps|network] [-r once|last] · termux-camera-info · termux-camera-photo [-c 0|1] [file.jpg]
             |· termux-microphone-record [-f file.m4a] [-l seconds] · termux-sensor -l | -s <name> [-n count]
-            |· termux-contact-list · termux-wifi-connectioninfo · termux-clipboard-get / -set
+            |· ${if (io.github.pimobile.BuildConfig.PLAY) "" else "termux-contact-list · "}termux-wifi-connectioninfo · termux-clipboard-get / -set
             |· termux-share <file> · termux-open-url <url> · termux-telephony-call <number> · termux-sms-send -n <number> <text>
             |Photos and recordings without a file name are saved to the artifacts folder; the path is printed.
             |termux-telephony-call and termux-sms-send only open the dialer / messaging app filled in — the user
             |presses call or send themselves; say so. Use these only when the user's request needs them. The first
-            |use of the camera, microphone, location or contacts shows an Android permission prompt to the user.
+            |use of the camera, microphone, location${if (io.github.pimobile.BuildConfig.PLAY) "" else " or contacts"} shows an Android permission prompt to the user.
             |
             |## Scheduling (timers, reminders, cron)
             |To do something later or repeatedly, use `saturn-schedule` — it sets an Android alarm that runs even

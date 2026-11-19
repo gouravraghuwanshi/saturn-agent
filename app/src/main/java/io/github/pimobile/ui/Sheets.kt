@@ -307,7 +307,7 @@ private fun PhoneFeatures() {
         .padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text("Let Saturn use phone features", style = Ph.title.copy(fontSize = 14.sp))
-            Text("Torch, camera, microphone, location, sensors, notifications, contacts and sharing. Android asks you the first time each one is used.",
+            Text("Torch, camera, microphone, location, sensors, notifications${if (io.github.pimobile.BuildConfig.PLAY) " and" else ", contacts and"} sharing. Android asks you the first time each one is used.",
                 style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted))
         }
         androidx.compose.material3.Switch(checked = on, onCheckedChange = null,
@@ -320,7 +320,7 @@ private fun PhoneFeatures() {
             add("Camera" to android.Manifest.permission.CAMERA)
             add("Microphone" to android.Manifest.permission.RECORD_AUDIO)
             add("Location" to android.Manifest.permission.ACCESS_FINE_LOCATION)
-            add("Contacts" to android.Manifest.permission.READ_CONTACTS)
+            if (!io.github.pimobile.BuildConfig.PLAY) add("Contacts" to android.Manifest.permission.READ_CONTACTS)
             if (android.os.Build.VERSION.SDK_INT >= 33) add("Notifications" to android.Manifest.permission.POST_NOTIFICATIONS)
         }
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)) {

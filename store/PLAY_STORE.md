@@ -6,14 +6,14 @@ Everything here is ready to copy-paste. Steps you have to do yourself are marked
 - **Phone control lives in a separate app (Phone Control, GitHub-only).** Since 28 Jan 2026 Google's Accessibility policy prohibits "any use of the API that enables an app to autonomously initiate, plan, and execute actions". Saturn no longer contains any accessibility code, so this doesn't affect it. Don't submit Phone Control to Play, and don't link to it from Saturn's listing.
 - **AI-generated content needs an in-app Report button** so users can flag offensive replies without leaving the app.
 - **Data safety: Saturn does "collect" data** in Google's sense (anything the app sends off the device, including to the AI provider the user picks). Declare it; see section 3.
-- **Downloaded code is a judgment call.** Bundled tools are fine. npm and pi.dev packages are JavaScript run by node; the policy only clearly exempts interpreters with *indirect* Android API access (like a WebView). The Play build should block native addons (`node --no-addons`) and say plainly in the listing that extensions are user-installed.
+- **Downloaded code is a judgment call.** Bundled tools are fine. npm and pi.dev packages are JavaScript run by node; the policy only clearly exempts interpreters with *indirect* Android API access (like a WebView). Done: the play flavor runs node with `--no-addons` and has no contacts permission. Say plainly in the listing that extensions are user-installed.
 - **New personal accounts:** closed test with 12+ testers for 14 days before production. Plus ID verification.
 - **Developer verification (for the GitHub APK too):** from 30 Sep 2026, in Brazil, Indonesia, Singapore and Thailand first, certified phones only install apps from registered developers. Register the package name *and* the GitHub signing key in Play Console so sideloaded installs keep working.
 
 ## 1. Create the app (you)
 Play Console → Create app → Name **Saturn Agent**, default language English (US), **App**, **Free**.
 Package name comes from the bundle: `io.github.gouravraghuwanshi.saturn`.
-Turn on **Play App Signing** (default). Upload `app-release.aab`; our key becomes the *upload key*.
+Turn on **Play App Signing** (default). Upload `app/build/outputs/bundle/playRelease/app-play-release.aab` (build it with `./gradlew bundlePlayRelease`); our key becomes the *upload key*.
 
 ## 2. Store listing
 Copy from `fastlane/metadata/android/en-US/`:

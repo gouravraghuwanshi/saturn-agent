@@ -76,6 +76,12 @@ object Control {
 
     fun loadProviders() { providersError = null; command("providers", "") }
 
+    /** Every model the signed-in providers offer (no task needed). Fills UiStore.models. */
+    fun loadModels() = io.execute {
+        ensure()
+        session?.send(JSONObject().put("id", "ctl-models").put("type", "get_available_models"))
+    }
+
     fun startLogin(p: Provider, type: String) {
         login.reset()
         login.provider = p; login.authType = type; login.running = true
@@ -133,7 +139,12 @@ object Control {
                     r.optString("placeholder"), if (m == "select") "select" else login.pendingKind,
                 )
             }
-            "response" -> if (!r.optBoolean("success")) {
+            "response" -> if (r.optString("command") == "get_available_models" && r.optBoolean("success")) {
+                r.optJSONObject("data")?.optJSONArray("models")?.let { a ->
+                    UiStore.models = (0 until a.length()).map { a.getJSONObject(it) }
+                        .map { it.optString("provider") to it.optString("id") }
+                }
+            } else if (!r.optBoolean("success")) {
                 val msg = r.optString("error")
                 if (login.running) { login.error = msg; login.running = false } else providersError = msg
             }
@@ -160,13 +171,13 @@ object Control {
             "prompt_cancelled" -> login.dialog = null
             "login_done" -> {
                 login.running = false; login.done = true; login.dialog = null
-                refreshSignedIn(); TaskManager.restartIdle(); loadProviders()
+                refreshSignedIn(); TaskManager.restartIdle(); loadProviders(); loadModels()
             }
             "login_failed" -> {
                 login.running = false; login.dialog = null
                 login.error = e.optString("message").takeUnless { it == "cancelled" }
             }
-            "logout_done" -> { refreshSignedIn(); TaskManager.restartIdle(); loadProviders() }
+            "logout_done" -> { refreshSignedIn(); TaskManager.restartIdle(); loadProviders(); loadModels() }
             "error" -> if (e.optString("scope") == "providers") providersError = e.optString("message") else login.error = e.optString("message")
         }
     }

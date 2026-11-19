@@ -198,17 +198,15 @@ fun SettingsSheet(onDismiss: () -> Unit) {
 @Composable
 fun ModelSheet(task: TaskUi?, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
-    LaunchedEffect(task) {
-        val t = task ?: UiStore.tasks.firstOrNull()
-        if (t != null && UiStore.models.isEmpty()) UiStore.refreshModels(t)
-    }
+    // Always ask fresh: a sign-in since the last look adds models.
+    LaunchedEffect(Unit) { io.github.pimobile.ui.state.Control.loadModels() }
     val models = UiStore.models.filter { (p, id) -> "$p/$id".contains(query, ignoreCase = true) }.take(200)
     PhSheet(onDismiss) {
         SheetTitle("Model", UiStore.model?.let { "Current: $it" } ?: "pi chooses a default from your keys")
         Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { Field(query, { query = it }, "search or provider/model-id") }
         if (UiStore.models.isEmpty()) Text(
-            if (UiStore.tasks.isEmpty()) "Start a task once to load the model list — or type provider/model-id and tap Use."
-            else "Loading models…",
+            if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "Loading models…"
+            else "Sign in first (/login) — or type provider/model-id and tap Use.",
             style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         if (query.contains('/') && models.isEmpty()) Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
             PrimaryButton("Use $query") {

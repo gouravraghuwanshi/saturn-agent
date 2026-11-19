@@ -9,6 +9,25 @@
 // logout live on `.runtime` (the same calls pi's own /login dialog makes).
 const runtimeOf = (ctx) => ctx.modelRegistry.runtime ?? ctx.modelRegistry;
 
+// Sign in with ChatGPT identifies the installation by a stable UUID. pi's own
+// /login passes settingsManager.getOrCreateDeviceId(); extensions can't reach
+// the settings manager, so read/create the same `deviceId` field ourselves.
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function deviceId() {
+  const dir = process.env.PI_CODING_AGENT_DIR ?? join(process.env.HOME ?? "", ".pi", "agent");
+  const file = join(dir, "settings.json");
+  let s = {};
+  try { s = JSON.parse(readFileSync(file, "utf8")); } catch {}
+  if (typeof s.deviceId === "string" && UUID_RE.test(s.deviceId)) return s.deviceId;
+  s.deviceId = randomUUID();
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, JSON.stringify(s, null, 2));
+  return s.deviceId;
+}
+
 const emit = (ctx, payload) => ctx.ui.notify("pimobile:" + JSON.stringify(payload), "info");
 const parse = (args) => { try { return JSON.parse(args || "{}"); } catch { return {}; } };
 
@@ -87,7 +106,7 @@ export default function (pi) {
       };
       try {
         emit(ctx, { type: "login_started", provider, authType: type });
-        await runtimeOf(ctx).login(provider, type === "oauth" ? "oauth" : "api_key", interaction);
+        await runtimeOf(ctx).login(provider, type === "oauth" ? "oauth" : "api_key", interaction, { getDeviceId: deviceId });
         emit(ctx, { type: "login_done", provider });
       } catch (e) {
         emit(ctx, { type: "login_failed", provider, message: String(e?.message ?? e) });

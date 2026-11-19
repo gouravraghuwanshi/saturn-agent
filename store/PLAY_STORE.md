@@ -2,14 +2,13 @@
 
 Everything here is ready to copy-paste. Steps you have to do yourself are marked **you**.
 
-## 0. Things to know before you pay the $25
-- **New personal accounts must run a closed test first:** at least **12 testers opted in for 14 days in a row** before you can apply for production. Line up friends early (they just need a Google account and the opt-in link).
-- **Identity verification:** Google asks for ID and, for personal accounts, a verified phone number. It can take a few days.
-- **Policy risk, honestly:** Saturn may get pushback in review on three points.
-  1. *Accessibility API*: allowed for non-disability use only with the declaration below, a prominent in-app disclosure (we have it) and a demo video.
-  2. *Executing code*: Saturn runs node/bash and can install npm packages and pi.dev extensions. Play bans apps that download *native* executable code from outside Play; JavaScript run by an interpreter is generally accepted, but reviewers vary. If they object, the fix is a Play build flavor that turns off "Run scripts directly".
-  3. *Exact alarms*: we use `SCHEDULE_EXACT_ALARM` (user-granted), which is fine for user-set timers and reminders.
-  If any of these gets rejected, GitHub and F-Droid releases are unaffected.
+## 0. Read this first: what blocks Play (checked Nov 2026)
+- **Phone control can't ship on Play.** Since 28 Jan 2026 Google's Accessibility policy prohibits "any use of the API that enables an app to autonomously initiate, plan, and execute actions". An AI agent tapping through apps is exactly that. The Play build must leave the accessibility service out entirely (it stays in the GitHub build).
+- **AI-generated content needs an in-app Report button** so users can flag offensive replies without leaving the app.
+- **Data safety: Saturn does "collect" data** in Google's sense (anything the app sends off the device, including to the AI provider the user picks). Declare it; see section 3.
+- **Downloaded code is a judgment call.** Bundled tools are fine. npm and pi.dev packages are JavaScript run by node; the policy only clearly exempts interpreters with *indirect* Android API access (like a WebView). The Play build should block native addons (`node --no-addons`) and say plainly in the listing that extensions are user-installed.
+- **New personal accounts:** closed test with 12+ testers for 14 days before production. Plus ID verification.
+- **Developer verification (for the GitHub APK too):** from 30 Sep 2026, in Brazil, Indonesia, Singapore and Thailand first, certified phones only install apps from registered developers. Register the package name *and* the GitHub signing key in Play Console so sideloaded installs keep working.
 
 ## 1. Create the app (you)
 Play Console → Create app → Name **Saturn Agent**, default language English (US), **App**, **Free**.
@@ -29,10 +28,10 @@ Copy from `fastlane/metadata/android/en-US/`:
 - Privacy policy URL: `https://github.com/gouravraghuwanshi/saturn-agent/blob/main/PRIVACY.md`
 
 ## 3. App content forms
-**Data safety**
-- Does your app collect or share user data? **No.** Saturn's developer receives nothing. Data the user sends to their own chosen AI provider is user-initiated transfer to a service the user picks (Play counts that as not "collection" by you; note it in the description, which we do).
-- Is data encrypted in transit? **Yes** (HTTPS to providers).
-- Can users request deletion? **Yes**: uninstall or clear storage; nothing is stored off-device by us.
+**Data safety** (Saturn's own developer never receives anything, but the app does send user content to the AI provider the user configures, which Google counts as collection)
+- Data collected: **Yes.** Messages ("Other in-app messages"), Files and docs, Photos, plus anything the agent reads for a request (Location, Audio, when the user asks for those). Purpose: **App functionality**. Processed ephemerally: **No** (the provider's retention policy applies). Optional: **No** (needed to answer).
+- Data shared: **No** (user-initiated transfer to a provider they chose isn't "sharing").
+- Encrypted in transit: **Yes**. Users can request deletion: data stays on the device; uninstalling removes it. Point to PRIVACY.md.
 
 **Ads:** No. **Target audience:** 18+. **Content rating questionnaire:** utility/productivity, no user-generated content shared with others, unrestricted internet access: Yes.
 **Government / financial / health app:** No.
@@ -40,9 +39,7 @@ Copy from `fastlane/metadata/android/en-US/`:
 **Foreground service (specialUse)** declaration:
 > Saturn runs AI agent tasks the user started (for example building a web page or running a script). The task keeps running while the user switches apps and stops as soon as it finishes. Users can see and stop running tasks from the notification and in the app.
 
-**Accessibility API** declaration (choose *not* an accessibility tool):
-> When the user turns on "Let Saturn use your apps" and asks Saturn to do something in another app (for example "open Maps and find a café"), Saturn uses the Accessibility API to read the on-screen elements and perform taps, typing and swipes for that request. It acts only on the user's request, shows a persistent Stop button while acting, asks the user before sending, paying, deleting or installing, and never types into password fields, acts on the lock screen or answers permission prompts. Screen content is sent only to the AI provider the user configured, to decide the next step.
-Demo video (**you**): screen-record ~60s: enable in Settings → ask "open Calculator and work out 7×6" → show the Stop pill → ask it to send a message → show the Allow card → tap Don't allow.
+**Accessibility API:** not used in the Play build (see section 0). Don't upload a build that contains `PhoneControlService`.
 
 **Exact alarm** (if asked): user-scheduled timers, reminders and repeating jobs created in chat.
 

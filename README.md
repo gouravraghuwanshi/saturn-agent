@@ -47,14 +47,9 @@ Then open Saturn, tap **Sign in**, and either log in with a subscription you alr
 
 ## Phone Control (companion app)
 
-`phonecontrol/` is a second, tiny app: an **MCP server that lets any AI agent on your phone read the screen and tap, type and swipe in other apps**, Saturn included. It's separate on purpose. Any MCP client can use it, it's off until you switch it on in Android's Accessibility settings, and Saturn itself never touches the Accessibility API.
+Want Saturn (or any other agent on your phone) to tap through your apps? That lives in a separate app, [Phone Control](https://github.com/gouravraghuwanshi/phone-control-mcp): a small MCP server with a Stop button, Allow prompts for anything risky, and hard limits on passwords and the lock screen. Install it, switch it on in Accessibility settings, tap **Copy config**, and add it to `~/.pi/agent/mcp.json` in Saturn.
 
-- Tools: `phone_screen`, `phone_tap`, `phone_type`, `phone_enter`, `phone_swipe`, `phone_scroll`, `phone_key`, `phone_open_app`, `phone_list_apps`, `phone_wait`, `phone_screenshot` (returns an image).
-- A Stop button floats on screen while an agent works; Send/Pay/Delete/Install-type taps wait for your Allow; it refuses password fields, the lock screen and permission prompts.
-- Listens on `127.0.0.1` only and needs the token shown in the app. Tap **Copy config** and add it to `~/.pi/agent/mcp.json` in Saturn (or any MCP client's config).
-- On Android 13+, if the Accessibility switch is greyed out, open *App info → ⋮ → Allow restricted settings* first.
-
-It's GitHub-only: Google Play doesn't allow AI agents to drive apps through Accessibility.
+It's separate on purpose: any MCP client can use it, and Saturn itself never touches the Accessibility API.
 
 ## How it works (the short version)
 

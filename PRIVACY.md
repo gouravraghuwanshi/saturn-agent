@@ -4,7 +4,7 @@ Short version: Saturn has no server, no accounts, no ads and no analytics. We (t
 
 ## What stays on your phone
 - Your projects, files, artifacts, chats and settings. They live in Saturn's private app storage.
-- Your API keys, encrypted with the Android Keystore. Account sign-ins (like ChatGPT or Claude subscriptions) are kept in Saturn's private storage.
+- Your API keys and account sign-ins (like ChatGPT or Claude subscriptions), kept in Saturn's private storage, which other apps can't read.
 - Nothing is backed up to Google Drive or copied to a new phone. We turned Android backup off on purpose.
 
 ## What leaves your phone, and only when you use the feature

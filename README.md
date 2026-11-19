@@ -35,7 +35,7 @@ No root. No Termux. Just install it.
 
 ## Your stuff stays yours
 
-Saturn is open source and has no server of its own. No accounts, no ads, no analytics. Your files and projects live in the app's private storage, API keys are encrypted with the Android Keystore, and nothing gets backed up to the cloud.
+Saturn is open source and has no server of its own. No accounts, no ads, no analytics. Your files, projects, API keys and sign-ins live in the app's private storage, and nothing gets backed up to the cloud.
 
 The one thing that leaves your phone is what the agent sends to the AI provider you picked, so the model can think. That's how every AI agent works, and we'd rather tell you upfront. More detail in [PRIVACY.md](PRIVACY.md).
 

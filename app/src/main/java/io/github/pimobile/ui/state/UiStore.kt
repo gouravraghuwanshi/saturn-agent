@@ -103,6 +103,7 @@ object UiStore : TaskManager.Listener {
         if (::app.isInitialized) return
         app = context.applicationContext
         secrets = SecretStore(app)
+        moveKeysToPi()
         // One-time migration of the spike's plain-text key into the Keystore-backed store.
         app.getSharedPreferences("spike", Context.MODE_PRIVATE).let { old ->
             old.getString("key", null)?.takeIf { it.isNotBlank() }?.let { secrets.put("OPENROUTER_API_KEY", it) }
@@ -125,6 +126,46 @@ object UiStore : TaskManager.Listener {
         project = prefs.getString("project", null)?.let { File(it) }
         TaskManager.tasks.forEach { ui(it) }
         TaskManager.addListener(this)
+    }
+
+    /** pi provider id for each key env var the old Settings → API keys section stored. */
+    private val KEY_PROVIDERS = mapOf(
+        "OPENROUTER_API_KEY" to "openrouter", "ANTHROPIC_API_KEY" to "anthropic", "OPENAI_API_KEY" to "openai",
+        "GEMINI_API_KEY" to "google", "DEEPSEEK_API_KEY" to "deepseek", "GROQ_API_KEY" to "groq",
+        "XAI_API_KEY" to "xai", "MISTRAL_API_KEY" to "mistral",
+    )
+
+    private val authFile get() = File(runtime.home, ".pi/agent/auth.json")
+
+    /** Saves an API key the way pi's own /login does (auth.json), so /login and /logout show it. */
+    fun saveApiKey(provider: String, key: String) {
+        val f = authFile
+        val auth = runCatching { JSONObject(f.readText()) }.getOrElse { JSONObject() }
+        auth.put(provider, JSONObject().put("type", "api_key").put("key", key.trim()))
+        f.parentFile?.mkdirs(); f.writeText(auth.toString(2))
+        Control.refreshSignedIn(); Control.restart(); TaskManager.restartIdle()
+    }
+
+    /**
+     * API keys now live in /login (pi's auth.json). Keys saved by the old Settings
+     * section move there once, unless pi already has a credential for that provider.
+     */
+    private fun moveKeysToPi() = runCatching {
+        val old = secrets.all().filterKeys { it in KEY_PROVIDERS }
+        if (old.isEmpty()) return@runCatching
+        val f = authFile
+        val auth = runCatching { JSONObject(f.readText()) }.getOrElse { JSONObject() }
+        val moved = old.filter { (env, key) ->
+            val p = KEY_PROVIDERS.getValue(env)
+            val existing = auth.optJSONObject(p)
+            when {
+                existing == null -> { auth.put(p, JSONObject().put("type", "api_key").put("key", key)); true }
+                existing.optString("key") == key -> true // already there
+                else -> false // pi has another credential for it: keep this one where it is
+            }
+        }
+        f.parentFile?.mkdirs(); f.writeText(auth.toString(2))
+        moved.keys.forEach { secrets.put(it, null) }
     }
 
     fun applySecrets() {

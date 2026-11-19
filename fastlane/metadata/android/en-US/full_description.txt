@@ -14,7 +14,7 @@ Not a chat window that sends everything to a server and back. Saturn runs the re
 • Open a real terminal whenever you want to poke around yourself.
 
 <b>Your stuff stays yours</b>
-Saturn is open source. Your files, projects and keys stay on your phone, and keys are encrypted with the Android Keystore. There are no accounts, no ads, no analytics and no Saturn server. The only thing that leaves your phone is what the agent sends to the AI provider you picked, so it can think.
+Saturn is open source. Your files, projects, keys and sign-ins stay in Saturn's private storage on your phone. There are no accounts, no ads, no analytics and no Saturn server. The only thing that leaves your phone is what the agent sends to the AI provider you picked, so it can think.
 
 <b>Heads up</b>
 Saturn needs an AI model to work. Sign in with a subscription you already have, or paste an API key. Some providers have free models.

@@ -71,7 +71,7 @@ object Onboarding {
         var step by remember { mutableStateOf(0) }
         var sheet by remember { mutableStateOf<String?>(null) }
         // Signing in through a sheet moves on by itself.
-        LaunchedEffect(connected) { if (connected && step == 1) step = 2 }
+        LaunchedEffect(connected, sheet) { if (connected && step == 1) step = 2 }
 
         Column(Modifier.fillMaxSize().background(Ph.Ground).statusBarsPadding().navigationBarsPadding().imePadding()
             .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),
@@ -93,7 +93,6 @@ object Onboarding {
         }
         when (sheet) {
             "login" -> LoginSheet(initialQuery = "") { sheet = null }
-            "keys" -> SettingsSheet { sheet = null }
         }
     }
 
@@ -139,7 +138,7 @@ object Onboarding {
                         .border(1.dp, Ph.LineStrong, RoundedCornerShape(12.dp)).padding(14.dp),
                     decorationBox = { inner -> if (key.isEmpty()) Text("2 · Paste it here (sk-or-…)", style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() })
                 Primary("Save and continue", enabled = key.length > 10) {
-                    UiStore.secrets.put("OPENROUTER_API_KEY", key); UiStore.applySecrets()
+                    UiStore.saveApiKey("openrouter", key)
                     // pi's OpenRouter catalog id for the free router is literally "openrouter/free".
                     UiStore.setModel(null, "openrouter", FREE_MODEL)
                     next()
@@ -151,7 +150,7 @@ object Onboarding {
             Text("Use a subscription you already have", style = Ph.title.copy(fontSize = 16.sp))
             Text("ChatGPT Plus/Pro, Claude, GitHub Copilot and more. Signs in through your browser.", style = Ph.body.copy(fontSize = 13.sp))
         }
-        Card(onClick = { onSheet("keys") }) {
+        Card(onClick = { onSheet("login") }) {
             Text("I have an API key", style = Ph.title.copy(fontSize = 16.sp))
             Text("Anthropic, OpenAI, Gemini, DeepSeek, Groq, xAI, Mistral…", style = Ph.body.copy(fontSize = 13.sp))
         }

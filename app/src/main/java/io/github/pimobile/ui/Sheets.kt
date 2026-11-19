@@ -53,16 +53,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private val PROVIDERS = listOf(
-    "OpenRouter" to "OPENROUTER_API_KEY",
-    "Anthropic" to "ANTHROPIC_API_KEY",
-    "OpenAI" to "OPENAI_API_KEY",
-    "Google Gemini" to "GEMINI_API_KEY",
-    "DeepSeek" to "DEEPSEEK_API_KEY",
-    "Groq" to "GROQ_API_KEY",
-    "xAI" to "XAI_API_KEY",
-    "Mistral" to "MISTRAL_API_KEY",
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,45 +101,17 @@ internal fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -
 
 @Composable
 fun SettingsSheet(onDismiss: () -> Unit) {
-    var secrets by remember { mutableStateOf(UiStore.secrets.all()) }
-    var editing by remember { mutableStateOf<String?>(null) }
-    var draft by remember { mutableStateOf("") }
     val diag = remember { mutableStateListOf<String>() }
     var running by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     PhSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            SheetTitle("Settings", "Keys are encrypted with the Android Keystore and only passed to Saturn's engine. For subscriptions use /login.")
-            Text("API KEYS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp))
-            PROVIDERS.forEach { (name, env) ->
-                val set = secrets[env]
-                Column(Modifier.fillMaxWidth().clickable { editing = if (editing == env) null else env; draft = "" }
-                    .padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        PhIcon(PhIcons.Key, if (set != null) Ph.Green else Ph.Muted, 18.dp)
-                        Text(name, style = Ph.title.copy(fontSize = 14.sp), modifier = Modifier.padding(start = 12.dp).weight(1f))
-                        Text(if (set != null) "••••${set.takeLast(4)}" else "add key", style = Ph.monoSmall.copy(color = if (set != null) Ph.Green else Ph.Muted))
-                    }
-                    if (editing == env) {
-                        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Field(draft, { draft = it }, env, secret = true)
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PrimaryButton("Save", enabled = draft.isNotBlank()) {
-                                    UiStore.secrets.put(env, draft); UiStore.applySecrets()
-                                    secrets = UiStore.secrets.all(); editing = null
-                                }
-                                if (set != null) Box(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
-                                    .border(1.dp, Ph.LineStrong, RoundedCornerShape(12.dp))
-                                    .clickable { UiStore.secrets.put(env, null); UiStore.applySecrets(); secrets = UiStore.secrets.all(); editing = null }
-                                    .padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
-                                    Text("Remove", style = Ph.title.copy(fontSize = 14.sp, color = Ph.Red))
-                                }
-                            }
-                            Text("Applies to tasks started from now on.", style = Ph.monoSmall)
-                        }
-                    }
-                }
+            SheetTitle("Settings", "AI accounts and API keys live in /login.")
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(io.github.pimobile.ui.state.Control.signedIn.sorted().joinToString(" · ").ifEmpty { "Not signed in to any AI yet" },
+                    style = Ph.monoSmall.copy(color = if (io.github.pimobile.ui.state.Control.signedIn.isEmpty()) Ph.Amber else Ph.Green),
+                    modifier = Modifier.weight(1f))
             }
 
             Text("RUNTIME", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
@@ -371,7 +333,7 @@ private fun Privacy() {
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         listOf(
             Triple(PhIcons.Lock, "Runs on this phone", "Pi, your projects, files, artifacts and terminal live in Saturn's private storage. Nothing is backed up to the cloud."),
-            Triple(PhIcons.Key, "Your keys stay here", "API keys are encrypted with the Android Keystore. Account sign-ins are kept in Saturn's private storage."),
+            Triple(PhIcons.Key, "Your keys stay here", "API keys and account sign-ins are kept in Saturn's private storage, which other apps can't read. Nothing is backed up to the cloud."),
             Triple(PhIcons.External, "What leaves your phone", "Your messages, and the files Saturn reads for them, go to the model provider you choose. Web pages and packages are downloaded when you or Saturn ask for them."),
             Triple(PhIcons.Check, "No tracking", "No accounts, analytics, ads or telemetry. Saturn has no server of its own."),
         ).forEach { (icon, title, body) ->

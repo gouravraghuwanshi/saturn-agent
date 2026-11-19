@@ -291,13 +291,11 @@ fun HomeScreen(
                         else -> { UiStore.newTask(text, File(project), attachments.toList()); attachments.clear() }
                     }
                 },
-                leading = {
-                    ChipButton(projectLabel,
-                        icon = PhIcons.Folder, description = "Choose project") { sheet = "project" }
-                },
             )
-            Text(if (selecting) "tap tasks to select · back to cancel" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+            // The gesture hint is for newcomers (and while selecting); it goes once there are a few tasks.
+            if (selecting || projectTasks.count { !it.hidden } in 1..3)
+                Text(if (selecting) "tap tasks to select · back to cancel" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)), textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
             }
         }
     }

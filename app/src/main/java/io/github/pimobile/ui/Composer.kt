@@ -43,6 +43,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.launch
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -133,6 +135,40 @@ fun Composer(
         onSend(t)
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val dictation = remember { Dictation(context) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { dictation.stopAndRelease() } }
+    var dictationBase by remember { mutableStateOf("") }
+    fun put(t: String) = onValue(TextFieldValue(t, selection = androidx.compose.ui.text.TextRange(t.length)))
+    fun listen() {
+        dictationBase = text.trimEnd().let { if (it.isEmpty()) "" else "$it " }
+        dictation.start(
+            onPartial = { put(dictationBase + it) },
+            onFinal = { if (it.isNotBlank()) put(dictationBase + it) },
+            onError = { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() },
+        )
+    }
+    val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) listen() else android.widget.Toast.makeText(context, "Microphone permission is needed to talk to Saturn", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    // Phones without an in-app recognizer: Android's own dialog.
+    val systemDialog = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { put(text.trimEnd().let { t -> if (t.isEmpty()) it else "$t $it" }) }
+    }
+    fun startDictation() {
+        when {
+            !dictation.available -> runCatching {
+                systemDialog.launch(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
+            }.onFailure { android.widget.Toast.makeText(context, "No speech recognizer on this phone", android.widget.Toast.LENGTH_SHORT).show() }
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED -> listen()
+            else -> micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     Column {
         // weight(fill=false): the input is measured first and always keeps its
         // full height; the palette gets whatever space is left (and scrolls).
@@ -171,25 +207,25 @@ fun Composer(
                     .semantics { contentDescription = placeholder },
                 decorationBox = { inner ->
                     Box {
-                        if (text.isEmpty()) Text(placeholder, style = Ph.body.copy(fontSize = 16.sp, color = Ph.Muted))
+                        if (text.isEmpty()) Text(if (dictation.listening) "Listening…" else placeholder,
+                            style = Ph.body.copy(fontSize = 16.sp, color = if (dictation.listening) Ph.Amber else Ph.Muted))
                         inner()
                     }
                 },
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ChipButton("/", mono = true) {
+                IconGhost(description = "Commands", onClick = {
                     onValue(TextFieldValue("/", selection = androidx.compose.ui.text.TextRange(1)))
                     focus.requestFocus()
-                }
+                }) { Text("/", style = Ph.mono.copy(fontSize = 17.sp, color = Ph.TextSoft)) }
                 if (attach != null) AttachButton(attach)
                 leading()
                 Box(Modifier.weight(1f))
                 extra()
-                VoiceButton { spoken ->
-                    val joined = if (text.isBlank()) spoken else text.trimEnd() + " " + spoken
-                    onValue(TextFieldValue(joined, selection = androidx.compose.ui.text.TextRange(joined.length)))
-                }
-                SendButton(enabled = text.isNotBlank() || attachments.isNotEmpty(), color = accent) { send() }
+                // One round button: the mic while the box is empty, Send once there's something to send.
+                if (dictation.listening || (text.isBlank() && attachments.isEmpty())) MicButton(dictation) {
+                    if (dictation.listening) dictation.stop() else startDictation()
+                } else SendButton(enabled = true, color = accent) { send() }
             }
         }
     }
@@ -213,7 +249,7 @@ fun ChipButton(label: String, mono: Boolean = false, icon: androidx.compose.ui.g
 @Composable
 fun SendButton(enabled: Boolean, color: Color = Ph.Amber, onClick: () -> Unit) {
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+        Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape)
             .background(if (enabled) color else Ph.Chip)
             .clickable(enabled = enabled, onClickLabel = "Send") { onClick() },
         contentAlignment = Alignment.Center,
@@ -312,9 +348,8 @@ fun rememberAttachPicker(onPicked: (List<UiStore.Attachment>) -> Unit): AttachPi
 private fun AttachButton(picker: AttachPicker) {
     var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(if (open) Ph.AmberWash else Ph.Chip)
-            .clickable(onClickLabel = "Attach") { open = true }, contentAlignment = Alignment.Center) {
-            PhIcon(PhIcons.Plus, if (open) Ph.Amber else Ph.TextSoft, 18.dp, "Attach")
+        IconGhost(description = "Attach", active = open, onClick = { open = true }) {
+            PhIcon(PhIcons.Plus, if (open) Ph.Amber else Ph.TextSoft, 19.dp, "Attach")
         }
         androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = Ph.Raised,
             shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Ph.LineStrong)) {
@@ -350,25 +385,33 @@ fun FileChip(name: String, onClick: (() -> Unit)? = null, onRemove: (() -> Unit)
 
 
 /**
- * Dictation through Android's own speech recognizer (it shows its own
- * listening UI, and needs no microphone permission from Saturn).
+ * The mic: listens inside Saturn (no system pop-up). While listening it turns
+ * amber and pulses with your voice; tap again to stop. Falls back to Android's
+ * own dialog on phones without an in-app recognizer.
  */
 @Composable
-private fun VoiceButton(onText: (String) -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
-        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            ?.takeIf { it.isNotBlank() }?.let(onText)
+fun MicButton(d: Dictation, onTap: () -> Unit) {
+    val pulse by androidx.compose.animation.core.animateFloatAsState(if (d.listening) 1f + d.level * 0.45f else 1f,
+        androidx.compose.animation.core.tween(120), label = "pulse")
+    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        if (d.listening) Box(Modifier.size(44.dp).graphicsLayer { scaleX = pulse; scaleY = pulse }
+            .clip(androidx.compose.foundation.shape.CircleShape).background(Ph.Amber.copy(alpha = 0.22f)))
+        Box(Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape)
+            .background(if (d.listening) Ph.Amber else Ph.Chip)
+            .border(1.dp, if (d.listening) Ph.Amber else Ph.LineStrong, androidx.compose.foundation.shape.CircleShape)
+            .clickable(onClickLabel = if (d.listening) "Stop listening" else "Speak") { onTap() },
+            contentAlignment = Alignment.Center) {
+            if (d.listening) Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(Ph.AmberInk))
+            else PhIcon(PhIcons.Mic, Ph.TextSoft, 19.dp, "Speak")
+        }
     }
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.Chip)
-        .clickable(onClickLabel = "Speak") {
-            val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(android.speech.RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-                .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Tell Saturn what to do")
-            runCatching { launcher.launch(i) }.onFailure {
-                android.widget.Toast.makeText(context, "No speech recognizer on this phone", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }, contentAlignment = Alignment.Center) { PhIcon(PhIcons.Mic, Ph.TextSoft, 19.dp, "Speak") }
+}
+
+/** A light, borderless round icon button for the composer's tools row. */
+@Composable
+fun IconGhost(description: String, active: Boolean = false, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(Modifier.size(38.dp).clip(androidx.compose.foundation.shape.CircleShape)
+        .border(1.dp, if (active) Ph.AmberLine else Ph.Line, androidx.compose.foundation.shape.CircleShape)
+        .background(if (active) Ph.AmberWash else androidx.compose.ui.graphics.Color.Transparent)
+        .clickable(onClickLabel = description) { onClick() }, contentAlignment = Alignment.Center) { content() }
 }

@@ -157,7 +157,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
             Row(Modifier.fillMaxWidth().clickable {
                 runScripts = !runScripts
                 UiStore.runtime.runScripts = runScripts
-                io.github.pimobile.runtime.TaskManager.restartIdle()
+                io.github.pimobile.runtime.TaskManager.restartIdle(); io.github.pimobile.ui.state.Control.restart()
             }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
                     Text("Run scripts directly", style = Ph.title.copy(fontSize = 14.sp))

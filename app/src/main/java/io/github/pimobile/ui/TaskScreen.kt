@@ -159,7 +159,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         Builtin("export", "Export the session as HTML and share it") {
             val out = java.io.File(ctx.cacheDir, "exports/task-${t.task.number}.html").apply { parentFile?.mkdirs() }
             t.responses.remove("export_html"); UiStore.rpc(t, "export_html", "outputPath" to out.path) },
-        Builtin("reload", "Reload extensions, skills, prompts and context") { UiStore.appCommand(t, "reload") },
+        Builtin("reload", "Reload extensions, skills, prompts and context") { UiStore.appCommand(t, "reload"); io.github.pimobile.ui.state.Control.restart() },
         Builtin("settings", "App settings", tag = "app") { sheet = "settings" },
         Builtin("changelog", "What's new in pi") { sheet = "changelog" },
         Builtin("stop", "Stop the current run", tag = "app") { UiStore.stop(t) },

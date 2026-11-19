@@ -76,6 +76,17 @@ object Control {
 
     fun loadProviders() { providersError = null; command("providers", "") }
 
+    /**
+     * Extensions changed (install/remove, /reload, settings): the next /login
+     * must see providers they add. Ends this process unless a sign-in is in
+     * progress; the next command starts a fresh one.
+     */
+    fun restart() = io.execute {
+        if (login.running) return@execute
+        session?.stop(); session = null
+        main.post { providers = null; loadProviders() }
+    }
+
     /** Every model the signed-in providers offer (no task needed). Fills UiStore.models. */
     fun loadModels() = io.execute {
         ensure()

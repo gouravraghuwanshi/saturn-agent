@@ -158,7 +158,7 @@ fun HomeScreen(
         Builtin("resume", "Reopen an earlier session as a task") { sheet = "resume" },
         Builtin("project", "Choose the project folder", tag = "app") { sheet = "project" },
         Builtin("settings", "App settings", tag = "app") { sheet = "settings" },
-        Builtin("reload", "Reload extensions & skills in idle tasks") { io.github.pimobile.runtime.TaskManager.restartIdle(); UiStore.commands = emptyList() },
+        Builtin("reload", "Reload extensions & skills in idle tasks") { io.github.pimobile.runtime.TaskManager.restartIdle(); io.github.pimobile.ui.state.Control.restart(); UiStore.commands = emptyList() },
         Builtin("changelog", "What's new in pi") { sheet = "changelog" },
     )
     val commands = paletteOf(builtins)

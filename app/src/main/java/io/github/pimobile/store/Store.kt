@@ -139,11 +139,11 @@ object Store {
                 onLine(err)
                 onLine("Removing it again…")
                 exec(rt, "remove", spec, onLine)
-                TaskManager.restartIdle()
+                TaskManager.restartIdle(); io.github.pimobile.ui.state.Control.restart()
                 return REJECTED
             }
         }
-        if (code == 0) TaskManager.restartIdle()
+        if (code == 0) { TaskManager.restartIdle(); io.github.pimobile.ui.state.Control.restart() }
         return code
     }
 

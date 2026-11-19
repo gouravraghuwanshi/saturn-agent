@@ -99,64 +99,6 @@ internal fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -
 
 // ----------------------------------------------------------------- settings
 
-@Composable
-fun SettingsSheet(onDismiss: () -> Unit) {
-    val diag = remember { mutableStateListOf<String>() }
-    var running by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    PhSheet(onDismiss) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            SheetTitle("Settings", "AI accounts and API keys live in /login.")
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(io.github.pimobile.ui.state.Control.signedIn.sorted().joinToString(" · ").ifEmpty { "Not signed in to any AI yet" },
-                    style = Ph.monoSmall.copy(color = if (io.github.pimobile.ui.state.Control.signedIn.isEmpty()) Ph.Amber else Ph.Green),
-                    modifier = Modifier.weight(1f))
-            }
-
-            Text("RUNTIME", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
-            var runScripts by remember { mutableStateOf(UiStore.runtime.runScripts) }
-            Row(Modifier.fillMaxWidth().clickable {
-                runScripts = !runScripts
-                UiStore.runtime.runScripts = runScripts
-                io.github.pimobile.runtime.TaskManager.restartIdle(); io.github.pimobile.ui.state.Control.restart()
-            }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text("Run scripts directly", style = Ph.title.copy(fontSize = 14.sp))
-                    Text("Lets ./scripts and tools started via npx (e.g. MCP servers) run. Android blocks running files from app storage; this starts them through node or bash instead.",
-                        style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted))
-                }
-                androidx.compose.material3.Switch(checked = runScripts, onCheckedChange = null,
-                    colors = androidx.compose.material3.SwitchDefaults.colors(
-                        checkedTrackColor = Ph.Amber, checkedThumbColor = Ph.AmberInk,
-                        uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
-            }
-
-            GitHubSection()
-            ComputersSection()
-            PhoneFeatures()
-
-            Text("DIAGNOSTICS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
-            Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PrimaryButton(if (running) "Running…" else "Run toolchain check", enabled = !running) {
-                    diag.clear(); running = true
-                    scope.launch {
-                        val code = withContext(Dispatchers.IO) {
-                            runCatching { Diagnostics.run(UiStore.runtime) { l -> scope.launch { diag.add(l) } } }.getOrElse { diag.add("error: $it"); 1 }
-                        }
-                        diag.add(if (code == 0) "✓ all checks passed" else "✗ exit $code"); running = false
-                    }
-                }
-                if (diag.isNotEmpty()) Text(diag.joinToString("\n"), style = Ph.mono.copy(color = Ph.TextSoft, fontSize = 11.5.sp),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Deep).padding(12.dp))
-            }
-
-            Privacy()
-            About()
-        }
-    }
-}
-
 // -------------------------------------------------------------------- model
 
 @Composable
@@ -281,55 +223,7 @@ fun RenameSheet(task: TaskUi, onDismiss: () -> Unit) {
 // -------------------------------------------------------------------- about
 
 @Composable
-private fun PhoneFeatures() {
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    var on by remember { mutableStateOf(io.github.pimobile.device.Device.enabled) }
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); tick++ } } // reflect grants made in Android's dialog
-    Text("PHONE FEATURES", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
-    Row(Modifier.fillMaxWidth().clickable { on = !on; io.github.pimobile.device.Device.enabled = on }
-        .padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text("Let Saturn use phone features", style = Ph.title.copy(fontSize = 14.sp))
-            Text("Torch, camera, microphone, location, sensors, notifications${if (io.github.pimobile.BuildConfig.PLAY) " and" else ", contacts and"} sharing. Android asks you the first time each one is used.",
-                style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted))
-        }
-        androidx.compose.material3.Switch(checked = on, onCheckedChange = null,
-            colors = androidx.compose.material3.SwitchDefaults.colors(
-                checkedTrackColor = Ph.Amber, checkedThumbColor = Ph.AmberInk,
-                uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
-    }
-    if (on) {
-        val perms = buildList {
-            add("Camera" to android.Manifest.permission.CAMERA)
-            add("Microphone" to android.Manifest.permission.RECORD_AUDIO)
-            add("Location" to android.Manifest.permission.ACCESS_FINE_LOCATION)
-            if (!io.github.pimobile.BuildConfig.PLAY) add("Contacts" to android.Manifest.permission.READ_CONTACTS)
-            if (android.os.Build.VERSION.SDK_INT >= 33) add("Notifications" to android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)) {
-            perms.forEach { (label, perm) ->
-                val granted = remember(tick) { io.github.pimobile.device.Device.granted(perm) ||
-                    perm == android.Manifest.permission.ACCESS_FINE_LOCATION && io.github.pimobile.device.Device.granted(android.Manifest.permission.ACCESS_COARSE_LOCATION) }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
-                    // Android won't show its dialog again after two "Don't allow"s; the app's settings page always works.
-                    if (granted) ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        android.net.Uri.fromParts("package", ctx.packageName, null)))
-                    else io.github.pimobile.device.Permissions.request(perm)
-                }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, style = Ph.body.copy(fontSize = 13.5.sp, color = Ph.TextSoft), modifier = Modifier.weight(1f))
-                    Text(if (granted) "allowed" else "ask on first use", style = Ph.monoSmall.copy(color = if (granted) Ph.Green else Ph.Muted))
-                }
-            }
-            Text("Calls and texts only open the dialer or Messages filled in — you press call or send.",
-                style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted), modifier = Modifier.padding(top = 6.dp))
-        }
-    }
-}
-
-@Composable
-private fun Privacy() {
-    Text("PRIVACY", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp))
+internal fun Privacy() {
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         listOf(
             Triple(PhIcons.Lock, "Runs on this phone", "Pi, your projects, files, artifacts and terminal live in Saturn's private storage. Nothing is backed up to the cloud."),
@@ -349,7 +243,7 @@ private fun Privacy() {
 }
 
 @Composable
-private fun About() {
+internal fun About() {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     val info = remember {
@@ -361,7 +255,6 @@ private fun About() {
     val (app, bundle, rt) = info
     val pi = bundle.substringBefore("+")
     val npm = bundle.substringAfter("+npm", "?")
-    Text("ABOUT", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp))
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(Ph.Amber), contentAlignment = Alignment.Center) {

@@ -36,20 +36,9 @@ import io.github.pimobile.ui.theme.Ph
 
 // ------------------------------------------------------------------ GitHub
 
-@Composable
-fun GitHubSection() {
-    var open by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { GitHub.refresh() }
-    Text("GITHUB", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
-    SettingRow(PhIcons.Branch, "GitHub",
-        when { GitHub.user != null -> "Signed in as ${GitHub.user} · Saturn can clone, push and open PRs"; GitHub.checking -> "checking…"
-            else -> "Not signed in · tap to connect your account" },
-        if (GitHub.user != null) Ph.Green else Ph.Muted) { open = true }
-    if (open) GitHubSheet { open = false }
-}
 
 @Composable
-private fun GitHubSheet(onDismiss: () -> Unit) {
+internal fun GitHubSheet(onDismiss: () -> Unit) {
     val uri = LocalUriHandler.current
     val copy = copier()
     var armed by remember { mutableStateOf(false) }
@@ -96,18 +85,9 @@ private fun GitHubSheet(onDismiss: () -> Unit) {
 
 // --------------------------------------------------------------- computers
 
-@Composable
-fun ComputersSection() {
-    var open by remember { mutableStateOf(false) }
-    Text("YOUR COMPUTERS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
-    SettingRow(PhIcons.Terminal, "Work on your computer",
-        if (Computers.hosts.isEmpty()) "Let Saturn run commands on your laptop or server over SSH"
-        else Computers.hosts.joinToString(" · ") { it.alias }, Ph.Muted) { open = true }
-    if (open) ComputersSheet { open = false }
-}
 
 @Composable
-private fun ComputersSheet(onDismiss: () -> Unit) {
+internal fun ComputersSheet(onDismiss: () -> Unit) {
     val copy = copier()
     LaunchedEffect(Unit) { Computers.ensureKey() }
     var name by remember { mutableStateOf("") }

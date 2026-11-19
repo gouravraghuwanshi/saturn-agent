@@ -85,7 +85,7 @@ internal fun SheetTitle(title: String, sub: String? = null) {
 }
 
 @Composable
-private fun Field(value: String, onValue: (String) -> Unit, placeholder: String, secret: Boolean = false, mono: Boolean = true) {
+internal fun Field(value: String, onValue: (String) -> Unit, placeholder: String, secret: Boolean = false, mono: Boolean = true) {
     BasicTextField(
         value, onValue, singleLine = true,
         textStyle = (if (mono) Ph.mono.copy(fontSize = 14.sp) else Ph.body).copy(color = Ph.Text),
@@ -170,6 +170,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                         uncheckedTrackColor = Ph.Chip, uncheckedThumbColor = Ph.Muted, uncheckedBorderColor = Ph.LineStrong))
             }
 
+            GitHubSection()
+            ComputersSection()
             PhoneFeatures()
 
             Text("DIAGNOSTICS", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
@@ -200,7 +202,11 @@ fun ModelSheet(task: TaskUi?, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     // Always ask fresh: a sign-in since the last look adds models.
     LaunchedEffect(Unit) { io.github.pimobile.ui.state.Control.loadModels() }
-    val models = UiStore.models.filter { (p, id) -> "$p/$id".contains(query, ignoreCase = true) }.take(200)
+    // Newest first: compare ids by their numbers (gpt-5.5 > gpt-4o > gpt-4), the default's provider on top.
+    val models = UiStore.models.filter { (p, id) -> "$p/$id".contains(query, ignoreCase = true) }
+        .sortedWith(compareBy<Pair<String, String>> { if (it.first == UiStore.model?.substringBefore('/')) 0 else 1 }
+            .thenBy { it.first }.then { a, b -> versionCompare(b.second, a.second) })
+        .take(200)
     PhSheet(onDismiss) {
         SheetTitle("Model", UiStore.model?.let { "Current: $it" } ?: "pi chooses a default from your keys")
         Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { Field(query, { query = it }, "search or provider/model-id") }
@@ -275,6 +281,24 @@ fun ProjectSheet(current: File, onPick: (File) -> Unit, onDismiss: () -> Unit) {
                 onPick(d); onDismiss()
             }
         }
+        // Clone a GitHub repo as a new project (public repos work signed out; private ones need Settings → GitHub).
+        var repo by remember { mutableStateOf("") }
+        var cloning by remember { mutableStateOf(false) }
+        var cloneError by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
+        Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { Field(repo, { repo = it.trim(); cloneError = null }, "owner/repo or GitHub link") }
+            PrimaryButton(if (cloning) "Cloning…" else "Clone", enabled = repo.isNotBlank() && !cloning) {
+                cloning = true
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) { runCatching { io.github.pimobile.runtime.GitHub.clone(repo, root) } }
+                    cloning = false
+                    r.onSuccess { d -> dirs = scan(); onPick(d); onDismiss() }.onFailure { cloneError = it.message }
+                }
+            }
+        }
+        cloneError?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Red), modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
     }
 }
 
@@ -443,4 +467,18 @@ fun TaskMenuSheet(task: TaskUi, actions: List<MenuAction>, onDismiss: () -> Unit
             }
         }
     }
+}
+
+
+/** Natural order on model ids: digit runs compare as numbers, so "gpt-5.5" > "gpt-5" > "gpt-4o". */
+private fun versionCompare(a: String, b: String): Int {
+    val ra = Regex("\\d+|\\D+").findAll(a.lowercase()).map { it.value }.toList()
+    val rb = Regex("\\d+|\\D+").findAll(b.lowercase()).map { it.value }.toList()
+    for (i in 0 until minOf(ra.size, rb.size)) {
+        val x = ra[i]; val y = rb[i]
+        val c = if (x[0].isDigit() && y[0].isDigit()) (x.toBigIntegerOrNull() ?: 0.toBigInteger()).compareTo(y.toBigIntegerOrNull() ?: 0.toBigInteger())
+            else x.compareTo(y)
+        if (c != 0) return c
+    }
+    return ra.size.compareTo(rb.size)
 }

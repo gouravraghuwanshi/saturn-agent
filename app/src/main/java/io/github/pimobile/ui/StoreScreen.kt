@@ -181,6 +181,8 @@ private fun PackageCard(p: Store.Pkg, installed: Boolean, onOpen: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (installed) Text("installed", style = Ph.monoSmall.copy(color = Ph.Green),
                 modifier = Modifier.border(1.dp, Color(0xFF2C4A38), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
+            else if (p.desktopOnly) Text("desktop only", style = Ph.monoSmall.copy(color = Ph.Amber),
+                modifier = Modifier.border(1.dp, Ph.AmberLine, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
         }
         if (p.description.isNotBlank()) Text(p.description, style = Ph.body.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Ph.TextBody),
             maxLines = 3, overflow = TextOverflow.Ellipsis)

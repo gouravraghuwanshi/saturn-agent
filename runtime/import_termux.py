@@ -38,9 +38,9 @@ WORK = os.path.join(HERE, "build", "termux")
 REPO = "https://packages.termux.dev/apt/termux-main"
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-WANT = ["nodejs-lts", "bash", "git", "ripgrep", "fd", "curl", "ca-certificates"]
+WANT = ["nodejs-lts", "bash", "git", "ripgrep", "fd", "curl", "ca-certificates", "gh", "openssh"]
 # Termux-environment glue we replace ourselves, or tools toybox already covers.
-SKIP = {"termux-tools", "resolv-conf", "less", "perl", "openssh"}
+SKIP = {"termux-tools", "resolv-conf", "less", "perl", "openssh-sftp-server"}
 
 # command name -> path inside the Termux prefix
 EXECUTABLES = {
@@ -50,6 +50,9 @@ EXECUTABLES = {
     "rg": "bin/rg",
     "fd": "bin/fd",
     "curl": "bin/curl",
+    "gh": "bin/gh",
+    "ssh": "bin/ssh",
+    "ssh-keygen": "bin/ssh-keygen",
     "git-remote-http": "libexec/git-core/git-remote-http",
 }
 # data files/dirs (inside the prefix) shipped in assets/usr-data.zip

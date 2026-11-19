@@ -119,16 +119,64 @@
    "package": "curl",
    "version": "8.23.0",
    "sha256": "e57a9975a828eb48790bec0da950795af165aa714f6a33d266c45a4e2898aa85"
+  },
+  {
+   "package": "gh",
+   "version": "2.105.0",
+   "sha256": "73a364d6afeb91f0a51fc0507c29f161dee7fff0fc060383f7d556216ce31eb7"
+  },
+  {
+   "package": "openssh",
+   "version": "10.6p2",
+   "sha256": "e5db7ee07fe619eec9044f2cd29d7ca49f5ff4c0b5a1dbcdcccfbcb3849077d8"
+  },
+  {
+   "package": "krb5",
+   "version": "1.22.3",
+   "sha256": "2f8b1831df2d00f821d71b44da2babada49097bc71a1ffcd25bcdbeff466564a"
+  },
+  {
+   "package": "libandroid-glob",
+   "version": "0.6-3",
+   "sha256": "2276ae8adedf0db76c2f4ffc94cc4cceb2f4f5d78e021b54e2e046d1233e7826"
+  },
+  {
+   "package": "libresolv-wrapper",
+   "version": "1.1.8",
+   "sha256": "41c989a4c6f85575ac542ab5d710fead6fec4cb41941f634666a68a765c13370"
+  },
+  {
+   "package": "libdb",
+   "version": "18.1.40-6",
+   "sha256": "60bfb4e8bed834d334806f39aae27ffc11ab819f2da2f9abb7a3b2d37970a532"
+  },
+  {
+   "package": "ldns",
+   "version": "1.9.2",
+   "sha256": "fcc8feb86be077e59cb3fd1f05867061ea1e985b11a36d30603ce1cdecd6b68a"
+  },
+  {
+   "package": "libedit",
+   "version": "20260512-3.1-0",
+   "sha256": "728da8f45e9c0027f0c5844346dd8cea153a43394bceee36a257972acf0ed440"
+  },
+  {
+   "package": "termux-auth",
+   "version": "1.5.0-1",
+   "sha256": "917f431ae85368deccf3a859e66fa9c9e99d354a0e948fc5ba174ce0359b37a9"
   }
  ],
  "executables": [
   "bash",
   "curl",
   "fd",
+  "gh",
   "git",
   "git-remote-http",
   "node",
-  "rg"
+  "rg",
+  "ssh",
+  "ssh-keygen"
  ],
  "data": [
   "etc/tls/cert.pem",

@@ -35,6 +35,9 @@ class PiRuntime private constructor(private val ctx: Context) {
             "rg" to "libx_rg.so",
             "fd" to "libx_fd.so",
             "curl" to "libx_curl.so",
+            "gh" to "libx_gh.so",
+            "ssh" to "libx_ssh.so",
+            "ssh-keygen" to "libx_ssh-keygen.so",
         )
         /** git helpers it execs from GIT_EXEC_PATH */
         private val GIT_CORE = mapOf(
@@ -155,6 +158,8 @@ class PiRuntime private constructor(private val ctx: Context) {
         // those commands are the app's own shims below, not Termux:API.
         "TERMUX_VERSION" to "saturn",
         "BROWSER" to "xdg-open",
+        // git over ssh (and anything else that runs ssh directly) uses Saturn's config too.
+        "GIT_SSH_COMMAND" to "${File(bin, "ssh").path} -F ${File(home, ".ssh/config").path}",
     )
 
     private fun link(dir: File, entries: Map<String, String>) {
@@ -211,6 +216,8 @@ class PiRuntime private constructor(private val ctx: Context) {
             # Android forbids exec() of files in app storage, so JS CLIs are run through node.
             npm() { node "${npmCli.path}" "${'$'}@"; }
             npx() { node "${npxCli.path}" "${'$'}@"; }
+            # Android has no home directory for app users, so ssh's "~" is wrong: always use Saturn's config.
+            ssh() { command ssh -F "${'$'}HOME/.ssh/config" "${'$'}@"; }
             """.trimIndent() + "\n"
         )
         // Tell pi how to run npm for `pi install npm:...`.
@@ -274,6 +281,17 @@ class PiRuntime private constructor(private val ctx: Context) {
             |  saturn-schedule list · saturn-schedule rm <id> · saturn-schedule log <id>
             |`-- <command>` runs a shell command (in the current directory); `--prompt "…"` starts a new Saturn
             |task with that prompt. Times are the phone's local time. Tell the user what you scheduled and when.
+            |
+            |## GitHub
+            |`gh` (GitHub's CLI) is installed. If the user signed in (Settings → GitHub; check with `gh auth status`),
+            |you can clone, commit, push, and open pull requests and issues (`gh repo clone`, `git push`, `gh pr create`).
+            |git is already set up to push with that account. Never print tokens.
+            |
+            |## The user's computers
+            |Computers the user added in Settings → Your computers are ssh hosts in ~/.ssh/config (see its Host lines).
+            |Run commands on one with `ssh <name> '<command>'` (non-interactive, no tty; quote carefully). Work in
+            |the project folder the user names; ask before deleting or overwriting anything there. If ssh fails,
+            |tell the user what the error says (the computer may be off, asleep, or on another network).
             |
             |## Using other apps
             |If an MCP server named "phone" is connected (the separate Phone Control app), its phone_* tools

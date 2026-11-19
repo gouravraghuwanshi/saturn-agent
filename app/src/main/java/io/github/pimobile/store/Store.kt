@@ -31,6 +31,12 @@ object Store {
             keywords.any { it.contains("prompt") } -> "prompt"
             else -> "extension"
         }
+        /**
+         * Bridges to other agent programs over the Agent Client Protocol (Antigravity's
+         * agy server, Cursor, Claude Code, Codex, Copilot CLI…). Those programs are
+         * desktop-only, so these packages can't work on a phone.
+         */
+        val desktopOnly: Boolean get() = isAcpBridge(name, description, keywords)
         val installSpec get() = "npm:$name"
         val pageUrl get() = "https://pi.dev/packages/$name"
     }
@@ -44,6 +50,14 @@ object Store {
         /** Dependencies that usually need desktop Chrome or native modules. */
         val mobileWarnings: List<String>,
     )
+
+    fun isAcpBridge(name: String, description: String, keywords: List<String>): Boolean {
+        val text = (name + " " + description + " " + keywords.joinToString(" ")).lowercase()
+        if ("active context pruning" in text) return false // "ACP" that means something else
+        return "agent client protocol" in text || "agent-client-protocol" in text ||
+            keywords.any { it.lowercase() == "acp" || it.lowercase() == "acp-bridge" } ||
+            Regex("\\bacp\\b|\\bagy\\b").containsMatchIn(text)
+    }
 
     enum class Filter(val label: String, val query: String) {
         ALL("all", ""), EXTENSIONS("extensions", "extension"), SKILLS("skills", "skill"),
@@ -100,8 +114,11 @@ object Store {
             imageUrl = pi?.optString("image")?.takeIf { it.startsWith("https://") },
             repository = (v.opt("repository") as? JSONObject)?.optString("url")
                 ?.removePrefix("git+")?.removeSuffix(".git")?.takeIf { it.startsWith("https://") },
-            mobileWarnings = listOfNotNull("Made for Oh My Pi (a different fork of pi) — it may not load in pi"
-                .takeIf { forOmp }) + deps.mapNotNull { d -> RISKY[d]?.let { "$d — $it" } },
+            mobileWarnings = listOfNotNull(
+                "Needs a desktop program (an ACP agent such as Antigravity, Cursor, Claude Code or Codex). Android can't run those, so this won't work on a phone"
+                    .takeIf { isAcpBridge(v.optString("name"), v.optString("description"), keywords) },
+                "Made for Oh My Pi (a different fork of pi) — it may not load in pi".takeIf { forOmp },
+            ) + deps.mapNotNull { d -> RISKY[d]?.let { "$d — $it" } },
         )
     }
 

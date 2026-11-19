@@ -185,6 +185,10 @@ fun Composer(
                 leading()
                 Box(Modifier.weight(1f))
                 extra()
+                VoiceButton { spoken ->
+                    val joined = if (text.isBlank()) spoken else text.trimEnd() + " " + spoken
+                    onValue(TextFieldValue(joined, selection = androidx.compose.ui.text.TextRange(joined.length)))
+                }
                 SendButton(enabled = text.isNotBlank() || attachments.isNotEmpty(), color = accent) { send() }
             }
         }
@@ -342,4 +346,29 @@ fun FileChip(name: String, onClick: (() -> Unit)? = null, onRemove: (() -> Unit)
         if (onRemove != null) Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Remove file") { onRemove() },
             contentAlignment = Alignment.Center) { PhIcon(PhIcons.Close, Ph.Muted, 13.dp) }
     }
+}
+
+
+/**
+ * Dictation through Android's own speech recognizer (it shows its own
+ * listening UI, and needs no microphone permission from Saturn).
+ */
+@Composable
+private fun VoiceButton(onText: (String) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            ?.takeIf { it.isNotBlank() }?.let(onText)
+    }
+    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.Chip)
+        .clickable(onClickLabel = "Speak") {
+            val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Tell Saturn what to do")
+            runCatching { launcher.launch(i) }.onFailure {
+                android.widget.Toast.makeText(context, "No speech recognizer on this phone", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }, contentAlignment = Alignment.Center) { PhIcon(PhIcons.Mic, Ph.TextSoft, 19.dp, "Speak") }
 }

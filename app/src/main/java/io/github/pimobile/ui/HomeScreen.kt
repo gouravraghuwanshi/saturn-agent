@@ -121,6 +121,22 @@ fun HomeScreen(
     }
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<UiStore.Attachment>() }
+    val homeFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    // Shared from another app: text into the box, files as attachments; the user reviews and sends.
+    UiStore.share?.let { sh -> LaunchedEffect(sh) {
+        UiStore.share = null
+        if (sh.text.isNotBlank()) input = TextFieldValue(sh.text, androidx.compose.ui.text.TextRange(sh.text.length))
+        val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            sh.uris.mapNotNull { u -> runCatching { UiStore.attach(u) }.getOrNull() }
+        }
+        attachments.addAll(got)
+        runCatching { homeFocus.requestFocus() }
+    } }
+    if (UiStore.focusComposer) LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(350); UiStore.focusComposer = false
+        runCatching { homeFocus.requestFocus(); keyboard?.show() }
+    }
     val projectDir = UiStore.currentProject
     val project = projectDir.path
     val isGeneral = projectDir.canonicalPath == UiStore.runtime.projects.canonicalPath
@@ -261,6 +277,7 @@ fun HomeScreen(
             Composer(
                 value = input, onValue = { input = it },
                 attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
+                focus = homeFocus,
                 placeholder = "Ask Saturn to do something…",
                 commands = commands,
                 onSend = { text ->

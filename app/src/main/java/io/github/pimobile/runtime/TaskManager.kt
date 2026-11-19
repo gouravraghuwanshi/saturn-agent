@@ -1,5 +1,6 @@
 package io.github.pimobile.runtime
 
+import io.github.pimobile.ui.Shortcuts
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -332,7 +333,7 @@ object TaskManager {
         if (task.status == status) return
         task.status = status
         save()
-        main.post { PiService.sync(app, activeCount) }
+        main.post { PiService.sync(app, activeCount); Shortcuts.refresh(app) }
         emit(task, null, null)
     }
 

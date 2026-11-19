@@ -93,7 +93,8 @@ object UiStore : TaskManager.Listener {
 
     data class Command(val name: String, val description: String, val source: String)
 
-    private lateinit var app: Context
+    lateinit var app: Context
+        private set
     lateinit var secrets: SecretStore
         private set
     private val prefs by lazy { app.getSharedPreferences("ui", Context.MODE_PRIVATE) }
@@ -242,6 +243,16 @@ object UiStore : TaskManager.Listener {
     }
 
     // ------------------------------------------------------------ branches
+
+    /** Something shared into Saturn from another app, waiting in the home composer. */
+    class Share(val text: String, val uris: List<android.net.Uri>)
+    var share by mutableStateOf<Share?>(null)
+    /** Put the cursor in the home composer (widget, quick-settings tile). */
+    var focusComposer by mutableStateOf(false)
+    /** MainActivity is on screen (so finished tasks don't need a notification). */
+    @Volatile var foreground = false
+    /** The task currently open on screen, if any. */
+    @Volatile var openTaskId: String? = null
 
     /** Asks the App to open a task (e.g. a new branch). */
     var openRequest by mutableStateOf<String?>(null)
@@ -407,6 +418,9 @@ object UiStore : TaskManager.Listener {
     override fun onTaskEvent(task: TaskManager.Task, record: JSONObject?, log: String?) {
         if (TaskManager.tasks.none { it.id == task.id }) return
         val ui = ui(task)
+        if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT &&
+            !(foreground && openTaskId == task.id)) io.github.pimobile.runtime.Notifier.show(app, ui,
+                "Task #${task.number} needs you", "Saturn is waiting for your answer: ${ui.title}")
         ui.status = task.status
         ui.title = task.title
         ui.archived = task.archived
@@ -432,7 +446,7 @@ object UiStore : TaskManager.Listener {
                 ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null
                 ui.items.add(Item.Notice(ui.key("n"), "Stopped. Saturn ended the run and everything it had started.", false))
             }
-            "agent_settled" -> { ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
+            "agent_settled" -> { io.github.pimobile.runtime.Notifier.settled(app, ui); ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return
                 when (m.optString("role")) {

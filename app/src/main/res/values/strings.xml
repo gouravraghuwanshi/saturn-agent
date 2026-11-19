@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_description">Ask Saturn from your home screen and see running tasks.</string>
+    <string name="tile_label">Ask Saturn</string>
+</resources>

@@ -34,7 +34,9 @@ fun App() {
         var openId by rememberSaveable { mutableStateOf<String?>(null) }
         BackHandler(enabled = openId != null) { openId = null }
         // e.g. a new branch: open its card.
-        UiStore.openRequest?.let { id -> LaunchedEffect(id) { openId = id; UiStore.openRequest = null } }
+        UiStore.openRequest?.let { id -> LaunchedEffect(id) { openId = if (id == io.github.pimobile.MainActivity.HOME) null else id; UiStore.openRequest = null } }
+        LaunchedEffect(openId) { UiStore.openTaskId = openId }
+        if (Onboarding.needed()) { Onboarding.Screen(); return@PhosphorTheme }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         UiStore.branchError?.let { e -> LaunchedEffect(e) {
             android.widget.Toast.makeText(ctx, "Couldn't branch: $e", android.widget.Toast.LENGTH_LONG).show(); UiStore.branchError = null } }

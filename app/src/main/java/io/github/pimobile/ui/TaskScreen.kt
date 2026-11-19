@@ -535,6 +535,14 @@ private fun ReplyActions(t: TaskUi, item: Item.Assistant) {
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             PhIcon(PhIcons.Flag, Ph.Muted, 13.dp); Text("report", style = Ph.monoSmall)
         }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val on = io.github.pimobile.ui.state.Speaker.speaking == item.key
+        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = if (on) "Stop reading" else "Read aloud") {
+            io.github.pimobile.ui.state.Speaker.toggle(ctx, item.key, item.text) }.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            PhIcon(if (on) PhIcons.Stop else PhIcons.Speaker, if (on) Ph.Amber else Ph.Muted, 13.dp)
+            Text(if (on) "stop" else "listen", style = Ph.monoSmall.copy(color = if (on) Ph.Amber else Ph.Muted))
+        }
     }
     if (report) ReportSheet(t, item.text) { report = false }
 }

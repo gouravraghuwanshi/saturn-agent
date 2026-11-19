@@ -32,6 +32,12 @@ No root. No Termux. Just install it.
 - **Branch a chat** to try another idea without losing the original.
 - **Extensions from pi.dev** with one tap, plus every Pi slash command.
 - **A real terminal** when you want to poke around yourself.
+- **GitHub built in.** Sign in once (GitHub's own code sign-in), clone repos into projects, and let Saturn commit, push and open pull requests.
+- **Work on your computer.** Add your laptop or a server and Saturn runs commands there over SSH while you chat on the phone.
+- **Talk to it.** A mic button that listens inside the app (on-device when your phone supports it), and replies can be read aloud.
+- **It's part of the phone.** Share links, photos and files to Saturn from any app, reply to finished tasks from the notification, and use the home-screen widget or quick-settings tile.
+- **Assistants can hand it work.** On Android 16+, Saturn offers AppFunctions so Gemini and other approved assistants can start tasks and check on them.
+- **Bring any model.** Sign in with ChatGPT, Claude, Copilot, Antigravity and more, or use API keys. The model and thinking level you pick become your default, like Ctrl+S in pi.
 
 ## Your stuff stays yours
 
@@ -43,7 +49,7 @@ The one thing that leaves your phone is what the agent sends to the AI provider 
 
 Grab the latest APK from [Releases](../../releases). Android 10 or newer, 64-bit ARM (basically any phone from the last few years).
 
-Then open Saturn, tap **Sign in**, and either log in with a subscription you already have or paste an API key. OpenRouter has free models if you just want to try it.
+Then open Saturn and follow the short setup: sign in with a subscription you already have, paste an API key, or grab a free OpenRouter key (Saturn then sticks to free models).
 
 ## Phone Control (companion app)
 
@@ -54,6 +60,16 @@ It's separate on purpose: any MCP client can use it, and Saturn itself never tou
 ## How it works (the short version)
 
 Android won't let apps run programs from their own storage, but it *does* run native libraries shipped inside the APK. So Saturn packs node, bash, git and friends (built by the Termux project) as `lib*.so` files and links them into a small Linux-style `usr/` folder when it starts. Each task is its own `pi --mode rpc` process; the Compose UI talks to it over JSON. Phone features go through a local, token-protected bridge back into the app. More in [RELEASING.md](RELEASING.md) and the source.
+
+## Two builds, one codebase
+
+| | `github` flavor | `play` flavor |
+|---|---|---|
+| Where | GitHub Releases / F-Droid | Google Play |
+| Contacts | yes | removed |
+| Native add-ons in npm packages | allowed | blocked (`node --no-addons`) |
+
+Everything else is the same. `./gradlew assembleGithubRelease` builds the APK and `./gradlew bundlePlayRelease` the Play bundle. The `playstore` branch tracks the Play release; see [store/PLAY_STORE.md](store/PLAY_STORE.md) for what Google requires.
 
 ## Build it yourself
 

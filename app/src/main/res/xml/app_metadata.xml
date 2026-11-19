@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- How agents should use Saturn's AppFunctions (read by Gemini and other approved assistants). -->
+<AppFunctionAppMetadata xmlns:appfn="http://schemas.android.com/apk/androidx.appfunctions"
+    appfn:instructions="Saturn is an AI agent that runs on this phone. It does multi-step work by itself: runs commands, browses the web, writes files (web pages, documents, scripts), uses phone features and sets timers. It uses the AI model the user configured inside Saturn.
+Operational Patterns:
+  - Use 'startTask' when the user asks Saturn (or 'my agent') to do something; pass their request as the instruction, in their words.
+  - Tasks run in the background and can take minutes. Use 'getTask' to report progress or Saturn's answer; don't start a duplicate task.
+  - If a task's status is 'needs the user's answer', relay Saturn's latest reply and send the user's answer with 'continueTask'.
+  - Use 'listArtifacts' when the user asks what Saturn made for them.
+Constraints:
+  - Instructions and follow-ups must not be blank.
+  - Task numbers come from 'startTask' or 'listTasks'."
+    appfn:description="Saturn is an AI agent on this phone. Start tasks, follow up on them, check their progress and list the files Saturn made."
+    appfn:displayDescription="@string/appfunctions_display" />

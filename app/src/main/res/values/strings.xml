@@ -2,4 +2,5 @@
 <resources>
     <string name="widget_description">Ask Saturn from your home screen and see running tasks.</string>
     <string name="tile_label">Ask Saturn</string>
+    <string name="appfunctions_display">Let assistants hand tasks to Saturn and check on them</string>
 </resources>

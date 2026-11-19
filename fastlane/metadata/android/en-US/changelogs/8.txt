@@ -1,0 +1,1 @@
+Assistants like Gemini can now hand tasks to Saturn and check on them (Android 16+, through AppFunctions).

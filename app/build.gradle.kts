@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -14,8 +15,8 @@ android {
         applicationId = (findProperty("appId") as String?) ?: "io.github.gouravraghuwanshi.saturn" // -PappId=… for the old dev install
         minSdk = 29
         targetSdk = 37
-        versionCode = 7
-        versionName = "0.4.0"
+        versionCode = 8
+        versionName = "0.5.0"
         ndk { abiFilters += "arm64-v8a" }
     }
 
@@ -87,4 +88,7 @@ dependencies {
     implementation(project(":terminal"))
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")
+    // AppFunctions: Saturn's actions for Gemini and other approved assistants (Android 16+).
+    implementation("androidx.appfunctions:appfunctions:1.0.0-rc01")
+    ksp("androidx.appfunctions:appfunctions-compiler:1.0.0-rc01")
 }

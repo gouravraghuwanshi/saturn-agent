@@ -153,7 +153,7 @@ fun HomeScreen(
     val builtins = listOf(
         Builtin("login", "Sign in to a provider (subscriptions, API keys)", args = true) { a -> loginArg = a; sheet = "login" },
         Builtin("logout", "Remove a provider credential") { sheet = "logout" },
-        Builtin("model", "Default model for new tasks", args = true) { a ->
+        Builtin("model", "Default model for all tasks", args = true) { a ->
             if (a.contains('/')) UiStore.setModel(null, a.substringBefore('/'), a.substringAfter('/')) else sheet = "model" },
         Builtin("resume", "Reopen an earlier session as a task") { sheet = "resume" },
         Builtin("project", "Choose the project folder", tag = "app") { sheet = "project" },

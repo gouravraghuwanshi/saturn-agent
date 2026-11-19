@@ -137,10 +137,12 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var loginArg by remember { mutableStateOf("") }
     // pi's built-in commands, mapped to RPC, the pimobile-app extension or native screens.
     val builtins = listOf(
-        Builtin("model", "Switch model for this task", args = true) { a ->
+        Builtin("model", "Switch model (saved as your default)", args = true) { a ->
             if (a.contains('/')) UiStore.setModel(t, a.substringBefore('/'), a.substringAfter('/')) else sheet = "model" },
-        Builtin("thinking", "Set the thinking level", args = true) { a ->
-            if (a.isNotBlank()) UiStore.rpc(t, "set_thinking_level", "level" to a) else sheet = "thinking" },
+        Builtin("thinking", "Set the thinking level (saved as your default)", args = true) { a ->
+            if (a.isNotBlank()) UiStore.setThinking(t, a.trim()) else sheet = "thinking" },
+        Builtin("effort", "Same as /thinking", args = true) { a ->
+            if (a.isNotBlank()) UiStore.setThinking(t, a.trim()) else sheet = "thinking" },
         Builtin("login", "Sign in to a provider (subscriptions, API keys)", args = true) { a -> loginArg = a; sheet = "login" },
         Builtin("logout", "Remove a provider credential") { sheet = "logout" },
         Builtin("new", "Start a fresh session in this task") { UiStore.rpc(t, "new_session") },

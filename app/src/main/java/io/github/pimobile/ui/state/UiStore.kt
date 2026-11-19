@@ -118,7 +118,7 @@ object UiStore : TaskManager.Listener {
         io.github.pimobile.device.Device.init(app)
         io.github.pimobile.runtime.Scheduler.init(app)
         applySecrets()
-        model = prefs.getString("model", null)
+        loadDefaults()
         project = prefs.getString("project", null)?.let { File(it) }
         TaskManager.tasks.forEach { ui(it) }
         TaskManager.addListener(this)
@@ -287,16 +287,56 @@ object UiStore : TaskManager.Listener {
         TaskManager.answer(ui.task, d.requestId, r)
     }
 
+    /** The app-wide default thinking level (pi's defaultThinkingLevel), or null for pi's own default. */
+    var thinkingDefault by mutableStateOf<String?>(null)
+        private set
+
+    private val piSettings get() = File(runtime.home, ".pi/agent/settings.json")
+    private fun readSettings() = runCatching { JSONObject(piSettings.readText()) }.getOrElse { JSONObject() }
+    private fun writeSettings(change: (JSONObject) -> Unit) {
+        val s = readSettings(); change(s)
+        piSettings.parentFile?.mkdirs(); piSettings.writeText(s.toString(2))
+    }
+
+    /** pi's settings.json is the source of truth for the defaults (same file pi's Ctrl+S writes). */
+    private fun loadDefaults() {
+        val s = readSettings()
+        model = s.optString("defaultProvider").takeIf { it.isNotBlank() }?.let { p -> s.optString("defaultModel").takeIf { it.isNotBlank() }?.let { "$p/$it" } }
+            ?: prefs.getString("model", null)
+        thinkingDefault = s.optString("defaultThinkingLevel").takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Picking a model is saved as the default (like Ctrl+S in pi's TUI) and
+     * applied to the open task now; other tasks switch when they next start.
+     */
     fun setModel(ui: TaskUi?, provider: String, id: String) {
         model = "$provider/$id"
         prefs.edit().putString("model", model).apply()
-        // Default for new tasks...
-        val f = File(runtime.home, ".pi/agent/settings.json")
-        val s = runCatching { JSONObject(f.readText()) }.getOrElse { JSONObject() }
-        f.parentFile?.mkdirs()
-        f.writeText(s.put("defaultProvider", provider).put("defaultModel", id).toString(2))
-        // ...and the open task, live.
+        writeSettings { it.put("defaultProvider", provider).put("defaultModel", id) }
         ui?.let { TaskManager.command(it.task, JSONObject().put("type", "set_model").put("provider", provider).put("modelId", id)) }
+    }
+
+    /** Same for the thinking level ("effort"). */
+    fun setThinking(ui: TaskUi?, level: String) {
+        thinkingDefault = level
+        writeSettings { it.put("defaultThinkingLevel", level) }
+        ui?.let { it.thinkingLevel = level; TaskManager.command(it.task, JSONObject().put("type", "set_thinking_level").put("level", level)) }
+    }
+
+    /** A task whose session remembers another model or level is brought in line with the defaults. */
+    private fun align(ui: TaskUi, state: JSONObject) {
+        val m = state.optJSONObject("model")
+        val current = m?.let { "${it.optString("provider")}/${it.optString("id")}" }
+        val want = model
+        if (want != null && current != null && current != want && m.optString("id") != "unknown") {
+            TaskManager.command(ui.task, JSONObject().put("id", "align-model").put("type", "set_model")
+                .put("provider", want.substringBefore('/')).put("modelId", want.substringAfter('/')))
+        }
+        val level = thinkingDefault
+        if (level != null && state.optString("thinkingLevel").let { it.isNotBlank() && it != level }) {
+            TaskManager.command(ui.task, JSONObject().put("id", "align-thinking").put("type", "set_thinking_level").put("level", level))
+        }
     }
 
     fun refreshModels(ui: TaskUi) = TaskManager.command(ui.task, JSONObject().put("type", "get_available_models"))
@@ -550,6 +590,8 @@ object UiStore : TaskManager.Listener {
 
     private fun response(ui: TaskUi, r: JSONObject) {
         if (!r.optBoolean("success")) {
+            // A task that can't use the default (e.g. its provider was signed out) just keeps its own model.
+            if (r.optString("id").startsWith("align")) return
             ui.items.add(Item.Notice(ui.key("n"), "${r.optString("command")}: ${r.optString("error")}", true))
             return
         }
@@ -559,14 +601,13 @@ object UiStore : TaskManager.Listener {
             // Extension commands consumed by pi never echo a user message.
             "prompt" -> if (data?.optString("disposition") == "handled" && !r.optString("id").startsWith("app-")) ui.echoes.removeLastOrNull()
             "get_state" -> {
-                data?.optJSONObject("model")?.let { m ->
-                    if (m.optString("id") != "unknown") {
-                        model = "${m.optString("provider")}/${m.optString("id")}"
-                        prefs.edit().putString("model", model).apply()
-                    }
-                }
                 data?.optString("thinkingLevel")?.takeIf { it.isNotBlank() }?.let { ui.thinkingLevel = it }
                 data?.optString("sessionId")?.let { TaskManager.setSessionId(ui.task, it) }
+                // The header shows the app-wide default; tasks follow it rather than redefining it.
+                if (model == null) data?.optJSONObject("model")?.let { m ->
+                    if (m.optString("id") != "unknown") model = "${m.optString("provider")}/${m.optString("id")}"
+                }
+                data?.let { align(ui, it) }
             }
             // These switch pi to another session: follow it and reload the transcript.
             "fork", "clone", "new_session", "switch_session" -> if (data?.optBoolean("cancelled") != true) {
@@ -575,8 +616,8 @@ object UiStore : TaskManager.Listener {
                 TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
                 TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
             }
-            "set_thinking_level" -> TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
-            "set_model" -> data?.let { model = "${it.optString("provider")}/${it.optString("id")}" }
+            "set_thinking_level" -> if (!r.optString("id").startsWith("align")) TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
+            "set_model" -> if (!r.optString("id").startsWith("align")) data?.let { model = "${it.optString("provider")}/${it.optString("id")}" }
             "get_commands" -> data?.optJSONArray("commands")?.let { a ->
                 commands = (0 until a.length()).map { a.getJSONObject(it) }
                     .filterNot { it.optString("name").startsWith("pimobile-") } // the app's own bridge commands

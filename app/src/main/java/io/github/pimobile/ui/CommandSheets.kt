@@ -408,7 +408,7 @@ fun ThinkingSheet(t: TaskUi, onDismiss: () -> Unit) {
         else if (levels.length() == 0) Text("This model has no thinking levels.", style = Ph.body.copy(color = Ph.Muted), modifier = Modifier.padding(20.dp))
         else (0 until levels.length()).map { levels.getString(it) }.forEach { l ->
             val on = l == t.thinkingLevel
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { UiStore.rpc(t, "set_thinking_level", "level" to l); t.thinkingLevel = l; onDismiss() }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { UiStore.setThinking(t, l); onDismiss() }
                 .padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(l, style = Ph.mono.copy(fontSize = 14.sp, color = if (on) Ph.Amber else Ph.Text), modifier = Modifier.weight(1f))
                 if (on) Text("current", style = Ph.monoSmall.copy(color = Ph.Amber))

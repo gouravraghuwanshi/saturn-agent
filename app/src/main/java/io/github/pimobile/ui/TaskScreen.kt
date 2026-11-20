@@ -145,7 +145,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var armed by remember { mutableStateOf(false) }
     val hostView = androidx.compose.ui.platform.LocalView.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val pullArm = with(density) { 150.dp.toPx() }
+    val pullArm = with(density) { 300.dp.toPx() } // a long, deliberate pull: no accidental tasks
     val slop = with(density) { 6.dp.toPx() }
     val startNewTask = {
         hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
@@ -333,16 +333,32 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     }
                     if (running) item(key = "working") { Working(t) }
                 }
-                // Revealed as the list springs up past its end.
-                val hint = with(density) { ((pull - 20.dp.toPx()) / 50.dp.toPx()).coerceIn(0f, 1f) }
-                if (hint > 0f) Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp).graphicsLayer { alpha = hint }
-                    .clip(RoundedCornerShape(20.dp)).background(if (armed) Ph.AmberWash else Ph.Surface)
-                    .border(1.dp, if (armed) Ph.AmberLine else Ph.Line, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PhIcon(PhIcons.Plus, if (armed) Ph.Amber else Ph.TextSoft, 15.dp,
-                        modifier = Modifier.graphicsLayer { val k = if (armed) 1.25f else 1f; scaleX = k; scaleY = k })
-                    Text(if (armed) "Release to start a new task" else "Pull up for a new task",
+                // Revealed as the list springs up past its end: a ring fills as you pull, the button grows,
+                // and turns solid amber once letting go would start the task.
+                val progress = (pull / pullArm).coerceIn(0f, 1f)
+                val hint = with(density) { ((pull - 16.dp.toPx()) / 60.dp.toPx()).coerceIn(0f, 1f) }
+                val pop by androidx.compose.animation.core.animateFloatAsState(if (armed) 1.18f else 1f,
+                    androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "pop")
+                if (hint > 0f) Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).graphicsLayer { alpha = hint },
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(64.dp).graphicsLayer { val k = (0.7f + 0.3f * progress) * pop; scaleX = k; scaleY = k },
+                        contentAlignment = Alignment.Center) {
+                        val amber = Ph.Amber; val track = Ph.LineStrong
+                        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                            val w = 3.dp.toPx()
+                            if (armed) drawCircle(amber)
+                            else {
+                                drawCircle(Ph.Surface)
+                                drawCircle(track, style = androidx.compose.ui.graphics.drawscope.Stroke(w))
+                                drawArc(amber, -90f, 360f * progress, false, topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
+                                    size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w),
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                            }
+                        }
+                        PhIcon(PhIcons.Plus, if (armed) Ph.AmberInk else Ph.Amber, 26.dp,
+                            modifier = Modifier.graphicsLayer { rotationZ = 90f * progress })
+                    }
+                    Text(if (armed) "Release to start a new task" else "Keep pulling for a new task",
                         style = Ph.mono.copy(color = if (armed) Ph.Amber else Ph.TextSoft))
                 }
                 }

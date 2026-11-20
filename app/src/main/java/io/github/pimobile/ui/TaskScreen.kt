@@ -154,6 +154,15 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val liftAtArm = liftMax * (1f - kotlin.math.exp(-pullArm / liftMax))
     var lift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var liftJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // Sideways: finger left → home, finger right → this task's terminal. Same feel as the pull-up.
+    var liftX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var sideArmed by remember { mutableStateOf(false) }
+    var sideJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val sideMax = with(density) { 300.dp.toPx() }
+    val sideArm = with(density) { 190.dp.toPx() }
+    val sideAtArm = sideMax * (1f - kotlin.math.exp(-sideArm / sideMax))
+    val hSlop = with(density) { 18.dp.toPx() }
+    val lock = remember { booleanArrayOf(false) } // [0]: this gesture went sideways
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val slop = with(density) { 6.dp.toPx() }
     val startNewTask = {
@@ -298,6 +307,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         liftJob?.cancel()
                         var lastY = down.position.y; var travel = 0f; var anchor: Float? = null; var ticked = false
+                        var sumX = 0f; var sumY = 0f; var vLocked = false
                         var topPull = 0f; var edgeDrag = false
                         // Pulling down at the top first brings the header in; only once it's already
                         // showing does the chat itself give a little. Never both at once (that jittered).
@@ -308,13 +318,18 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             if (!c.pressed) break
                             val y = c.position.y
                             val dy = y - lastY; lastY = y; travel += kotlin.math.abs(dy)
+                            sumX += c.position.x - c.previousPosition.x; sumY += dy
+                            if (lock[0]) continue
+                            // Edge pulls only once the drag is clearly up/down, so sideways swipes stay sideways.
+                            if (!vLocked && kotlin.math.abs(sumY) > slop && kotlin.math.abs(sumY) > 1.2f * kotlin.math.abs(sumX)) vLocked = true
                             // Once this drag is pulling the chat past an edge, it's only about that pull:
                             // dragging back to cancel mustn't bring the header in.
-                            if (travel > slop && !edgeDrag) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
+                            if (travel > slop && !edgeDrag && kotlin.math.abs(sumY) > kotlin.math.abs(sumX)) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
                             // At an edge the whole chat follows your finger (with weight). Measured from where
                             // it hit the edge, so dragging back cancels.
                             val atEnd = !list.canScrollForward; val atTop = !list.canScrollBackward
-                            if (atEnd || atTop || pull > 0f || topPull > 0f) {
+                            if (!vLocked) { /* not decided yet */ }
+                            else if (atEnd || atTop || pull > 0f || topPull > 0f) {
                                 val a = anchor ?: y.also { anchor = it }
                                 pull = if (atEnd) (a - y).coerceAtLeast(0f) else 0f
                                 topPull = if (atTop && topGive) (y - a).coerceAtLeast(0f) else 0f
@@ -341,10 +356,54 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                                 dampingRatio = 0.62f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)) { v, _ -> lift = v }
                         }
                     }
+                }.pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        lock[0] = false; sideJob?.cancel()
+                        var dx = 0f; var dy = 0f; var on = false
+                        while (true) {
+                            val e = awaitPointerEvent()
+                            val c = e.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!c.pressed) break
+                            val d = c.position - c.previousPosition
+                            if (!on) {
+                                // Something else took it (the list scrolling, a code block sliding, the pull-up).
+                                if (c.isConsumed) break
+                                dx += d.x; dy += d.y
+                                if (kotlin.math.abs(dx) > hSlop && kotlin.math.abs(dx) > 1.8f * kotlin.math.abs(dy)) { on = true; lock[0] = true }
+                                else if (kotlin.math.abs(dy) > hSlop) break
+                                else continue
+                            } else dx += d.x
+                            c.consume()
+                            val drag = (kotlin.math.abs(dx) - hSlop).coerceAtLeast(0f)
+                            liftX = kotlin.math.sign(dx) * sideMax * (1f - kotlin.math.exp(-drag / sideMax))
+                            val now = drag >= sideArm
+                            if (now != sideArmed) {
+                                sideArmed = now
+                                hostView.performHapticFeedback(if (android.os.Build.VERSION.SDK_INT >= 34) {
+                                    if (now) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+                                    else android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
+                                } else if (now) android.view.HapticFeedbackConstants.CONTEXT_CLICK else android.view.HapticFeedbackConstants.CLOCK_TICK)
+                            }
+                        }
+                        if (on) {
+                            val go = sideArmed; val toHome = dx < 0
+                            sideArmed = false
+                            if (go) hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                            if (go && toHome) onBack()
+                            else {
+                                if (go) tab = "terminal"
+                                sideJob = scope.launch {
+                                    androidx.compose.animation.core.animate(liftX, 0f, animationSpec = androidx.compose.animation.core.spring(
+                                        dampingRatio = 0.7f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)) { v, _ -> liftX = v }
+                                }
+                            }
+                        }
+                    }
                 }) {
                 LazyColumn(
                     state = list, overscrollEffect = null,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { translationY = lift },
+                    modifier = Modifier.fillMaxSize().graphicsLayer { translationY = lift; translationX = liftX },
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -363,6 +422,34 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         }
                     }
                     if (running) item(key = "working") { Working(t) }
+                }
+                // Behind the chat as it slides sideways: full height, home on the right, terminal on the left.
+                val shownX = kotlin.math.abs(liftX)
+                if (shownX > 1f) {
+                    val toHome = liftX < 0
+                    val progress = (shownX / sideAtArm).coerceIn(0f, 1f)
+                    val ready = sideArmed
+                    val shape = RoundedCornerShape(22.dp)
+                    Box(Modifier.align(if (toHome) Alignment.CenterEnd else Alignment.CenterStart).fillMaxHeight()
+                        .width(with(density) { shownX.toDp() }).padding(vertical = 10.dp, horizontal = 8.dp)
+                        .clip(shape).background(if (ready) Ph.AmberWash else Ph.Surface)
+                        .border(1.dp, if (ready) Ph.AmberLine else Ph.Line, shape)) {
+                        Box(Modifier.align(if (toHome) Alignment.CenterEnd else Alignment.CenterStart).fillMaxHeight().fillMaxWidth(progress)
+                            .background(Ph.Amber.copy(alpha = if (ready) 0.16f else 0.08f)))
+                        val pop by androidx.compose.animation.core.animateFloatAsState(if (ready) 1.2f else 1f,
+                            androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "sidePop")
+                        Column(Modifier.align(Alignment.Center).padding(horizontal = 6.dp).graphicsLayer { alpha = (progress * 2.2f).coerceAtMost(1f) },
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(44.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(RoundedCornerShape(22.dp))
+                                .background(if (ready) Ph.Amber else Ph.Chip), contentAlignment = Alignment.Center) {
+                                PhIcon(if (toHome) PhIcons.Back else PhIcons.Terminal, if (ready) Ph.AmberInk else Ph.Amber, 20.dp)
+                            }
+                            Text(if (toHome) "Home" else "Terminal", style = Ph.title.copy(fontSize = 14.sp, color = if (ready) Ph.Amber else Ph.Text),
+                                maxLines = 1)
+                            Text(if (ready) "release" else "keep going", style = Ph.monoSmall.copy(color = if (ready) Ph.Amber else Ph.Muted),
+                                maxLines = 1, textAlign = TextAlign.Center)
+                        }
+                    }
                 }
                 // Behind the chat as it slides up, the whole width: like a task card's swipe on home.
                 val shown = -lift

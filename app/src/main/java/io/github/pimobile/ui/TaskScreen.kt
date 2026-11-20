@@ -154,7 +154,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val liftAtArm = liftMax * (1f - kotlin.math.exp(-pullArm / liftMax))
     var lift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var liftJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    // Sideways: finger left → home, finger right → this task's terminal. Same feel as the pull-up.
+    // Sideways, like pages: home is to the left (drag right to go back), the terminal to the right (drag left). Same feel as the pull-up.
     var liftX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var sideArmed by remember { mutableStateOf(false) }
     var sideJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -387,7 +387,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             }
                         }
                         if (on) {
-                            val go = sideArmed; val toHome = dx < 0
+                            val go = sideArmed; val toHome = dx > 0
                             sideArmed = false
                             if (go) hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
                             if (go && toHome) onBack()
@@ -423,18 +423,18 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     }
                     if (running) item(key = "working") { Working(t) }
                 }
-                // Behind the chat as it slides sideways: full height, home on the right, terminal on the left.
+                // Behind the chat as it slides sideways: full height, home on the left, terminal on the right.
                 val shownX = kotlin.math.abs(liftX)
                 if (shownX > 1f) {
-                    val toHome = liftX < 0
+                    val toHome = liftX > 0
                     val progress = (shownX / sideAtArm).coerceIn(0f, 1f)
                     val ready = sideArmed
                     val shape = RoundedCornerShape(22.dp)
-                    Box(Modifier.align(if (toHome) Alignment.CenterEnd else Alignment.CenterStart).fillMaxHeight()
+                    Box(Modifier.align(if (toHome) Alignment.CenterStart else Alignment.CenterEnd).fillMaxHeight()
                         .width(with(density) { shownX.toDp() }).padding(vertical = 10.dp, horizontal = 8.dp)
                         .clip(shape).background(if (ready) Ph.AmberWash else Ph.Surface)
                         .border(1.dp, if (ready) Ph.AmberLine else Ph.Line, shape)) {
-                        Box(Modifier.align(if (toHome) Alignment.CenterEnd else Alignment.CenterStart).fillMaxHeight().fillMaxWidth(progress)
+                        Box(Modifier.align(if (toHome) Alignment.CenterStart else Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(progress)
                             .background(Ph.Amber.copy(alpha = if (ready) 0.16f else 0.08f)))
                         val pop by androidx.compose.animation.core.animateFloatAsState(if (ready) 1.2f else 1f,
                             androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "sidePop")

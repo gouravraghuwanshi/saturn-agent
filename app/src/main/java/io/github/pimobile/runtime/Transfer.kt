@@ -116,4 +116,23 @@ object Transfer {
         }
         return null
     }
+
+    /**
+     * Saturn's last text reply in a session, read from the end of its file (sessions can be
+     * large; the last reply is near the end). Null if there's none or the file can't be read.
+     */
+    fun lastReply(ctx: Context, sessionId: String): String? = runCatching {
+        val f = sessionFile(ctx, sessionId) ?: return null
+        val tail = java.io.RandomAccessFile(f, "r").use { r ->
+            val n = minOf(r.length(), 256L * 1024)
+            r.seek(r.length() - n); ByteArray(n.toInt()).also { r.readFully(it) }
+        }.toString(Charsets.UTF_8)
+        tail.lines().asReversed().asSequence()
+            .filter { it.contains("\"assistant\"") }
+            .mapNotNull { runCatching { org.json.JSONObject(it) }.getOrNull()?.optJSONObject("message") }
+            .filter { it.optString("role") == "assistant" }
+            .map { m -> m.optJSONArray("content")?.let { c -> (0 until c.length()).mapNotNull { c.optJSONObject(it) }
+                .filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") } }.orEmpty() }
+            .firstOrNull { it.isNotBlank() }
+    }.getOrNull()
 }

@@ -499,7 +499,7 @@ private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect
             }
         }
         else -> {
-            val last = t.lastError ?: (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text
+            val last = t.lastError ?: (t.items.lastOrNull { it is Item.Assistant && it.text.isNotBlank() } as? Item.Assistant)?.text ?: t.savedReply
             QuietRow(t, check, last?.takeIf { it.isNotBlank() }?.let { plainPreview(it) }?.takeIf { it.isNotBlank() }, selected == true, tap)
         }
     }

@@ -63,6 +63,9 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.roundToInt
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.withStyle
 
 private val AmberLight = Color(0xFFFFD89A)
 private val AmberDeep = Color(0xFFA86A1C)
@@ -93,87 +96,38 @@ fun SaturnMark(modifier: Modifier) {
  */
 @Composable
 fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlanet: () -> Unit, modifier: Modifier = Modifier) {
-    val inf = rememberInfiniteTransition(label = "orbit")
-    val turn by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(14_000, easing = LinearEasing)), label = "turn")
-    val glow by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(2_000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "glow")
-    val ping by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "ping")
-    // Always moving, even with nothing running: a spark circling the ring, bands drifting over the planet.
-    val spark by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(9_000, easing = LinearEasing)), label = "spark")
-    val spinPlanet by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(16_000, easing = LinearEasing)), label = "bands")
+    // Saturn drawn in text (design S2): an amber globe, cream rings, a spark riding the ring,
+    // and each working task a moon. ~15 frames a second; stops when scrolled off screen.
+    var t by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(66); t += 0.057f } }
     val moons = active.take(6)
-    val spots = remember { ArrayList<Pair<Offset, TaskUi>>() }
     val working = active.count { it.status != Status.NEEDS_INPUT }
     val waiting = active.size - working
-
     val view = androidx.compose.ui.platform.LocalView.current
+    val frame = AsciiSaturn.frame(t, moons.map { it.status == Status.NEEDS_INPUT })
+
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Canvas(Modifier.fillMaxWidth().height(190.dp).pointerInput(moons) {
-            detectTapGestures { p ->
-                view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                val hit = synchronized(spots) { spots.minByOrNull { (it.first - p).getDistance() } }
-                if (hit != null && (hit.first - p).getDistance() < 30.dp.toPx()) onOpen(hit.second)
-                else if ((p - Offset(size.width / 2f, size.height / 2f)).getDistance() < 80.dp.toPx()) onPlanet()
-            }
-        }) {
-            val c = center
-            val rx = min(size.width * 0.42f, 150.dp.toPx())   // outer edge of the A ring
-            val ry = rx * 0.30f
-            val pr = rx / 2.3f                                // planet radius
-            val tilt = -14f
-            val rad = tilt * PI / 180
-            val flat = ry / rx
-            // Moons travel just outside the rings.
-            fun place(a: Double, k: Float = 1.12f): Offset {
-                val x = rx * k * cos(a); val y = ry * k * sin(a)
-                return Offset((c.x + x * cos(rad) - y * sin(rad)).toFloat(), (c.y + x * sin(rad) + y * cos(rad)).toFloat())
-            }
-            val placed = moons.mapIndexed { i, t ->
-                val a = 2 * PI * (turn + i.toDouble() / moons.size.coerceAtLeast(1))
-                Triple(place(a), sin(a) < 0, t) // sin < 0: the far side, behind the planet
-            }
-            synchronized(spots) { spots.clear(); placed.forEach { spots += it.first to it.third } }
-
-            // Saturn's rings as seen at an angle: C (faint), B (bright), the Cassini gap, A.
-            val rings = listOf(Triple(0.54f to 0.66f, RingC, 0.22f), Triple(0.67f to 0.86f, RingB, 0.85f), Triple(0.885f to 1f, RingA, 0.6f))
-            fun ringHalf(start: Float) = rotate(tilt, c) {
-                scale(1f, flat, c) {
-                    rings.forEach { (span, color, a) ->
-                        val mid = rx * (span.first + span.second) / 2f
-                        drawArc(color.copy(alpha = a), start, 180f, false, Offset(c.x - mid, c.y - mid), Size(mid * 2, mid * 2),
-                            style = Stroke(width = rx * (span.second - span.first)))
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            // JetBrains Mono advances 0.6 em per character: size the text so the art spans the width.
+            val fontPx = with(density) { maxWidth.toPx() } / (AsciiSaturn.COLS * 0.6f)
+            val font = with(density) { fontPx.toSp() }
+            val line = with(density) { (fontPx * 1.08f).toSp() }
+            Text(frame.text, softWrap = false, maxLines = AsciiSaturn.ROWS,
+                style = androidx.compose.ui.text.TextStyle(fontFamily = Ph.Mono, fontWeight = FontWeight.Bold, fontSize = font, lineHeight = line,
+                    fontFeatureSettings = "liga 0, calt 0", // no ligatures: "==" must stay two characters
+                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                        androidx.compose.ui.text.style.LineHeightStyle.Trim.None)),
+                modifier = Modifier.pointerInput(moons) {
+                    detectTapGestures { p ->
+                        view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        val cw = size.width / AsciiSaturn.COLS.toFloat(); val ch = size.height / AsciiSaturn.ROWS.toFloat()
+                        val hit = frame.moons.minByOrNull { (c, r, _) -> (Offset((c + 0.5f) * cw, (r + 0.5f) * ch) - p).getDistance() }
+                        if (hit != null && (Offset((hit.first + 0.5f) * cw, (hit.second + 0.5f) * ch) - p).getDistance() < 28.dp.toPx())
+                            moons.getOrNull(hit.third)?.let(onOpen) ?: onPlanet()
+                        else onPlanet()
                     }
-                }
-            }
-            val halo = min(pr * 3f, min(size.height, size.width) / 2f) // fades out inside the canvas: no visible edge
-            drawCircle(Brush.radialGradient(listOf(Ph.Amber.copy(alpha = 0.14f + 0.12f * glow), Color.Transparent), center = c, radius = halo), halo, c)
-            ringHalf(180f) // far half, behind the planet
-            placed.filter { it.second }.forEach { moon(it.first, it.third, ping) }
-            val sparkAt = 2 * PI * spark
-            val sparkFar = sin(sparkAt) < 0
-            fun sparkTail() = (0 until 16).forEach { k ->
-                val p = place(sparkAt - k * 0.03, 0.97f)
-                drawCircle(Color.White.copy(alpha = (1f - k / 16f) * 0.85f), radius = (2.4f - k * 0.11f).dp.toPx(), center = p)
-            }
-            if (sparkFar) sparkTail()
-
-            // The planet: slightly flattened, banded, lit from the top left.
-            val body = androidx.compose.ui.geometry.Rect(c.x - pr, c.y - pr * 0.92f, c.x + pr, c.y + pr * 0.92f)
-            clipPath(Path().apply { addOval(body) }) {
-                rotate(tilt, c) {
-                    drawRect(Brush.verticalGradient(Bands, startY = c.y - pr, endY = c.y + pr), Offset(c.x - pr * 1.5f, c.y - pr * 1.5f), Size(pr * 3f, pr * 3f))
-                    // A pale storm drifting with the planet's turn.
-                    val sx = c.x - pr * 1.4f + spinPlanet * pr * 2.8f
-                    drawOval(Color(0x33FFF3DC), Offset(sx - pr * 0.22f, c.y - pr * 0.42f), Size(pr * 0.44f, pr * 0.14f))
-                }
-                drawRect(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), center = c + Offset(-pr * 0.45f, -pr * 0.5f), radius = pr * 1.1f), body.topLeft, body.size)
-                drawRect(Brush.radialGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.62f),
-                    center = c + Offset(-pr * 0.35f, -pr * 0.4f), radius = pr * 1.75f), body.topLeft, body.size)
-                // The rings' shadow across the globe.
-                rotate(tilt, c) { drawRect(Color.Black.copy(alpha = 0.28f), Offset(c.x - pr * 1.5f, c.y + pr * 0.18f), Size(pr * 3f, pr * 0.1f)) }
-            }
-            ringHalf(0f) // near half, over the planet
-            if (!sparkFar) sparkTail()
-            placed.filterNot { it.second }.forEach { moon(it.first, it.third, ping) }
+                })
         }
         Text(
             when {
@@ -274,5 +228,78 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
         }
         preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.Muted),
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 19.dp)) }
+    }
+}
+
+/** Saturn ray-traced into characters, the S2 design. */
+object AsciiSaturn {
+    const val COLS = 72
+    const val ROWS = 21
+    private const val R = 11.2
+    private const val RAMP = " .,:;-=+*#%@"
+    private val Planet = Color(0xFFF2B35B); private val PlanetDim = Color(0xFFC08A45)
+    private val Ring = Color(0xFFE6D3B0); private val RingDim = Color(0xFFA08A6A)
+    private val Spark = Color.White; private val Moon = Color(0xFFFFD89A); private val Waiting = Color(0xFFE9E6DF)
+
+    /** [moons]: the task moons in order, true where that task needs you. Moon hits are (col, row, index). */
+    class Frame(val text: androidx.compose.ui.text.AnnotatedString, val moons: List<Triple<Int, Int, Int>>)
+
+    fun frame(t: Float, moons: List<Boolean>): Frame {
+        val tilt = -0.26; val ct = cos(tilt); val st = sin(tilt); val e = 0.27
+        val ln = kotlin.math.sqrt(0.5 * 0.5 + 0.62 * 0.62 + 0.6 * 0.6)
+        val lx = -0.5 / ln; val ly = -0.62 / ln; val lz = 0.6 / ln
+        val hits = ArrayList<Triple<Int, Int, Int>>()
+        // Moon centres, in the same units as the cells.
+        val mpos = moons.indices.map { k ->
+            val a = t * 0.35 + k * 2 * PI / moons.size.coerceAtLeast(1)
+            val mx = 2.65 * R * cos(a); val mv = 2.65 * R * e * sin(a)
+            Triple(mx * ct - mv * st, mx * st + mv * ct, sin(a) > 0)
+        }
+        val b = androidx.compose.ui.text.AnnotatedString.Builder()
+        var runColor: Color? = null; val run = StringBuilder()
+        fun flush() { if (run.isNotEmpty()) { b.withStyle(androidx.compose.ui.text.SpanStyle(color = runColor ?: Color.Transparent)) { append(run.toString()) }; run.clear() } }
+        fun put(c: Char, color: Color?) { if (color != runColor) { flush(); runColor = color }; run.append(c) }
+        val sparkAt = ((t * 0.6) % (2 * PI)) - PI
+        for (j in 0 until ROWS) {
+            for (i in 0 until COLS) {
+                val px = i - COLS / 2.0 + 0.5; val py = (j - ROWS / 2.0 + 0.5) * 1.9
+                val u = px * ct + py * st; val v = -px * st + py * ct
+                val rr = kotlin.math.hypot(u, v / e); val ang = kotlin.math.atan2(v / e, u)
+                var ring = rr > R * 1.22 && rr < R * 2.3 && !(rr > R * 1.9 && rr < R * 2.0)
+                var spark = false
+                if (rr > R * 2.0 && rr < R * 2.32) {
+                    val d = kotlin.math.atan2(sin(ang - sparkAt), cos(ang - sparkAt))
+                    if (d <= 0 && d > -0.5) { ring = true; spark = true }
+                }
+                var moon = -1; var moonFront = false
+                mpos.forEachIndexed { k, (mx, my, front) -> if (kotlin.math.abs(px - mx) < 0.9 && kotlin.math.abs(py - my) < 1.0) { moon = k; moonFront = front } }
+                val d2 = px * px + py * py
+                var sphere = -1.0
+                if (d2 < R * R) {
+                    val z = kotlin.math.sqrt(R * R - d2); val nz = z / R; val nv = v / R
+                    var lit = maxOf(0.0, px / R * lx + py / R * ly + nz * lz)
+                    lit = 0.1 + 0.9 * lit + 0.13 * sin(nv * 13 + 1.2) + 0.06 * sin(kotlin.math.atan2(u / R, nz) * 4 + t * 0.4) * cos(nv * 3)
+                    if (v > 0 && v < R * 0.22) lit *= 0.55 // the rings' shadow
+                    sphere = lit.coerceIn(0.0, 1.0)
+                }
+                val front = v > 0
+                var ch = ' '; var color: Color? = null
+                if (sphere >= 0 && !(ring && front)) {
+                    ch = RAMP[(0.25 + sphere * 0.75).times(RAMP.length - 1).roundToInt()]
+                    color = if (sphere > 0.45) Planet else PlanetDim
+                } else if (ring) {
+                    ch = if (spark) '*' else if (rr < R * 1.45) ':' else if (rr < R * 1.9) '=' else '-'
+                    color = if (spark) Spark else if (rr < R * 1.45) RingDim else Ring
+                }
+                if (moon >= 0 && (moonFront || sphere < 0)) {
+                    ch = '@'; color = if (moons[moon]) Waiting else Moon
+                    hits += Triple(i, j, moon)
+                }
+                put(ch, color)
+            }
+            if (j < ROWS - 1) put('\n', runColor)
+        }
+        flush()
+        return Frame(b.toAnnotatedString(), hits)
     }
 }

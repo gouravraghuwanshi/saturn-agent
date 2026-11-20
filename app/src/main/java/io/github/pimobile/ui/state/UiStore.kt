@@ -54,6 +54,8 @@ class TaskUi(val task: TaskManager.Task) {
     var contextTokens by mutableStateOf(0)
     var runStartedAt by mutableStateOf<Long?>(null)
     var lastError by mutableStateOf<String?>(null)
+    /** Saturn's last reply read from the session file, for the home card before the chat is loaded. */
+    var savedReply by mutableStateOf<String?>(null)
     var pendingDialog by mutableStateOf<Item.Dialog?>(null)
     /** True while the current run is using the in-app browser (shows the browser tab). */
     var browsing by mutableStateOf(false)
@@ -178,8 +180,16 @@ object UiStore : TaskManager.Listener {
     val runtime get() = PiRuntime.get(app)
 
     fun ui(task: TaskManager.Task): TaskUi = byId.getOrPut(task.id) {
-        TaskUi(task).also { tasks.add(it); sortTasks() }
+        TaskUi(task).also { ui ->
+            tasks.add(ui); sortTasks()
+            // A task restored after a restart has no transcript until it's opened: read its last reply for the card.
+            if (task.restored) previewIo.execute {
+                val reply = io.github.pimobile.runtime.Transfer.lastReply(app, task.sessionId)
+                if (reply != null) android.os.Handler(android.os.Looper.getMainLooper()).post { if (ui.savedReply == null) ui.savedReply = reply }
+            }
+        }
     }
+    private val previewIo = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     fun find(id: String) = byId[id]
 

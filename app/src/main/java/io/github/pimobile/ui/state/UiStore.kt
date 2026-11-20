@@ -298,6 +298,8 @@ object UiStore : TaskManager.Listener {
     @Volatile var foreground = false
     /** The task currently open on screen, if any. */
     @Volatile var openTaskId: String? = null
+    /** True while the home list or the task's own screen is in front of the user: no notification needed. */
+    fun watching(taskId: String) = foreground && (openTaskId == taskId || openTaskId == null)
 
     /** Asks the App to open a task (e.g. a new branch). */
     var openRequest by mutableStateOf<String?>(null)
@@ -506,7 +508,7 @@ object UiStore : TaskManager.Listener {
         if (TaskManager.tasks.none { it.id == task.id }) return
         val ui = ui(task)
         if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT &&
-            !(foreground && openTaskId == task.id)) io.github.pimobile.runtime.Notifier.show(app, ui,
+            !watching(task.id)) io.github.pimobile.runtime.Notifier.show(app, ui,
                 "Task #${task.number} needs you", "Saturn is waiting for your answer: ${ui.title}")
         ui.status = task.status
         ui.title = task.title

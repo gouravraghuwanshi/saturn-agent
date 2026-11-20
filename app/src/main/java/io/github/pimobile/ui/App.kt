@@ -35,7 +35,12 @@ fun App() {
         BackHandler(enabled = openId != null) { openId = null }
         // e.g. a new branch: open its card.
         UiStore.openRequest?.let { id -> LaunchedEffect(id) { openId = if (id == io.github.pimobile.MainActivity.HOME) null else id; UiStore.openRequest = null } }
-        LaunchedEffect(openId) { UiStore.openTaskId = openId }
+        LaunchedEffect(openId) {
+            // Other screens (store, terminal, artifacts) aren't a task: treat them as "elsewhere".
+            UiStore.openTaskId = openId?.takeIf { UiStore.find(it) != null } ?: if (openId == null) null else "screen:$openId"
+            // Opening a task clears its "done" notification.
+            openId?.let { runCatching { io.github.pimobile.runtime.Notifier.clear(io.github.pimobile.ui.state.UiStore.app, it) } }
+        }
         if (Onboarding.needed()) { Onboarding.Screen(); return@PhosphorTheme }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         UiStore.branchError?.let { e -> LaunchedEffect(e) {

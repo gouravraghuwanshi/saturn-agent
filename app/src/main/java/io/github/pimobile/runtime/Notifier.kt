@@ -31,7 +31,7 @@ object Notifier {
 
     /** A run ended. Notify unless the user is looking at this very task. */
     fun settled(ctx: Context, ui: TaskUi) {
-        if (UiStore.foreground && UiStore.openTaskId == ui.task.id) return
+        if (UiStore.watching(ui.task.id)) return
         val last = (ui.items.lastOrNull { it is Item.Assistant && it.text.isNotBlank() } as? Item.Assistant)?.text
         val failed = ui.lastError != null
         show(ctx, ui, if (failed) "Task #${ui.task.number} hit a problem" else "Task #${ui.task.number} is done",

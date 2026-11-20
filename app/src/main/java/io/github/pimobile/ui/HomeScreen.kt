@@ -152,9 +152,32 @@ fun HomeScreen(
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     val density = androidx.compose.ui.platform.LocalDensity.current
     val heroPx = with(density) { 200.dp.toPx() }
+    val heroSize by remember { androidx.compose.runtime.derivedStateOf {
+        list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "hero" }?.size?.toFloat()?.takeIf { it > 0f } ?: heroPx } }
     val collapse by remember { androidx.compose.runtime.derivedStateOf {
-        if (projectTasks.isEmpty() || list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / heroPx).coerceIn(0f, 1f)
+        if (projectTasks.isEmpty() || list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / heroSize).coerceIn(0f, 1f)
     } }
+    // A short list can't scroll, so Saturn could never tuck away: pad the end so it always can.
+    var fillerPx by remember { mutableStateOf(0) }
+    LaunchedEffect(list) {
+        androidx.compose.runtime.snapshotFlow { list.layoutInfo }.collect { info ->
+            val items = info.visibleItemsInfo
+            if (items.size < info.totalItemsCount || items.none { it.key == "hero" }) return@collect
+            val content = items.filter { it.key != "filler" && it.key != "hero" }.sumOf { it.size } +
+                info.mainAxisItemSpacing * (items.size - 1) + info.afterContentPadding
+            val hero = items.first { it.key == "hero" }.size
+            fillerPx = (info.viewportSize.height - content - info.mainAxisItemSpacing).coerceAtLeast(0).let { if (it > hero * 3) 0 else it }
+        }
+    }
+    // Let go halfway and Saturn settles: fully open or fully tucked away.
+    LaunchedEffect(list) {
+        androidx.compose.runtime.snapshotFlow { list.isScrollInProgress }.collect { scrolling ->
+            if (scrolling || list.firstVisibleItemIndex != 0) return@collect
+            val h = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "hero" }?.size ?: return@collect
+            val o = list.firstVisibleItemScrollOffset
+            if (o in 1 until h) { if (o > h * 0.35f) list.animateScrollToItem(1) else list.animateScrollToItem(0) }
+        }
+    }
 
     var loginArg by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -281,6 +304,7 @@ fun HomeScreen(
                     spentLabel.takeIf { active.isEmpty() }, first = active.isEmpty())
                 section(archived, "archived", "ARCHIVED · ${archived.size}", if (showArchived) "hide" else "show",
                     first = active.isEmpty() && earlier.isEmpty(), onHeader = { showArchived = !showArchived }, collapsed = !showArchived)
+                item(key = "filler") { Spacer(Modifier.height(with(density) { fillerPx.toDp() })) }
             }
         }
 

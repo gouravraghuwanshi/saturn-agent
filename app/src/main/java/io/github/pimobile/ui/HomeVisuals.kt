@@ -15,6 +15,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +66,12 @@ import kotlin.math.sin
 
 private val AmberLight = Color(0xFFFFD89A)
 private val AmberDeep = Color(0xFFA86A1C)
+private val RingA = Color(0xFFD9B27A)
+private val RingB = Color(0xFFF0D3A0)
+private val RingC = Color(0xFFB89466)
+private val Bands = listOf(0f to Color(0xFFF6E2B4), 0.16f to Color(0xFFEBCB8E), 0.27f to Color(0xFFF3DAA6), 0.38f to Color(0xFFDDAE68),
+    0.47f to Color(0xFFEFCF95), 0.58f to Color(0xFFD69F58), 0.68f to Color(0xFFE6BF80), 0.8f to Color(0xFFC98E4A), 1f to Color(0xFFB07A3A))
+    .map { it.second }
 
 /** The small Saturn mark: planet and tilted ring. */
 @Composable
@@ -105,12 +114,15 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
             }
         }) {
             val c = center
-            val rx = min(size.width * 0.4f, 150.dp.toPx())
-            val ry = rx * 0.27f
+            val rx = min(size.width * 0.42f, 150.dp.toPx())   // outer edge of the A ring
+            val ry = rx * 0.30f
+            val pr = rx / 2.3f                                // planet radius
             val tilt = -14f
             val rad = tilt * PI / 180
-            fun place(a: Double): Offset {
-                val x = rx * cos(a); val y = ry * sin(a)
+            val flat = ry / rx
+            // Moons travel just outside the rings.
+            fun place(a: Double, k: Float = 1.12f): Offset {
+                val x = rx * k * cos(a); val y = ry * k * sin(a)
                 return Offset((c.x + x * cos(rad) - y * sin(rad)).toFloat(), (c.y + x * sin(rad) + y * cos(rad)).toFloat())
             }
             val placed = moons.mapIndexed { i, t ->
@@ -119,38 +131,45 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
             }
             synchronized(spots) { spots.clear(); placed.forEach { spots += it.first to it.third } }
 
-            // Rings (whole), the far moons, the planet, then the near half of the ring and the near moons.
-            rotate(tilt, c) {
-                drawOval(Ph.Amber.copy(alpha = 0.28f), Offset(c.x - rx, c.y - ry), Size(rx * 2, ry * 2), style = Stroke(1.2.dp.toPx()))
-                drawOval(Ph.Amber.copy(alpha = 0.12f), Offset(c.x - rx * 0.79f, c.y - ry * 0.77f), Size(rx * 1.58f, ry * 1.54f), style = Stroke(1.dp.toPx()))
-            }
-            placed.filter { it.second }.forEach { moon(it.first, it.third, ping) }
-            // The spark and its fading tail.
-            val sparkAt = 2 * PI * spark
-            val sparkFar = sin(sparkAt) < 0
-            fun sparkTail() = (0 until 14).forEach { k ->
-                val p = place(sparkAt - k * 0.035)
-                drawCircle(AmberLight.copy(alpha = (1f - k / 14f) * 0.8f), radius = (2.6f - k * 0.13f).dp.toPx(), center = p)
-            }
-            if (sparkFar) sparkTail()
-            val pr = 40.dp.toPx()
-            val halo = pr * 2.6f
-            drawCircle(Brush.radialGradient(listOf(Ph.Amber.copy(alpha = 0.16f + 0.14f * glow), Color.Transparent), center = c, radius = halo), halo, c)
-            drawCircle(Brush.radialGradient(listOf(AmberLight, Ph.Amber, AmberDeep), center = c + Offset(-pr * 0.35f, -pr * 0.45f), radius = pr * 1.7f), pr, c)
-            // Soft bands sliding across the planet, so it looks like it turns.
-            val disc = Path().apply { addOval(androidx.compose.ui.geometry.Rect(c, pr)) }
-            clipPath(disc) {
-                rotate(tilt, c) {
-                    listOf(-0.42f to 0.10f, -0.05f to 0.14f, 0.33f to 0.09f).forEachIndexed { i, (dy, h) ->
-                        val shift = ((spinPlanet + i * 0.37f) % 1f) * pr * 2f
-                        val y = c.y + dy * pr * 2f
-                        for (k in -1..1) drawOval(AmberDeep.copy(alpha = 0.22f), Offset(c.x - pr * 2f + shift + k * pr * 2f, y - h * pr), Size(pr * 1.6f, h * pr * 2f))
+            // Saturn's rings as seen at an angle: C (faint), B (bright), the Cassini gap, A.
+            val rings = listOf(Triple(0.54f to 0.66f, RingC, 0.22f), Triple(0.67f to 0.86f, RingB, 0.85f), Triple(0.885f to 1f, RingA, 0.6f))
+            fun ringHalf(start: Float) = rotate(tilt, c) {
+                scale(1f, flat, c) {
+                    rings.forEach { (span, color, a) ->
+                        val mid = rx * (span.first + span.second) / 2f
+                        drawArc(color.copy(alpha = a), start, 180f, false, Offset(c.x - mid, c.y - mid), Size(mid * 2, mid * 2),
+                            style = Stroke(width = rx * (span.second - span.first)))
                     }
                 }
             }
-            rotate(tilt, c) {
-                drawArc(Ph.Amber.copy(alpha = 0.55f), 0f, 180f, false, Offset(c.x - rx, c.y - ry), Size(rx * 2, ry * 2), style = Stroke(1.4.dp.toPx()))
+            val halo = min(pr * 3f, min(size.height, size.width) / 2f) // fades out inside the canvas: no visible edge
+            drawCircle(Brush.radialGradient(listOf(Ph.Amber.copy(alpha = 0.14f + 0.12f * glow), Color.Transparent), center = c, radius = halo), halo, c)
+            ringHalf(180f) // far half, behind the planet
+            placed.filter { it.second }.forEach { moon(it.first, it.third, ping) }
+            val sparkAt = 2 * PI * spark
+            val sparkFar = sin(sparkAt) < 0
+            fun sparkTail() = (0 until 16).forEach { k ->
+                val p = place(sparkAt - k * 0.03, 0.97f)
+                drawCircle(Color.White.copy(alpha = (1f - k / 16f) * 0.85f), radius = (2.4f - k * 0.11f).dp.toPx(), center = p)
             }
+            if (sparkFar) sparkTail()
+
+            // The planet: slightly flattened, banded, lit from the top left.
+            val body = androidx.compose.ui.geometry.Rect(c.x - pr, c.y - pr * 0.92f, c.x + pr, c.y + pr * 0.92f)
+            clipPath(Path().apply { addOval(body) }) {
+                rotate(tilt, c) {
+                    drawRect(Brush.verticalGradient(Bands, startY = c.y - pr, endY = c.y + pr), Offset(c.x - pr * 1.5f, c.y - pr * 1.5f), Size(pr * 3f, pr * 3f))
+                    // A pale storm drifting with the planet's turn.
+                    val sx = c.x - pr * 1.4f + spinPlanet * pr * 2.8f
+                    drawOval(Color(0x33FFF3DC), Offset(sx - pr * 0.22f, c.y - pr * 0.42f), Size(pr * 0.44f, pr * 0.14f))
+                }
+                drawRect(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), center = c + Offset(-pr * 0.45f, -pr * 0.5f), radius = pr * 1.1f), body.topLeft, body.size)
+                drawRect(Brush.radialGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.62f),
+                    center = c + Offset(-pr * 0.35f, -pr * 0.4f), radius = pr * 1.75f), body.topLeft, body.size)
+                // The rings' shadow across the globe.
+                rotate(tilt, c) { drawRect(Color.Black.copy(alpha = 0.28f), Offset(c.x - pr * 1.5f, c.y + pr * 0.18f), Size(pr * 3f, pr * 0.1f)) }
+            }
+            ringHalf(0f) // near half, over the planet
             if (!sparkFar) sparkTail()
             placed.filterNot { it.second }.forEach { moon(it.first, it.third, ping) }
         }
@@ -235,16 +254,23 @@ private fun wave(size: Size, base: Float, amp: Float, length: Float, phase: Floa
     lineTo(size.width, base); lineTo(size.width, size.height); close()
 }
 
-/** A task that's done (or paused, or failed): one quiet line, like H2. */
+/** A task that's done (or paused, or failed): H2's quiet card: dot, title, one line of what happened. */
 @Composable
 fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: String?, selected: Boolean, modifier: Modifier = Modifier) {
     val failed = t.lastError != null || t.status == Status.FAILED
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (selected) Ph.AmberWash else Ph.Ground)
-        .padding(horizontal = 6.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        leading()
-        Text(t.title, style = Ph.body.copy(fontSize = 14.5.sp, color = Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f))
-        Text(if (failed) "failed" else "#${t.task.number}", style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted))
+    val shape = RoundedCornerShape(18.dp)
+    Column(modifier.fillMaxWidth().clip(shape).background(if (selected) Ph.AmberWash else Ph.Surface)
+        .border(1.dp, if (selected) Ph.AmberLine else Ph.Line, shape).padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            leading()
+            Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(when {
+                failed -> Ph.Red; else -> Ph.Green }))
+            Text(t.title, style = Ph.title.copy(fontSize = 15.sp, color = Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f))
+            Text(if (failed) "failed" else "#${t.task.number}", style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted))
+        }
+        preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.Muted),
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 19.dp)) }
     }
 }

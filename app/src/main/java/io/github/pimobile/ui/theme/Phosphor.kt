@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import io.github.pimobile.R
 import kotlinx.coroutines.launch
@@ -70,8 +71,14 @@ fun PhosphorTheme(content: @Composable () -> Unit) {
             error = Ph.Red,
         ),
     ) {
+        val view = androidx.compose.ui.platform.LocalView.current
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val maxPx = with(androidx.compose.ui.platform.LocalDensity.current) { 140.dp.toPx() }
+        val bounce = androidx.compose.runtime.remember(view, scope, maxPx) { BounceFactory(scope, view, maxPx) }
         CompositionLocalProvider(
             LocalTextSelectionColors provides TextSelectionColors(Ph.Amber, Ph.Amber.copy(alpha = 0.3f)),
+            // Lists end with a weighted spring and a tick, not Android's stretch.
+            androidx.compose.foundation.LocalOverscrollFactory provides bounce,
             // Every button, card and row gives a light tick under your finger.
             androidx.compose.foundation.LocalIndication provides HapticIndication(androidx.compose.material3.ripple()),
             content = content,

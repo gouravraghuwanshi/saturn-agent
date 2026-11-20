@@ -299,6 +299,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         liftJob?.cancel()
                         var lastY = down.position.y; var travel = 0f; var anchor: Float? = null; var ticked = false
                         var topPull = 0f; var edgeDrag = false
+                        // Pulling down at the top first brings the header in; only once it's already
+                        // showing does the chat itself give a little. Never both at once (that jittered).
+                        val topGive = reveal
                         while (true) {
                             val e = awaitPointerEvent(PointerEventPass.Initial)
                             val c = e.changes.firstOrNull { it.id == down.id } ?: break
@@ -314,7 +317,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             if (atEnd || atTop || pull > 0f || topPull > 0f) {
                                 val a = anchor ?: y.also { anchor = it }
                                 pull = if (atEnd) (a - y).coerceAtLeast(0f) else 0f
-                                topPull = if (atTop) (y - a).coerceAtLeast(0f) else 0f
+                                topPull = if (atTop && topGive) (y - a).coerceAtLeast(0f) else 0f
                                 if (pull > 0f || topPull > 0f) { c.consume(); if (pull > slop) edgeDrag = true }
                             } else { anchor = null; pull = 0f; topPull = 0f }
                             if (!ticked && (pull > slop * 2 || topPull > slop * 2)) {

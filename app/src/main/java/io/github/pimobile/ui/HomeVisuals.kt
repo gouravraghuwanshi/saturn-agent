@@ -105,9 +105,11 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
     val working = active.count { it.status != Status.NEEDS_INPUT }
     val waiting = active.size - working
 
+    val view = androidx.compose.ui.platform.LocalView.current
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Canvas(Modifier.fillMaxWidth().height(190.dp).pointerInput(moons) {
             detectTapGestures { p ->
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                 val hit = synchronized(spots) { spots.minByOrNull { (it.first - p).getDistance() } }
                 if (hit != null && (hit.first - p).getDistance() < 30.dp.toPx()) onOpen(hit.second)
                 else if ((p - Offset(size.width / 2f, size.height / 2f)).getDistance() < 80.dp.toPx()) onPlanet()

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -150,6 +151,7 @@ fun HomeScreen(
     val elsewhere = UiStore.tasks.count { it.status in ACTIVE } - projectTasks.count { it.status in ACTIVE }
 
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val hostView = androidx.compose.ui.platform.LocalView.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val heroPx = with(density) { 200.dp.toPx() }
     val heroSize by remember { androidx.compose.runtime.derivedStateOf {
@@ -169,13 +171,21 @@ fun HomeScreen(
             fillerPx = (info.viewportSize.height - content - info.mainAxisItemSpacing).coerceAtLeast(0).let { if (it > hero * 3) 0 else it }
         }
     }
+    // Typing: tuck Saturn away so the tasks and the box you're typing in have the room.
+    val imeVisible = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0
+    LaunchedEffect(imeVisible) {
+        if (imeVisible && projectTasks.isNotEmpty() && list.firstVisibleItemIndex == 0) list.animateScrollToItem(1)
+    }
     // Let go halfway and Saturn settles: fully open or fully tucked away.
     LaunchedEffect(list) {
         androidx.compose.runtime.snapshotFlow { list.isScrollInProgress }.collect { scrolling ->
             if (scrolling || list.firstVisibleItemIndex != 0) return@collect
             val h = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "hero" }?.size ?: return@collect
             val o = list.firstVisibleItemScrollOffset
-            if (o in 1 until h) { if (o > h * 0.35f) list.animateScrollToItem(1) else list.animateScrollToItem(0) }
+            if (o in 1 until h) {
+                if (o > h * 0.35f) list.animateScrollToItem(1) else list.animateScrollToItem(0)
+                hostView.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK)
+            }
         }
     }
 
@@ -214,8 +224,8 @@ fun HomeScreen(
                 IconBox(PhIcons.Trash, "Delete selected") {
                     UiStore.deleteManyWithUndo(UiStore.tasks.filter { it.task.id in selected }); selected.clear()
                 }
-            } else Row(Modifier.padding(start = 20.dp - (6 * collapse).dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((12 * collapse).dp)) {
+            } else Row(Modifier.padding(start = 10.dp + (4 * collapse).dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // The big Saturn below tucks away as you scroll; this small one takes its place.
                 Box(Modifier.size(width = (34 * collapse).dp, height = 34.dp).graphicsLayer { alpha = collapse; scaleX = 0.6f + 0.4f * collapse; scaleY = scaleX }
                     .clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Saturn menu") { sheet = "saturn" }, contentAlignment = Alignment.Center) {

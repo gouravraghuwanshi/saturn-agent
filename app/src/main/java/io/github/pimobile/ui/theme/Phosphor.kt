@@ -16,6 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import io.github.pimobile.R
+import kotlinx.coroutines.launch
+import androidx.compose.ui.node.currentValueOf
 
 /** "Phosphor": a premium terminal. Amber means only "pi is working / needs you". */
 object Ph {
@@ -70,7 +72,32 @@ fun PhosphorTheme(content: @Composable () -> Unit) {
     ) {
         CompositionLocalProvider(
             LocalTextSelectionColors provides TextSelectionColors(Ph.Amber, Ph.Amber.copy(alpha = 0.3f)),
+            // Every button, card and row gives a light tick under your finger.
+            androidx.compose.foundation.LocalIndication provides HapticIndication(androidx.compose.material3.ripple()),
             content = content,
         )
+    }
+}
+
+/** The usual ripple, plus a light haptic tick when a press lands. Respects the phone's touch-feedback setting. */
+private class HapticIndication(private val ripple: androidx.compose.foundation.IndicationNodeFactory) : androidx.compose.foundation.IndicationNodeFactory {
+    override fun create(interactionSource: androidx.compose.foundation.interaction.InteractionSource): androidx.compose.ui.node.DelegatableNode =
+        HapticNode(interactionSource, ripple.create(interactionSource))
+    override fun equals(other: Any?) = other is HapticIndication && other.ripple == ripple
+    override fun hashCode() = ripple.hashCode()
+}
+
+private class HapticNode(
+    private val source: androidx.compose.foundation.interaction.InteractionSource,
+    inner: androidx.compose.ui.node.DelegatableNode,
+) : androidx.compose.ui.node.DelegatingNode(), androidx.compose.ui.node.CompositionLocalConsumerModifierNode {
+    init { delegate(inner) }
+    override fun onAttach() {
+        coroutineScope.launch {
+            source.interactions.collect {
+                if (it is androidx.compose.foundation.interaction.PressInteraction.Press)
+                    currentValueOf(androidx.compose.ui.platform.LocalView).performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+            }
+        }
     }
 }

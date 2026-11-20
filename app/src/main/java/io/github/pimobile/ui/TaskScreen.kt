@@ -48,6 +48,9 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import kotlinx.coroutines.launch
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -146,6 +149,12 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val hostView = androidx.compose.ui.platform.LocalView.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val pullArm = with(density) { 300.dp.toPx() } // a long, deliberate pull: no accidental tasks
+    val liftMax = with(density) { 360.dp.toPx() }  // how far the chat can slide up (it gets heavier)
+    val topMax = with(density) { 110.dp.toPx() }   // the softer give at the top
+    val liftAtArm = liftMax * (1f - kotlin.math.exp(-pullArm / liftMax))
+    var lift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var liftJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val slop = with(density) { 6.dp.toPx() }
     val startNewTask = {
         hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
@@ -284,21 +293,32 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     else TerminalPane(t)
                     return@Column
                 }
-                Box(Modifier.weight(1f).pointerInput(Unit) {
+                Box(Modifier.weight(1f).clipToBounds().pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        var lastY = down.position.y; var travel = 0f; var anchor: Float? = null
+                        liftJob?.cancel()
+                        var lastY = down.position.y; var travel = 0f; var anchor: Float? = null; var ticked = false
+                        var topPull = 0f
                         while (true) {
                             val e = awaitPointerEvent(PointerEventPass.Initial)
                             val c = e.changes.firstOrNull { it.id == down.id } ?: break
                             if (!c.pressed) break
-                            val dy = c.position.y - lastY; lastY = c.position.y; travel += kotlin.math.abs(dy)
+                            val y = c.position.y
+                            val dy = y - lastY; lastY = y; travel += kotlin.math.abs(dy)
                             if (travel > slop) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
-                            // Measured from where the list hit its end, so dragging back down cancels.
-                            if (!list.canScrollForward) {
-                                val a = anchor ?: c.position.y.also { anchor = it }
-                                pull = (a - c.position.y).coerceAtLeast(0f)
-                            } else { anchor = null; pull = 0f }
+                            // At an edge the whole chat follows your finger (with weight). Measured from where
+                            // it hit the edge, so dragging back cancels.
+                            val atEnd = !list.canScrollForward; val atTop = !list.canScrollBackward
+                            if (atEnd || atTop || pull > 0f || topPull > 0f) {
+                                val a = anchor ?: y.also { anchor = it }
+                                pull = if (atEnd) (a - y).coerceAtLeast(0f) else 0f
+                                topPull = if (atTop) (y - a).coerceAtLeast(0f) else 0f
+                                if (pull > 0f || topPull > 0f) c.consume()
+                            } else { anchor = null; pull = 0f; topPull = 0f }
+                            if (!ticked && (pull > slop * 2 || topPull > slop * 2)) {
+                                ticked = true; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                            }
+                            lift = -liftMax * (1f - kotlin.math.exp(-pull / liftMax)) + topMax * (1f - kotlin.math.exp(-topPull / topMax))
                             val nowArmed = pull >= pullArm
                             if (nowArmed != armed) {
                                 armed = nowArmed
@@ -308,12 +328,18 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                                 } else if (nowArmed) android.view.HapticFeedbackConstants.CONTEXT_CLICK else android.view.HapticFeedbackConstants.CLOCK_TICK)
                             }
                         }
-                        if (armed) startNewTask()
+                        val go = armed
                         armed = false; pull = 0f
+                        if (go) startNewTask()
+                        else liftJob = scope.launch {
+                            androidx.compose.animation.core.animate(lift, 0f, animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.62f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)) { v, _ -> lift = v }
+                        }
                     }
                 }) {
                 LazyColumn(
-                    state = list, modifier = Modifier.fillMaxSize().clipToBounds(),
+                    state = list, overscrollEffect = null,
+                    modifier = Modifier.fillMaxSize().graphicsLayer { translationY = lift },
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -333,33 +359,32 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     }
                     if (running) item(key = "working") { Working(t) }
                 }
-                // Revealed as the list springs up past its end: a ring fills as you pull, the button grows,
-                // and turns solid amber once letting go would start the task.
-                val progress = (pull / pullArm).coerceIn(0f, 1f)
-                val hint = with(density) { ((pull - 16.dp.toPx()) / 60.dp.toPx()).coerceIn(0f, 1f) }
-                val pop by androidx.compose.animation.core.animateFloatAsState(if (armed) 1.18f else 1f,
-                    androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "pop")
-                if (hint > 0f) Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).graphicsLayer { alpha = hint },
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(64.dp).graphicsLayer { val k = (0.7f + 0.3f * progress) * pop; scaleX = k; scaleY = k },
-                        contentAlignment = Alignment.Center) {
-                        val amber = Ph.Amber; val track = Ph.LineStrong
-                        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                            val w = 3.dp.toPx()
-                            if (armed) drawCircle(amber)
-                            else {
-                                drawCircle(Ph.Surface)
-                                drawCircle(track, style = androidx.compose.ui.graphics.drawscope.Stroke(w))
-                                drawArc(amber, -90f, 360f * progress, false, topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
-                                    size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w),
-                                    style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                // Behind the chat as it slides up, the whole width: like a task card's swipe on home.
+                val shown = -lift
+                if (shown > 1f) {
+                    val progress = (shown / liftAtArm).coerceIn(0f, 1f)
+                    val ready = armed
+                    val shape = RoundedCornerShape(22.dp)
+                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(with(density) { shown.toDp() })
+                        .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 10.dp)
+                        .clip(shape).background(if (ready) Ph.AmberWash else Ph.Surface)
+                        .border(1.dp, if (ready) Ph.AmberLine else Ph.Line, shape)) {
+                        // Amber rising as you pull.
+                        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(progress)
+                            .background(Ph.Amber.copy(alpha = if (ready) 0.16f else 0.08f)))
+                        val pop by androidx.compose.animation.core.animateFloatAsState(if (ready) 1.2f else 1f,
+                            androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "pop")
+                        Column(Modifier.align(Alignment.Center).graphicsLayer { alpha = (progress * 2.5f).coerceAtMost(1f) },
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(44.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(RoundedCornerShape(22.dp))
+                                .background(if (ready) Ph.Amber else Ph.Chip), contentAlignment = Alignment.Center) {
+                                PhIcon(PhIcons.Plus, if (ready) Ph.AmberInk else Ph.Amber, 22.dp,
+                                    modifier = Modifier.graphicsLayer { rotationZ = 90f * progress })
                             }
+                            Text(if (ready) "Release to start a new task" else "Keep pulling for a new task",
+                                style = Ph.mono.copy(color = if (ready) Ph.Amber else Ph.TextSoft))
                         }
-                        PhIcon(PhIcons.Plus, if (armed) Ph.AmberInk else Ph.Amber, 26.dp,
-                            modifier = Modifier.graphicsLayer { rotationZ = 90f * progress })
                     }
-                    Text(if (armed) "Release to start a new task" else "Keep pulling for a new task",
-                        style = Ph.mono.copy(color = if (armed) Ph.Amber else Ph.TextSoft))
                 }
                 }
 

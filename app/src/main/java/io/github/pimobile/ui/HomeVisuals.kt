@@ -108,6 +108,13 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
     val glowPx = with(density0) { 9.dp.toPx() }
     val frame = AsciiSaturn.frame(t, moons.map { it.status == Status.NEEDS_INPUT })
     val breathe = 0.5f + 0.5f * sin(t * 1.1f)
+    var known by remember { androidx.compose.runtime.mutableStateOf(io.github.pimobile.ui.state.UiStore.saturnKnown) }
+    var nudge by remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(known) {
+        while (!known) { kotlinx.coroutines.delay(5_000); nudge = true; kotlinx.coroutines.delay(2_800); nudge = false; kotlinx.coroutines.delay(7_000) }
+        nudge = false
+    }
+    val onPlanetTap = { if (!known) { known = true; io.github.pimobile.ui.state.UiStore.markSaturnTapped() }; onPlanet() }
 
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -127,19 +134,22 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
                         val cw = size.width / AsciiSaturn.COLS.toFloat(); val ch = size.height / AsciiSaturn.ROWS.toFloat()
                         val hit = frame.moons.minByOrNull { (c, r, _) -> (Offset((c + 0.5f) * cw, (r + 0.5f) * ch) - p).getDistance() }
                         if (hit != null && (Offset((hit.first + 0.5f) * cw, (hit.second + 0.5f) * ch) - p).getDistance() < 28.dp.toPx())
-                            moons.getOrNull(hit.third)?.let(onOpen) ?: onPlanet()
-                        else onPlanet()
+                            moons.getOrNull(hit.third)?.let(onOpen) ?: onPlanetTap()
+                        else onPlanetTap()
                     }
                 })
         }
-        Text(
-            when {
+        // Until you've tapped Saturn once, the status line now and then says you can.
+        val status = when {
                 active.isEmpty() && total == 0 -> "Ask below to start a task"
                 active.isEmpty() -> "All quiet · $total ${if (total == 1) "task" else "tasks"}"
                 else -> listOfNotNull(working.takeIf { it > 0 }?.let { "$it working" }, waiting.takeIf { it > 0 }?.let { "$it ${if (it == 1) "needs" else "need"} you" }).joinToString(" · ")
-            },
-            style = Ph.mono.copy(color = if (waiting > 0) Ph.Text else Ph.TextSoft), modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
-        )
+            }
+        androidx.compose.animation.AnimatedContent(if (nudge) "tap Saturn for options" else status, label = "status",
+            transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(400)) }) { s ->
+            Text(s, style = Ph.mono.copy(color = if (s == "tap Saturn for options") Ph.Amber else if (waiting > 0) Ph.Text else Ph.TextSoft),
+                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+        }
     }
 }
 

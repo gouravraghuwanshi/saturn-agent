@@ -464,6 +464,10 @@ object UiStore : TaskManager.Listener {
         private set
     val currentProject: File get() = project?.takeIf { it.isDirectory } ?: runtime.projects
 
+    /** Whether you've ever tapped Saturn on home (until then its status line hints that you can). */
+    val saturnKnown: Boolean get() = prefs.getBoolean("saturn_tapped", false)
+    fun markSaturnTapped() { prefs.edit().putBoolean("saturn_tapped", true).apply() }
+
     fun selectProject(dir: File) {
         project = dir
         prefs.edit().putString("project", dir.path).apply()

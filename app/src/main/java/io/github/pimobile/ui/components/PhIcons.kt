@@ -65,6 +65,8 @@ object PhIcons {
     val Speaker = stroke("M4 10h4l5-4v12l-5-4H4z", "M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11")
     val Mic = stroke("M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0z", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")
     val Flag = stroke("M6 21V4M6 4h11l-2 4 2 4H6")
+    val Retry = stroke("M20 12a8 8 0 1 1-2.3-5.7", "M20 4v5h-5")
+    val Globe = stroke(circle(12f, 12f, 9f), "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18")
     val Lock = stroke("M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3")
 }
 

@@ -21,6 +21,9 @@ object Shortcuts {
         .putExtra(MainActivity.EXTRA_FOCUS, true)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
+    /** Opens Saturn already listening (the widget's mic). */
+    fun voiceIntent(ctx: Context) = askIntent(ctx).putExtra(MainActivity.EXTRA_VOICE, true)
+
     private fun running() = TaskManager.tasks.count { it.status == TaskManager.Status.RUNNING || it.status == TaskManager.Status.STARTING }
     private fun waiting() = TaskManager.tasks.count { it.status == TaskManager.Status.NEEDS_INPUT }
 
@@ -46,8 +49,12 @@ class SaturnWidget : AppWidgetProvider() {
             val ids = manager.getAppWidgetIds(ComponentName(ctx, SaturnWidget::class.java))
             if (ids.isEmpty()) return
             val views = RemoteViews(ctx.packageName, R.layout.widget_saturn)
-            views.setTextViewText(R.id.widget_status, Shortcuts.status())
+            val status = Shortcuts.status()
+            views.setTextViewText(R.id.widget_status, status)
+            views.setViewVisibility(R.id.widget_status, if (status.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
             views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(ctx, 41, Shortcuts.askIntent(ctx),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            views.setOnClickPendingIntent(R.id.widget_mic, PendingIntent.getActivity(ctx, 43, Shortcuts.voiceIntent(ctx),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             manager.updateAppWidget(ids, views)
         }

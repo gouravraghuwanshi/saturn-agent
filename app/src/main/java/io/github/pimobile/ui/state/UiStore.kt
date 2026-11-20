@@ -207,6 +207,19 @@ object UiStore : TaskManager.Listener {
         } else TaskManager.send(ui.task, message, imagesJson(images))
     }
 
+    /**
+     * Retry: answer my last message again, in place. Steps: find its entry
+     * (get_fork_messages) → move the session to just before it (/tree) →
+     * reload the transcript → send the same text. taskId → "F" | "T:text" | "S:text".
+     */
+    private val retryStep = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    fun retrying(ui: TaskUi) = ui.task.id in retryStep
+    fun retry(ui: TaskUi) {
+        if (retrying(ui) || ui.status == Status.RUNNING || ui.status == Status.STARTING || ui.status == Status.NEEDS_INPUT) return
+        retryStep[ui.task.id] = "F"
+        rpc(ui, "get_fork_messages")
+    }
+
     fun stop(ui: TaskUi) {
         if (ui.status != Status.RUNNING && ui.status != Status.NEEDS_INPUT && ui.status != Status.STARTING) return
         ui.stopping = true
@@ -294,6 +307,8 @@ object UiStore : TaskManager.Listener {
     var share by mutableStateOf<Share?>(null)
     /** Put the cursor in the home composer (widget, quick-settings tile). */
     var focusComposer by mutableStateOf(false)
+    /** The widget's mic: the home composer starts listening once. */
+    var voiceRequest by mutableStateOf(false)
     /** MainActivity is on screen (so finished tasks don't need a notification). */
     @Volatile var foreground = false
     /** The task currently open on screen, if any. */
@@ -599,11 +614,13 @@ object UiStore : TaskManager.Listener {
     private fun appEvent(ui: TaskUi, e: JSONObject) {
         when (e.optString("type")) {
             "tree_done" -> {
-                e.optJSONObject("result")?.optString("editorText")?.takeIf { it.isNotBlank() }?.let { ui.prefill = it }
+                val retry = retryStep[ui.task.id]
+                if (retry != null && retry.startsWith("T:")) retryStep[ui.task.id] = "S:" + retry.drop(2)
+                else e.optJSONObject("result")?.optString("editorText")?.takeIf { it.isNotBlank() }?.let { ui.prefill = it }
                 TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
             }
             "reloaded" -> { commands = emptyList(); TaskManager.command(ui.task, JSONObject().put("type", "get_commands")) }
-            "error" -> ui.items.add(Item.Notice(ui.key("n"), "${e.optString("scope")}: ${e.optString("message")}", true))
+            "error" -> { retryStep.remove(ui.task.id); ui.items.add(Item.Notice(ui.key("n"), "${e.optString("scope")}: ${e.optString("message")}", true)) }
         }
     }
 
@@ -641,6 +658,7 @@ object UiStore : TaskManager.Listener {
         if (!r.optBoolean("success")) {
             // A task that can't use the default (e.g. its provider was signed out) just keeps its own model.
             if (r.optString("id").startsWith("align")) return
+            retryStep.remove(ui.task.id)
             ui.items.add(Item.Notice(ui.key("n"), "${r.optString("command")}: ${r.optString("error")}", true))
             return
         }
@@ -675,7 +693,19 @@ object UiStore : TaskManager.Listener {
             "get_available_models" -> data?.optJSONArray("models")?.let { a ->
                 models = (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("provider") to it.optString("id") }
             }
-            "get_messages" -> data?.optJSONArray("messages")?.let { rebuild(ui, it) }
+            "get_messages" -> {
+                data?.optJSONArray("messages")?.let { rebuild(ui, it) }
+                retryStep[ui.task.id]?.takeIf { it.startsWith("S:") }?.let { retryStep.remove(ui.task.id); send(ui, it.drop(2)) }
+            }
+            "get_fork_messages" -> if (retryStep[ui.task.id] == "F") {
+                val msgs = data?.optJSONArray("messages")
+                val last = msgs?.optJSONObject(msgs.length() - 1)
+                if (last == null) { retryStep.remove(ui.task.id); ui.items.add(Item.Notice(ui.key("n"), "Nothing to retry yet", false)) }
+                else {
+                    retryStep[ui.task.id] = "T:" + last.optString("text")
+                    appCommand(ui, "tree", JSONObject().put("entryId", last.optString("entryId")))
+                }
+            }
         }
     }
 

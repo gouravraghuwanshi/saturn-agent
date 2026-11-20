@@ -33,7 +33,10 @@ class MainActivity : ComponentActivity() {
             io.github.pimobile.runtime.Notifier.clear(this, id)
             UiStore.openRequest = id
         }
-        if (i.getBooleanExtra(EXTRA_FOCUS, false)) { UiStore.openRequest = HOME; UiStore.focusComposer = true }
+        if (i.getBooleanExtra(EXTRA_FOCUS, false)) {
+            UiStore.openRequest = HOME
+            if (i.getBooleanExtra(EXTRA_VOICE, false)) UiStore.voiceRequest = true else UiStore.focusComposer = true
+        }
         if (i.action == android.content.Intent.ACTION_SEND || i.action == android.content.Intent.ACTION_SEND_MULTIPLE) {
             val text = listOfNotNull(i.getStringExtra(android.content.Intent.EXTRA_SUBJECT), i.getStringExtra(android.content.Intent.EXTRA_TEXT))
                 .filter { it.isNotBlank() }.distinct().joinToString("\n")
@@ -54,6 +57,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPEN_TASK = "saturn.open_task"
         const val EXTRA_FOCUS = "saturn.focus_composer"
+        const val EXTRA_VOICE = "saturn.start_voice"
         /** openRequest value meaning "back to the task list". */
         const val HOME = "saturn.home"
     }

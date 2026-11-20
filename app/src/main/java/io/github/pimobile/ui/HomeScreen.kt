@@ -277,7 +277,7 @@ fun HomeScreen(
             Composer(
                 value = input, onValue = { input = it },
                 attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
-                focus = homeFocus,
+                focus = homeFocus, acceptVoiceRequest = true,
                 placeholder = "Ask Saturn to do something…",
                 commands = commands,
                 onSend = { text ->

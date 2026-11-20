@@ -124,6 +124,7 @@ fun Composer(
     attachments: List<UiStore.Attachment> = emptyList(),
     attach: AttachPicker? = null,
     onRemoveAttachment: (UiStore.Attachment) -> Unit = {},
+    acceptVoiceRequest: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -168,6 +169,9 @@ fun Composer(
                 android.content.pm.PackageManager.PERMISSION_GRANTED -> listen()
             else -> micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
         }
+    }
+    if (acceptVoiceRequest && UiStore.voiceRequest) androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(400); UiStore.voiceRequest = false; startDictation()
     }
 
     Column {

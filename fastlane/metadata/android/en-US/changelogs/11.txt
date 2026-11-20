@@ -1,0 +1,1 @@
+A cleaner chat screen: your messages as "ask" cards, tool steps folded into one line, the model and thinking level under the message box, and a Retry button on Saturn's latest reply. The terminal moved to an icon in the top bar. New home-screen widget with a mic button that opens Saturn already listening. Notifications only for tasks you are not looking at.

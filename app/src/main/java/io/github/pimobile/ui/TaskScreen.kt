@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -49,11 +50,14 @@ import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -202,8 +206,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 .background(Ph.Ground)
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                Header(t, onBack, onMenu = { sheet = "menu" })
-                Tabs(tab, showBrowserTab) { tab = it; if (it != "browser") holdBrowser = false }
+                Header(t, tab, showBrowserTab, onTab = { tab = it; if (it != "browser") holdBrowser = false },
+                    onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" })
                 io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 if (tab == "browser") {
                     BrowserPane(t, onClose = {
@@ -218,13 +222,19 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 }
                 LazyColumn(
                     state = list, modifier = Modifier.weight(1f).clipToBounds(),
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 16.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    items(blocks, key = { it.key }) { b ->
-                        Box(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)) {
+                    itemsIndexed(blocks, key = { _, b -> b.key }) { i, b ->
+                        // Saturn's turn starts after each of your messages: label it once.
+                        val prev = blocks.getOrNull(i - 1)
+                        val isUser = b is Block.Single && b.item is Item.User
+                        val turnStart = !isUser && (prev == null || (prev is Block.Single && prev.item is Item.User))
+                        Column(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null).padding(top = if (isUser && i > 0) 10.dp else 0.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (turnStart) SaturnLabel()
                             when (b) {
-                                is Block.Tools -> ToolPanel(b.tools)
+                                is Block.Tools -> ToolsBlock(b.tools)
                                 is Block.Single -> Row1(t, b.item)
                             }
                         }
@@ -233,7 +243,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 }
 
                 // ---- composer
-                Column(Modifier.imePadding().navigationBarsPadding().padding(bottom = 12.dp, top = 6.dp)) {
+                Column(Modifier.imePadding().navigationBarsPadding().padding(bottom = 4.dp, top = 6.dp)) {
                     AnimatedVisibility(running, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                         Row(Modifier.padding(horizontal = 18.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -268,6 +278,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             }
                         },
                     )
+                    ModelLine(t, onModel = { sheet = "model" }, onThinking = { sheet = "thinking" })
                 }
             }
         }
@@ -306,60 +317,116 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
 }
 
 @Composable
-private fun Header(t: TaskUi, onBack: () -> Unit, onMenu: () -> Unit) {
-    Row(Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Back to tasks") { onBack() },
-            contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 22.dp, "Back") }
-        Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-            Row {
-                Text("#${t.task.number} ", style = Ph.title.copy(fontFamily = Ph.Mono,
-                    color = if (t.status == Status.RUNNING) Ph.Amber else Ph.Muted, fontSize = 16.sp))
+private fun Header(t: TaskUi, tab: String, browser: Boolean, onTab: (String) -> Unit, onBack: () -> Unit, onMenu: () -> Unit) {
+    Column {
+        Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (tab == "chat") "Back to tasks" else "Back to chat") { onBack() },
+                contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 22.dp, "Back") }
+            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                 Text(t.title, style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                when (t.status) {
-                    Status.RUNNING, Status.STARTING -> PulseDot(Ph.Amber, 6)
-                    Status.NEEDS_INPUT -> PulseDot(Ph.Amber, 6)
-                    else -> {}
-                }
-                val parts = buildList {
-                    add(when (t.status) {
-                        Status.STARTING -> "starting"; Status.RUNNING -> "running"; Status.NEEDS_INPUT -> "needs you"
+                Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    when (t.status) {
+                        Status.RUNNING, Status.STARTING, Status.NEEDS_INPUT -> PulseDot(Ph.Amber, 6)
+                        else -> Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(when (t.status) {
+                            Status.FAILED -> Ph.Red; Status.IDLE -> Ph.Green; else -> Ph.Muted }))
+                    }
+                    val status = when (t.status) {
+                        Status.STARTING -> "starting"; Status.RUNNING -> "working"; Status.NEEDS_INPUT -> "needs you"
                         Status.IDLE -> "ready"; Status.STOPPED -> "paused"; Status.FAILED -> "failed"
-                    })
-                    add(t.task.cwd.name)
-                    if (t.contextTokens > 0) add(String.format(Locale.US, "%.1fk ctx", t.contextTokens / 1000.0))
-                    if (t.cost >= 0.005) add(String.format(Locale.US, "$%.2f", t.cost))
+                    }
+                    Text("#${t.task.number} · $status · ${t.task.cwd.name}", style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text(parts.joinToString(" · "), style = Ph.monoSmall, maxLines = 1)
             }
+            if (browser) HeaderIcon(PhIcons.Globe, tab == "browser", if (tab == "browser") "Back to chat" else "Show browser", dot = true) {
+                onTab(if (tab == "browser") "chat" else "browser") }
+            HeaderIcon(PhIcons.Terminal, tab == "terminal", if (tab == "terminal") "Back to chat" else "Open terminal") {
+                onTab(if (tab == "terminal") "chat" else "terminal") }
+            HeaderIcon(PhIcons.More, false, "Task options") { onMenu() }
         }
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Task options") { onMenu() },
-            contentAlignment = Alignment.Center) { PhIcon(PhIcons.More, Ph.TextSoft, 20.dp, "Task options") }
+        Box(Modifier.fillMaxWidth().size(1.dp).background(Ph.Line))
     }
 }
 
-/** chat · terminal (+ browser once the agent has opened a page, until the user closes it). */
 @Composable
-private fun Tabs(tab: String, browser: Boolean, onTab: (String) -> Unit) {
-    Row(
-        Modifier.padding(horizontal = 16.dp).padding(bottom = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(14.dp)).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        (if (browser) listOf("chat", "terminal", "browser") else listOf("chat", "terminal")).forEach { name ->
-            val on = tab == name
-            Box(
-                Modifier.weight(1f).heightIn(min = 36.dp).clip(RoundedCornerShape(10.dp))
-                    .background(if (on) Ph.Selected else Color.Transparent).clickable(onClickLabel = "Show $name") { onTab(name) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (name == "browser") PulseDot(Ph.Cyan, 6)
-                    Text(name, style = Ph.mono.copy(color = if (on) Ph.Text else Ph.Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal))
-                }
+private fun HeaderIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, on: Boolean, label: String, dot: Boolean = false, onClick: () -> Unit) {
+    Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Ph.Selected else Color.Transparent)
+        .clickable(onClickLabel = label) { onClick() }, contentAlignment = Alignment.Center) {
+        PhIcon(icon, if (on) Ph.Amber else Ph.TextSoft, 19.dp, label)
+        if (dot && !on) Box(Modifier.align(Alignment.TopEnd).padding(9.dp)) { PulseDot(Ph.Cyan, 5) }
+    }
+}
+
+/** Saturn's mark and name at the start of each of its turns. */
+@Composable
+private fun SaturnLabel() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.foundation.Canvas(Modifier.size(18.dp)) {
+            val c = center
+            drawCircle(Ph.Amber, radius = size.minDimension * 5f / 24f, center = c)
+            rotate(-20f, c) {
+                drawOval(Ph.Amber, topLeft = androidx.compose.ui.geometry.Offset(c.x - size.width * 10.5f / 24f, c.y - size.height * 3.6f / 24f),
+                    size = androidx.compose.ui.geometry.Size(size.width * 21f / 24f, size.height * 7.2f / 24f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4.dp.toPx()))
             }
         }
+        Text("Saturn", style = Ph.title.copy(fontSize = 13.sp))
+    }
+}
+
+/** A run of tool calls folded into one line ("Ran 2 commands, edited 1 file"); tap for the details. Open while running. */
+@Composable
+private fun ToolsBlock(tools: List<Item.Tool>) {
+    val running = tools.any { it.state == io.github.pimobile.ui.state.ToolState.RUNNING }
+    val failed = tools.count { it.state == io.github.pimobile.ui.state.ToolState.ERROR }
+    var open by rememberSaveable(tools.first().key) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape)
+            .clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { open = !open }.padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            when {
+                running -> PulseDot(Ph.Amber, 6)
+                failed > 0 -> PhIcon(PhIcons.Warning, Ph.Red, 14.dp)
+                else -> PhIcon(PhIcons.Check, Ph.Green, 14.dp)
+            }
+            Text(toolSummary(tools, running) + if (failed > 0 && !running) " · $failed failed" else "",
+                style = Ph.body.copy(fontSize = 13.sp, color = Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open || running) 180f else 0f })
+        }
+        AnimatedVisibility(open || running, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { ToolPanel(tools) }
+    }
+}
+
+private fun toolSummary(tools: List<Item.Tool>, running: Boolean): String {
+    fun n(count: Int, one: String, many: String) = "$count ${if (count == 1) one else many}"
+    val by = tools.groupingBy { it.name.lowercase() }.eachCount()
+    val known = setOf("bash", "read", "edit", "write", "grep", "find", "ls")
+    val parts = buildList {
+        by["bash"]?.let { add("ran " + n(it, "command", "commands")) }
+        by["read"]?.let { add("read " + n(it, "file", "files")) }
+        ((by["edit"] ?: 0) + (by["write"] ?: 0)).takeIf { it > 0 }?.let { add("edited " + n(it, "file", "files")) }
+        ((by["grep"] ?: 0) + (by["find"] ?: 0) + (by["ls"] ?: 0)).takeIf { it > 0 }?.let { add("searched " + n(it, "time", "times")) }
+        val other = tools.size - by.filterKeys { it in known }.values.sum()
+        if (other > 0) add("used " + n(other, "tool", "tools"))
+    }
+    val text = parts.joinToString(", ")
+    if (running) return "Working: " + tools.last { it.state == io.github.pimobile.ui.state.ToolState.RUNNING }.name + " · " + text
+    return text.replaceFirstChar { it.uppercase() }
+}
+
+/** Under the composer: the model and thinking level (tap to change) and how full the context is. */
+@Composable
+private fun ModelLine(t: TaskUi, onModel: () -> Unit, onThinking: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        val tap = Modifier.clip(RoundedCornerShape(8.dp))
+        Text(io.github.pimobile.ui.state.modelLabel(UiStore.model)?.first ?: "model", style = Ph.monoSmall, maxLines = 1,
+            modifier = tap.clickable(onClickLabel = "Change model") { onModel() }.padding(horizontal = 8.dp, vertical = 8.dp))
+        t.thinkingLevel?.let {
+            Text("·", style = Ph.monoSmall)
+            Text(it, style = Ph.monoSmall, modifier = tap.clickable(onClickLabel = "Change thinking level") { onThinking() }.padding(horizontal = 8.dp, vertical = 8.dp))
+        }
+        if (t.contextTokens > 0) Text("·  " + String.format(Locale.US, "%.1fk ctx", t.contextTokens / 1000.0), style = Ph.monoSmall, modifier = Modifier.padding(end = 8.dp))
+        if (t.cost >= 0.005) Text("· " + String.format(Locale.US, "$%.2f", t.cost), style = Ph.monoSmall)
     }
 }
 
@@ -469,14 +536,28 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
     val text = lines.filterNot { it.startsWith(UiStore.IMAGE_NOTE) || it.startsWith(UiStore.FILE_NOTE) }.joinToString("\n").trim()
     val context = androidx.compose.ui.platform.LocalContext.current
     val copy = copier()
-    // Your messages: a soft bubble on the right, so the conversation reads at a glance.
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-        Row(Modifier.fillMaxWidth(0.86f), horizontalArrangement = Arrangement.End) {
-            Column(Modifier.clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp))
-                .background(Ph.Raised).border(1.dp, Ph.Line, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp))
-                .clickable(onClickLabel = "Message actions") { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (text.isNotEmpty()) Text(text, style = Ph.body.copy(color = Ph.Text))
+    // Your message as an "ask" card: what you asked Saturn to do, opening each turn,
+    // with a faint Saturn ring in the corner.
+    val shape = RoundedCornerShape(18.dp)
+    Column(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().clip(shape).background(if (Ph.amoled) Color(0xFF0F0D09) else Color(0xFF15130F))
+            .border(1.dp, Ph.AmberLine, shape).clickable(onClickLabel = "Message actions") { open = !open }) {
+            androidx.compose.foundation.Canvas(Modifier.align(Alignment.TopEnd).offset(x = 30.dp, y = (-34).dp).size(150.dp, 90.dp)) {
+                val c = center
+                drawCircle(Ph.Amber.copy(alpha = 0.12f), radius = 16.dp.toPx(), center = c)
+                rotate(-18f, c) {
+                    drawOval(Ph.Amber.copy(alpha = 0.35f), topLeft = androidx.compose.ui.geometry.Offset(c.x - 70.dp.toPx(), c.y - 20.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(140.dp.toPx(), 40.dp.toPx()),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2.dp.toPx()))
+                }
+            }
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(Ph.Amber))
+                    Text("YOU ASKED", style = Ph.label.copy(fontSize = 10.5.sp, color = Ph.Amber))
+                }
+                if (text.isNotEmpty()) Text(text, style = Ph.body.copy(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium,
+                    color = Color(0xFFF3E6D0)), modifier = Modifier.padding(end = 20.dp))
                 if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }
                 files.forEach { path ->
                     FileChip(java.io.File(path).name, onClick = {
@@ -531,23 +612,30 @@ private fun endOfTurn(t: TaskUi, item: Item.Assistant): Boolean {
 private fun ReplyActions(t: TaskUi, item: Item.Assistant) {
     val copy = copier()
     var report by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Copy reply") { copy(item.text) }.padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            PhIcon(PhIcons.Copy, Ph.Muted, 13.dp); Text("copy", style = Ph.monoSmall)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val speaking = io.github.pimobile.ui.state.Speaker.speaking == item.key
+    val idle = t.status != Status.RUNNING && t.status != Status.STARTING && t.status != Status.NEEDS_INPUT
+    val last = t.items.lastOrNull { it is Item.Assistant && it.text.isNotBlank() } === item
+    Row(Modifier.offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        ActIcon(PhIcons.Copy, "Copy reply") { copy(item.text) }
+        if (last && idle) {
+            val busy = UiStore.retrying(t)
+            Row(Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = !busy, onClickLabel = "Retry") { UiStore.retry(t) }
+                .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (busy) PulseDot(Ph.Amber, 6) else PhIcon(PhIcons.Retry, Ph.TextSoft, 15.dp)
+                Text(if (busy) "Retrying…" else "Retry", style = Ph.body.copy(fontSize = 12.5.sp, color = if (busy) Ph.Amber else Ph.TextSoft))
+            }
         }
-        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Report reply") { report = true }.padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            PhIcon(PhIcons.Flag, Ph.Muted, 13.dp); Text("report", style = Ph.monoSmall)
-        }
-        val ctx = androidx.compose.ui.platform.LocalContext.current
-        val on = io.github.pimobile.ui.state.Speaker.speaking == item.key
-        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = if (on) "Stop reading" else "Read aloud") {
-            io.github.pimobile.ui.state.Speaker.toggle(ctx, item.key, item.text) }.padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            PhIcon(if (on) PhIcons.Stop else PhIcons.Speaker, if (on) Ph.Amber else Ph.Muted, 13.dp)
-            Text(if (on) "stop" else "listen", style = Ph.monoSmall.copy(color = if (on) Ph.Amber else Ph.Muted))
-        }
+        ActIcon(if (speaking) PhIcons.Stop else PhIcons.Speaker, if (speaking) "Stop reading" else "Read aloud", if (speaking) Ph.Amber else Ph.Muted) {
+            io.github.pimobile.ui.state.Speaker.toggle(ctx, item.key, item.text) }
+        ActIcon(PhIcons.Flag, "Report reply") { report = true }
     }
     if (report) ReportSheet(t, item.text) { report = false }
+}
+
+@Composable
+private fun ActIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color = Ph.Muted, onClick: () -> Unit) {
+    Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = label) { onClick() }, contentAlignment = Alignment.Center) {
+        PhIcon(icon, tint, 16.dp, label)
+    }
 }

@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
@@ -148,6 +149,13 @@ fun HomeScreen(
     // Work going on in other projects stays visible from here.
     val elsewhere = UiStore.tasks.count { it.status in ACTIVE } - projectTasks.count { it.status in ACTIVE }
 
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val heroPx = with(density) { 200.dp.toPx() }
+    val collapse by remember { androidx.compose.runtime.derivedStateOf {
+        if (projectTasks.isEmpty() || list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / heroPx).coerceIn(0f, 1f)
+    } }
+
     var loginArg by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
     val builtins = listOf(
@@ -185,12 +193,13 @@ fun HomeScreen(
                 }
             } else Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Ph.Amber)
-                    .clickable(onClickLabel = "Saturn menu") { sheet = "saturn" }, contentAlignment = Alignment.Center) {
-                    androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
+                // The big Saturn below tucks away as you scroll; this small one takes its place.
+                Box(Modifier.size(34.dp).graphicsLayer { alpha = 0.25f + 0.75f * collapse; scaleX = 0.7f + 0.3f * collapse; scaleY = scaleX }
+                    .clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Saturn menu") { sheet = "saturn" }, contentAlignment = Alignment.Center) {
+                    SaturnMark(Modifier.size(28.dp))
                 }
                 Column(Modifier.weight(1f).clickable { sheet = "model" }) {
-                    Text("Saturn", style = Ph.mono.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text))
+                    Text("Saturn", style = Ph.title.copy(fontSize = 18.sp))
                     val label = io.github.pimobile.ui.state.modelLabel(UiStore.model)
                     if (label != null) Text(androidx.compose.ui.text.buildAnnotatedString {
                         withStyle(androidx.compose.ui.text.SpanStyle(color = Ph.TextSoft)) { append(label.first) }
@@ -205,7 +214,7 @@ fun HomeScreen(
 
             io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
             // ---- project switcher: the list below is this project's tasks
-            Row(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            @Composable fun ProjectRow(modifier: Modifier) = Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
                     .clickable(onClickLabel = "Switch project") { sheet = "project" }.padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -220,14 +229,26 @@ fun HomeScreen(
                 else if (spent >= 0.005) Text(String.format(Locale.US, "$%.2f spent", spent), style = Ph.monoSmall)
             }
             // ---- tasks
+            if (projectTasks.isEmpty()) ProjectRow(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp))
             if (projectTasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
                 project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() }) { sheet = "login" }
             else LazyColumn(
-                Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
+                Modifier.weight(1f), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val visible = projectTasks.filterNot { it.hidden }
                 val active = visible.filter { it.status in ACTIVE }
+                // Saturn and its moons: shrinks, rises and fades as the list scrolls up.
+                item(key = "hero") {
+                    OrbitHero(UiStore.tasks.filter { it.status in ACTIVE }, visible.size, onOpen = { if (!selecting) onOpen(it) }, onPlanet = { sheet = "saturn" },
+                        modifier = Modifier.graphicsLayer {
+                            val p = collapse
+                            translationY = if (list.firstVisibleItemIndex == 0) list.firstVisibleItemScrollOffset * 0.45f else 0f
+                            scaleX = 1f - 0.45f * p; scaleY = scaleX; alpha = 1f - p
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.3f)
+                        })
+                }
+                item(key = "project") { ProjectRow(Modifier.padding(start = 0.dp, end = 4.dp, bottom = 2.dp)) }
                 val earlier = visible.filter { it.status !in ACTIVE && !it.archived }
                 val archived = visible.filter { it.status !in ACTIVE && it.archived }
                 val spentLabel: String? = null // shown next to the project switcher
@@ -255,7 +276,7 @@ fun HomeScreen(
                         }
                     }
                 }
-                section(active, "active", "ACTIVE · ${active.size}", spentLabel, first = true)
+                section(active, "active", "NOW · ${active.size}", spentLabel, first = true)
                 section(earlier, "earlier", if (active.isEmpty()) "TASKS" else "EARLIER · ${earlier.size}",
                     spentLabel.takeIf { active.isEmpty() }, first = active.isEmpty())
                 section(archived, "archived", "ARCHIVED · ${archived.size}", if (showArchived) "hide" else "show",
@@ -416,79 +437,36 @@ fun elapsed(since: Long?): String {
 @Composable
 private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect: () -> Unit) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val active = t.status in ACTIVE
     val needs = t.status == Status.NEEDS_INPUT
-    val shape = RoundedCornerShape(18.dp)
-    val hasError = t.lastError != null
-
-    Box {
-        Column(
-            Modifier.fillMaxWidth().clip(shape).background(when { selected == true -> Ph.AmberWash; active -> Ph.Surface; else -> Ph.Ground })
-                .border(1.dp, when { selected == true -> Ph.AmberLine; needs -> Color3A3222; active -> Ph.LineStrong; else -> Ph.Line }, shape)
-                .combinedClickable(onClick = onOpen, onClickLabel = if (selected != null) "Select task" else "Open task",
-                    onLongClick = { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onSelect() },
-                    onLongClickLabel = "Select task")
-                .animateContentSize()
-        ) {
-            Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = if (active) 0.dp else 14.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (selected != null) Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp))
-                    .background(if (selected) Ph.Amber else androidx.compose.ui.graphics.Color.Transparent)
-                    .border(1.5.dp, if (selected) Ph.Amber else Ph.LineStrong, RoundedCornerShape(11.dp)),
-                    contentAlignment = Alignment.Center) { if (selected) PhIcon(PhIcons.Check, Ph.AmberInk, 14.dp) }
-                Text("#${t.task.number}", style = Ph.mono.copy(fontWeight = FontWeight.SemiBold,
-                    color = if (t.status == Status.RUNNING || t.status == Status.STARTING) Ph.Amber else Ph.Muted))
-                Text(t.title, style = if (active) Ph.title else Ph.title.copy(fontWeight = FontWeight.Normal, color = Ph.TextSoft, fontSize = 14.sp),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                StatusBadge(t.status, hasError, t.browsing)
-            }
-
-            if (t.browsing) io.github.pimobile.browser.BrowserManager.pages[t.task.id]?.let { page ->
-                Text("◉ " + page.url.removePrefix("https://").takeIf { !it.startsWith("data:") }.orEmpty(),
-                    style = Ph.mono.copy(color = Ph.Cyan), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
-            }
-            if (needs) NeedsYou(t)
-            else if (active) {
-                // Live tail: last three tool calls (or the streaming reply).
-                val tools = t.tools.takeLast(3)
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    if (tools.isEmpty()) {
-                        val reply = (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text.orEmpty()
-                        Text(reply.ifBlank { "thinking…" }.takeLast(140), style = Ph.mono, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    tools.forEach { tool ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            val (icon, c) = when (tool.state) {
-                                ToolState.RUNNING -> "⚙" to Ph.Amber; ToolState.DONE -> "✓" to Ph.Cyan; ToolState.ERROR -> "✗" to Ph.Red
-                            }
-                            Text(icon, style = Ph.mono.copy(color = c))
-                            Text("${tool.name}  ${toolTarget(tool.name, tool.args)}", maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = Ph.mono.copy(color = if (tool.state == ToolState.RUNNING) Ph.Text else Ph.TextBody),
-                                modifier = Modifier.weight(1f, fill = false))
-                            diffStats(tool)?.let { (a, d) ->
-                                Text("+$a", style = Ph.mono.copy(color = Ph.Green)); if (d > 0) Text("−$d", style = Ph.mono.copy(color = Ph.Red))
-                            }
-                        }
-                    }
+    val working = t.status == Status.RUNNING || t.status == Status.STARTING
+    val tap = Modifier.combinedClickable(onClick = onOpen, onClickLabel = if (selected != null) "Select task" else "Open task",
+        onLongClick = { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onSelect() },
+        onLongClickLabel = "Select task")
+    val check: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        if (selected != null) Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp))
+            .background(if (selected) Ph.Amber else androidx.compose.ui.graphics.Color.Transparent)
+            .border(1.5.dp, if (selected) Ph.Amber else Ph.LineStrong, RoundedCornerShape(11.dp)),
+            contentAlignment = Alignment.Center) { if (selected) PhIcon(PhIcons.Check, Ph.AmberInk, 14.dp) }
+    }
+    when {
+        working -> LiquidCard(t, check, Modifier.clip(RoundedCornerShape(22.dp)).then(tap))
+        needs -> {
+            val shape = RoundedCornerShape(22.dp)
+            Column(Modifier.fillMaxWidth().clip(shape).background(if (selected == true) Ph.AmberWash else if (Ph.amoled) androidx.compose.ui.graphics.Color(0xFF0F0D09) else androidx.compose.ui.graphics.Color(0xFF15130F))
+                .border(1.dp, Ph.AmberLine, shape).then(tap).animateContentSize()) {
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    check()
+                    io.github.pimobile.ui.components.PulseDot(Ph.Text, 7)
+                    Text(t.title, style = Ph.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text("needs you", style = Ph.monoSmall.copy(color = Ph.Amber))
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Ph.Line))
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 9.dp, bottom = 11.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(t.task.cwd.name, style = Ph.monoSmall)
-                    if (t.tools.isNotEmpty()) Text("step ${t.tools.size}", style = Ph.monoSmall)
-                    elapsed(t.runStartedAt).takeIf { it.isNotEmpty() }?.let { Text(it, style = Ph.monoSmall) }
-                    if (t.cost >= 0.005) Text(String.format(Locale.US, "$%.2f", t.cost), style = Ph.monoSmall)
-                }
-                if (t.status == Status.RUNNING || t.status == Status.STARTING) SweepBar()
-            } else {
-                val last = t.lastError ?: (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text
-                last?.takeIf { it.isNotBlank() }?.let {
-                    Text(plainPreview(it), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = Ph.monoSmall.copy(color = if (t.lastError != null) Ph.Red else Ph.Muted),
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp))
-                }
+                NeedsYou(t)
             }
+        }
+        else -> {
+            val last = t.lastError ?: (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text
+            QuietRow(t, check, last?.takeIf { it.isNotBlank() }?.let { plainPreview(it) }?.takeIf { it.isNotBlank() }, selected == true, tap)
         }
     }
 }

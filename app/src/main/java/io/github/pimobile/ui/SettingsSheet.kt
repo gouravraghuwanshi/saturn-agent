@@ -156,6 +156,14 @@ private fun PermissionsSheet(onDismiss: () -> Unit) {
                 }
             }
         }
+        Group(null) {
+            val dnd = remember(tick) { Device.dndAccess() }
+            Item(PhIcons.Lock, "Do Not Disturb access", "Lets Saturn take the phone off silent, e.g. a scheduled unmute", trailing = {
+                Text(if (dnd) "Allowed" else "Off", style = Ph.monoSmall.copy(color = if (dnd) Ph.Green else Ph.Muted))
+            }) {
+                runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+            }
+        }
         Text("Calls and texts only open the dialer or Messages filled in. You press call or send.",
             style = Ph.body.copy(fontSize = 12.5.sp, color = Ph.Muted), modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
     }

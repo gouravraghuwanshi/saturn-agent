@@ -268,6 +268,9 @@ class PiRuntime private constructor(private val ctx: Context) {
             |· ${if (io.github.pimobile.BuildConfig.PLAY) "" else "termux-contact-list · "}termux-wifi-connectioninfo · termux-clipboard-get / -set
             |· termux-share <file> · termux-open-url <url> · termux-telephony-call <number> · termux-sms-send -n <number> <text>
             |Photos and recordings without a file name are saved to the artifacts folder; the path is printed.
+            |To silence the phone use `termux-volume ring 0` (and notification 0); to unmute set them back up (e.g. 10).
+            |Unmuting needs the user's "Do Not Disturb access" (Settings → Permissions); when scheduling an unmute,
+            |test it right away (or check with the user) so it doesn't fail silently later.
             |termux-telephony-call and termux-sms-send only open the dialer / messaging app filled in — the user
             |presses call or send themselves; say so. Use these only when the user's request needs them. The first
             |use of the camera, microphone, location${if (io.github.pimobile.BuildConfig.PLAY) "" else " or contacts"} shows an Android permission prompt to the user.

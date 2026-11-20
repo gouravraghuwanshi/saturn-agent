@@ -121,6 +121,9 @@ object Scheduler {
         } else Thread({
             val result = runCatching { runCommand(job) }.getOrElse { "error: ${it.message}" }
             log(job, result)
+            // A job that failed shouldn't fail silently: tell the user (the log has the details).
+            if (result.contains("\n[exit ") || result.startsWith("error:") || result.contains("[stopped after"))
+                notify(job, "Scheduled job didn't work: ${job.name}", result.lines().lastOrNull { it.isNotBlank() && !it.startsWith("[") }?.take(200) ?: "See saturn-schedule log ${job.id}")
             if (cron != null) { job.lastResult = result.takeLast(200); save(current().map { if (it.id == job.id) job else it }) }
             finished()
         }, "job-${job.id}").start()

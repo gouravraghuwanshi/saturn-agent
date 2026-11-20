@@ -204,8 +204,21 @@ object Device {
         if (stream != null) {
             val s = STREAMS[stream] ?: throw Fail("stream must be one of ${STREAMS.keys.joinToString()}")
             value ?: throw Fail("usage: termux-volume <stream> <volume>")
-            runCatching { am.setStreamVolume(s, value.coerceIn(0, am.getStreamMaxVolume(s)), 0) }
+            val target = value.coerceIn(0, am.getStreamMaxVolume(s))
+            // While the phone is on silent/vibrate, Android quietly ignores raising the ring and
+            // notification volume: switch the ringer back to normal first, like the volume keys do.
+            val ringerStream = s == AudioManager.STREAM_RING || s == AudioManager.STREAM_NOTIFICATION || s == AudioManager.STREAM_SYSTEM
+            if (ringerStream && target > 0 && am.ringerMode != AudioManager.RINGER_MODE_NORMAL) {
+                if (!dndAccess()) throw Fail("The phone is on silent, and Android only lets apps with Do Not Disturb access take it off silent. " +
+                    "Ask the user to allow it once: Saturn → Settings → Permissions → Do Not Disturb access.")
+                runCatching { am.ringerMode = AudioManager.RINGER_MODE_NORMAL }
+                    .onFailure { throw Fail("Android won't let Saturn take the phone off silent: ${it.message}") }
+            }
+            runCatching { am.setStreamVolume(s, target, 0) }
                 .onFailure { throw Fail("Android refused to change $stream volume (Do Not Disturb?)") }
+            // Say so when Android ignored it, instead of reporting success.
+            val now = am.getStreamVolume(s)
+            if (now != target) throw Fail("Android kept $stream volume at $now (asked for $target). Do Not Disturb or the phone's sound mode may be blocking it.")
             return ""
         }
         return JSONArray(STREAMS.map { (n, s) ->
@@ -447,6 +460,9 @@ object Device {
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null))
         return ""
     }
+
+    /** "Do Not Disturb access": needed to take the phone off silent or change DND. */
+    fun dndAccess() = app.getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted
 
     fun granted(permission: String) = ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED
 }

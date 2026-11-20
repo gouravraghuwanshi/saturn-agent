@@ -298,14 +298,16 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         liftJob?.cancel()
                         var lastY = down.position.y; var travel = 0f; var anchor: Float? = null; var ticked = false
-                        var topPull = 0f
+                        var topPull = 0f; var edgeDrag = false
                         while (true) {
                             val e = awaitPointerEvent(PointerEventPass.Initial)
                             val c = e.changes.firstOrNull { it.id == down.id } ?: break
                             if (!c.pressed) break
                             val y = c.position.y
                             val dy = y - lastY; lastY = y; travel += kotlin.math.abs(dy)
-                            if (travel > slop) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
+                            // Once this drag is pulling the chat past an edge, it's only about that pull:
+                            // dragging back to cancel mustn't bring the header in.
+                            if (travel > slop && !edgeDrag) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
                             // At an edge the whole chat follows your finger (with weight). Measured from where
                             // it hit the edge, so dragging back cancels.
                             val atEnd = !list.canScrollForward; val atTop = !list.canScrollBackward
@@ -313,7 +315,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                                 val a = anchor ?: y.also { anchor = it }
                                 pull = if (atEnd) (a - y).coerceAtLeast(0f) else 0f
                                 topPull = if (atTop) (y - a).coerceAtLeast(0f) else 0f
-                                if (pull > 0f || topPull > 0f) c.consume()
+                                if (pull > 0f || topPull > 0f) { c.consume(); if (pull > slop) edgeDrag = true }
                             } else { anchor = null; pull = 0f; topPull = 0f }
                             if (!ticked && (pull > slop * 2 || topPull > slop * 2)) {
                                 ticked = true; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)

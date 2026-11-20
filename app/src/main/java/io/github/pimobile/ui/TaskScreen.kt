@@ -629,28 +629,15 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
     val text = lines.filterNot { it.startsWith(UiStore.IMAGE_NOTE) || it.startsWith(UiStore.FILE_NOTE) }.joinToString("\n").trim()
     val context = androidx.compose.ui.platform.LocalContext.current
     val copy = copier()
-    // Your message as an "ask" card: what you asked Saturn to do, opening each turn,
-    // with a faint Saturn ring in the corner.
-    val shape = RoundedCornerShape(18.dp)
+    // Your message as a prompt line: an amber › and your words, like typing at a terminal.
+    // No box; wrapped lines stay aligned after the ›.
     Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface)
-            .border(1.dp, Ph.AmberLine, shape).clickable(onClickLabel = "Message actions") { open = !open }) {
-            androidx.compose.foundation.Canvas(Modifier.align(Alignment.TopEnd).offset(x = 30.dp, y = (-34).dp).size(150.dp, 90.dp)) {
-                val c = center
-                drawCircle(Ph.Amber.copy(alpha = 0.12f), radius = 16.dp.toPx(), center = c)
-                rotate(-18f, c) {
-                    drawOval(Ph.Amber.copy(alpha = 0.35f), topLeft = androidx.compose.ui.geometry.Offset(c.x - 70.dp.toPx(), c.y - 20.dp.toPx()),
-                        size = androidx.compose.ui.geometry.Size(140.dp.toPx(), 40.dp.toPx()),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2.dp.toPx()))
-                }
-            }
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(Ph.Amber))
-                    Text("YOU ASKED", style = Ph.label.copy(fontSize = 10.5.sp, color = Ph.Amber))
-                }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Message actions") { open = !open }
+            .padding(vertical = 6.dp, horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("›", style = Ph.mono.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, color = Ph.Amber))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (text.isNotEmpty()) Text(text, style = Ph.body.copy(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium,
-                    color = Color(0xFFF3E6D0)), modifier = Modifier.padding(end = 20.dp))
+                    color = Color(0xFFF3E6D0)))
                 if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }
                 files.forEach { path ->
                     FileChip(java.io.File(path).name, onClick = {

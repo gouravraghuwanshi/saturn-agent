@@ -94,6 +94,7 @@ fun HomeScreen(
     onStore: () -> Unit,
     onTerminal: () -> Unit,
     onArtifacts: () -> Unit,
+    onUsage: () -> Unit,
     onOpen: (TaskUi) -> Unit,
 ) {
     val selected = remember { androidx.compose.runtime.mutableStateListOf<String>() }
@@ -255,6 +256,7 @@ fun HomeScreen(
                     }, style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) else Text(if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "auto model" else "not signed in · /login",
                         style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                IconBox(PhIcons.Chart, "Usage") { onUsage() }
                 IconBox(PhIcons.Cube, "Extension store") { onStore() }
                 IconBox(PhIcons.Settings, "Settings") { sheet = "settings" }
             }

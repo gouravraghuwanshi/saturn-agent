@@ -12,7 +12,18 @@ import java.time.Instant
  * separately, so the numbers match pi's /session.
  */
 object Usage {
-    class Reply(val at: Long, val provider: String, val model: String, val cost: Double, val tokens: Long, val sessionId: String)
+    class Reply(
+        val at: Long, val provider: String, val model: String, val cost: Double, val tokens: Long, val sessionId: String,
+        val input: Long = 0, val output: Long = 0, val cacheRead: Long = 0, val cacheWrite: Long = 0,
+        /** What the input and cache-read tokens cost: lets us estimate what caching saved. */
+        val inputCost: Double = 0.0, val cacheReadCost: Double = 0.0,
+        /** pi's folder for the session's working directory, e.g. "--data-…-projects-web--". */
+        val folder: String = "",
+        val failed: Boolean = false,
+    )
+
+    /** pi names a session folder after its working directory: "/a/b" → "--a-b--". */
+    fun folderFor(cwd: File) = "--" + cwd.path.trim('/').replace('/', '-') + "--"
 
     private class Cached(val modified: Long, val size: Long, val replies: List<Reply>)
     private val cache = HashMap<String, Cached>()
@@ -32,6 +43,7 @@ object Usage {
 
     private fun read(f: File): List<Reply> {
         val session = f.name.removeSuffix(".jsonl").substringAfter('_')
+        val folder = f.parentFile?.name.orEmpty()
         val out = ArrayList<Reply>()
         runCatching {
             f.bufferedReader().useLines { lines ->
@@ -44,9 +56,14 @@ object Usage {
                     val u = m.optJSONObject("usage") ?: continue
                     val at = runCatching { Instant.parse(e.optString("timestamp")).toEpochMilli() }.getOrNull()
                         ?: m.optLong("timestamp", f.lastModified())
-                    out += Reply(at, m.optString("provider"), m.optString("model"),
-                        u.optJSONObject("cost")?.optDouble("total", 0.0)?.takeIf { !it.isNaN() } ?: 0.0,
-                        u.optLong("totalTokens", u.optLong("input") + u.optLong("output")), session)
+                    val c = u.optJSONObject("cost")
+                    fun cost(k: String) = c?.optDouble(k, 0.0)?.takeIf { !it.isNaN() } ?: 0.0
+                    val input = u.optLong("input"); val output = u.optLong("output")
+                    val cr = u.optLong("cacheRead"); val cw = u.optLong("cacheWrite")
+                    out += Reply(at, m.optString("provider"), m.optString("model"), cost("total"),
+                        u.optLong("totalTokens", input + output + cr + cw), session,
+                        input, output, cr, cw, cost("input"), cost("cacheRead"), folder,
+                        failed = m.optString("stopReason") == "error")
                 }
             }
         }

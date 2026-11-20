@@ -70,7 +70,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Divider()
                 Item(PhIcons.Sparkle, "Default model", UiStore.model?.substringAfter('/') ?: "Chosen automatically", tint = Ph.Amber) { open = "model" }
                 Divider()
-                Item(PhIcons.Clock, "Usage", "What you've spent and how many tokens, by model and task", tint = Ph.Amber) { open = "usage" }
+                Item(PhIcons.Clock, "Usage", "What you've spent and how many tokens, by model and task", tint = Ph.Amber) { UiStore.openRequest = USAGE; onDismiss() }
             }
 
             Group("Connections") {
@@ -114,7 +114,6 @@ fun SettingsSheet(onDismiss: () -> Unit) {
     when (open) {
         "login" -> LoginSheet { open = null }
         "model" -> ModelSheet(null) { open = null }
-        "usage" -> UsageSheet { open = null }
         "github" -> GitHubSheet { open = null }
         "computers" -> ComputersSheet { open = null }
         "permissions" -> PermissionsSheet { open = null }

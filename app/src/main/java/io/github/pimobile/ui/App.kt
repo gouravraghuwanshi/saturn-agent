@@ -25,6 +25,7 @@ import io.github.pimobile.ui.theme.PhosphorTheme
 private const val STORE = "store"
 private const val TERMINAL = "app-terminal"
 private const val ARTIFACTS = "app-artifacts"
+const val USAGE = "app-usage"
 
 /** Home <-> task (the tapped card morphs into the task screen), and the store. */
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -59,8 +60,9 @@ fun App() {
                 if (id == STORE) StoreScreen { openId = null }
                 else if (id == TERMINAL) ShellScreen { openId = null }
                 else if (id == ARTIFACTS) ArtifactsScreen { openId = null }
+                else if (id == USAGE) UsageScreen(onOpenTask = { openId = it }) { openId = null }
                 else if (task == null) HomeScreen(this@SharedTransitionLayout, this, onStore = { openId = STORE },
-                    onTerminal = { openId = TERMINAL }, onArtifacts = { openId = ARTIFACTS }) { openId = it.task.id }
+                    onTerminal = { openId = TERMINAL }, onArtifacts = { openId = ARTIFACTS }, onUsage = { openId = USAGE }) { openId = it.task.id }
                 else TaskScreen(task, this@SharedTransitionLayout, this, onOpenTask = { openId = it.task.id }) { openId = null }
             }
         }

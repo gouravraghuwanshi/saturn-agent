@@ -16,6 +16,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -95,7 +96,8 @@ fun SaturnMark(modifier: Modifier) {
  * for Saturn's menu.
  */
 @Composable
-fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlanet: () -> Unit, modifier: Modifier = Modifier) {
+fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlanet: () -> Unit, modifier: Modifier = Modifier,
+              page: Int = 0, pageStatus: String? = null, onPage: (Int) -> Unit = {}) {
     // Saturn drawn in text (design S2): an amber globe, cream rings, a spark riding the ring,
     // and each working task a moon. ~15 frames a second; stops when scrolled off screen.
     var t by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
@@ -108,13 +110,15 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
     val glowPx = with(density0) { 9.dp.toPx() }
     val frame = AsciiSaturn.frame(t, moons.map { it.status == Status.NEEDS_INPUT })
     val breathe = 0.5f + 0.5f * sin(t * 1.1f)
-    var known by remember { androidx.compose.runtime.mutableStateOf(io.github.pimobile.ui.state.UiStore.saturnKnown) }
-    var nudge by remember { androidx.compose.runtime.mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(known) {
-        while (!known) { kotlinx.coroutines.delay(5_000); nudge = true; kotlinx.coroutines.delay(2_800); nudge = false; kotlinx.coroutines.delay(7_000) }
-        nudge = false
+    // The status line keeps teaching what Saturn does: status → "tap" hint → status → "swipe" hint → …
+    var nudge by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(6_000); nudge = 1; kotlinx.coroutines.delay(2_800); nudge = 0
+            kotlinx.coroutines.delay(6_000); nudge = 2; kotlinx.coroutines.delay(2_800); nudge = 0
+        }
     }
-    val onPlanetTap = { if (!known) { known = true; io.github.pimobile.ui.state.UiStore.markSaturnTapped() }; onPlanet() }
+    val onPlanetTap = onPlanet
 
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -139,16 +143,28 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
                     }
                 })
         }
-        // Until you've tapped Saturn once, the status line now and then says you can.
-        val status = when {
+        val status = pageStatus ?: when {
                 active.isEmpty() && total == 0 -> "Ask below to start a task"
                 active.isEmpty() -> "All quiet · $total ${if (total == 1) "task" else "tasks"}"
                 else -> listOfNotNull(working.takeIf { it > 0 }?.let { "$it working" }, waiting.takeIf { it > 0 }?.let { "$it ${if (it == 1) "needs" else "need"} you" }).joinToString(" · ")
             }
-        androidx.compose.animation.AnimatedContent(if (nudge) "tap Saturn for options" else status, label = "status",
+        val hints = listOf("tap Saturn for more", if (page == 0) "swipe Saturn for routines" else "swipe Saturn for tasks")
+        androidx.compose.animation.AnimatedContent(if (nudge == 0) status else hints[nudge - 1], label = "status",
             transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(400)) }) { s ->
-            Text(s, style = Ph.mono.copy(color = if (s == "tap Saturn for options") Ph.Amber else if (waiting > 0) Ph.Text else Ph.TextSoft),
-                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+            Text(s, style = Ph.mono.copy(color = if (s in hints) Ph.Amber else if (waiting > 0 && pageStatus == null) Ph.Text else Ph.TextSoft),
+                modifier = Modifier.padding(top = 2.dp))
+        }
+        // Two pages, tasks and routines: the dots say which, and switch on tap.
+        Row(Modifier.padding(top = 8.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            (0..1).forEach { i ->
+                val w by androidx.compose.animation.core.animateDpAsState(if (i == page) 18.dp else 6.dp,
+                    androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 500f), label = "dot")
+                Box(Modifier.size(width = 30.dp, height = 22.dp).clip(RoundedCornerShape(11.dp))
+                    .clickable(onClickLabel = if (i == 0) "Show tasks" else "Show routines") { if (i != page) onPage(i) },
+                    contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = w, height = 6.dp).clip(RoundedCornerShape(3.dp)).background(if (i == page) Ph.Amber else Ph.LineStrong))
+                }
+            }
         }
     }
 }

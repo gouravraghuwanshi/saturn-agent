@@ -32,19 +32,39 @@ object Scheduler {
         val cwd: String, val artifacts: String?,
         val cron: String?, var next: Long,
         var lastRun: Long = 0, var lastResult: String? = null,
+        /** Routine settings: off without being deleted; stop a run past this many dollars; only notify when there's news;
+         *  wait for charging + Wi-Fi (from the cron's time on). */
+        var paused: Boolean = false, var cap: Double? = null, var quiet: Boolean = false, var overnight: Boolean = false,
+        /** Recent runs, newest last (at most [KEEP]). */
+        val runs: MutableList<Run> = mutableListOf(),
     ) {
         fun json() = JSONObject().put("id", id).put("name", name).put("command", command).put("prompt", prompt)
             .put("cwd", cwd).put("artifacts", artifacts).put("cron", cron).put("next", next)
             .put("lastRun", lastRun).put("lastResult", lastResult)
+            .put("paused", paused).put("cap", cap).put("quiet", quiet).put("overnight", overnight)
+            .put("runs", JSONArray(runs.map { it.json() }))
         companion object {
             fun from(o: JSONObject) = Job(o.getString("id"), o.optString("name"),
                 o.optString("command").takeIf { o.has("command") && it.isNotEmpty() },
                 o.optString("prompt").takeIf { o.has("prompt") && it.isNotEmpty() },
                 o.optString("cwd"), o.optString("artifacts").takeIf { it.isNotEmpty() },
                 o.optString("cron").takeIf { o.has("cron") && it.isNotEmpty() }, o.optLong("next"),
-                o.optLong("lastRun"), o.optString("lastResult").takeIf { o.has("lastResult") && it.isNotEmpty() })
+                o.optLong("lastRun"), o.optString("lastResult").takeIf { o.has("lastResult") && it.isNotEmpty() },
+                o.optBoolean("paused"), o.optDouble("cap").takeIf { o.has("cap") && !it.isNaN() }, o.optBoolean("quiet"),
+                o.optBoolean("overnight"),
+                o.optJSONArray("runs")?.let { a -> (0 until a.length()).map { Run.from(a.getJSONObject(it)) }.toMutableList() } ?: mutableListOf())
         }
     }
+
+    /** One run of a routine. [state]: running · ok · failed · quiet (nothing new) · capped (stopped at the spend cap). */
+    data class Run(val at: Long, val taskId: String?, var state: String, var cost: Double = 0.0) {
+        fun json() = JSONObject().put("at", at).put("task", taskId).put("state", state).put("cost", cost)
+        companion object { fun from(o: JSONObject) = Run(o.optLong("at"), o.optString("task").takeIf { it.isNotEmpty() }, o.optString("state"), o.optDouble("cost", 0.0)) }
+    }
+    private const val KEEP = 14
+    /** What a quiet routine is told, and how its "nothing new" answer is spotted. */
+    const val NOTHING_NEW = "NOTHING NEW"
+    private const val QUIET_NOTE = "\n\n(This runs on a schedule. If nothing is new or worth telling me since last time, reply with exactly: NOTHING NEW)"
 
     private lateinit var app: Context
     private val main = Handler(Looper.getMainLooper())
@@ -81,9 +101,26 @@ object Scheduler {
     private fun pending(id: String, flags: Int = PendingIntent.FLAG_UPDATE_CURRENT) = PendingIntent.getBroadcast(app, id.hashCode(),
         Intent(app, JobReceiver::class.java).setAction("saturn.job").putExtra("id", id), flags or PendingIntent.FLAG_IMMUTABLE)
 
+    private fun cancel(job: Job) {
+        app.getSystemService(AlarmManager::class.java).cancel(pending(job.id))
+        app.getSystemService(android.app.job.JobScheduler::class.java).cancel(jobKey(job.id))
+    }
+    private fun jobKey(id: String) = 0x5A70000 or (id.hashCode() and 0xFFFF)
+
     private fun arm(job: Job) {
-        val am = app.getSystemService(AlarmManager::class.java)
+        cancel(job)
+        if (job.paused) return
         val at = job.next.coerceAtLeast(System.currentTimeMillis() + 1000)
+        if (job.overnight) {
+            // From the chosen time on, as soon as the phone is charging on Wi-Fi.
+            val info = android.app.job.JobInfo.Builder(jobKey(job.id), android.content.ComponentName(app, RoutineJobService::class.java))
+                .setRequiresCharging(true).setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_UNMETERED)
+                .setMinimumLatency((at - System.currentTimeMillis()).coerceAtLeast(0)).setPersisted(true)
+                .setExtras(android.os.PersistableBundle().apply { putString("id", job.id) }).build()
+            runCatching { app.getSystemService(android.app.job.JobScheduler::class.java).schedule(info) }
+            return
+        }
+        val am = app.getSystemService(AlarmManager::class.java)
         if (exact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(job.id))
         else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(job.id))
     }
@@ -93,14 +130,59 @@ object Scheduler {
     fun remove(id: String): Boolean {
         val l = current()
         val job = l.firstOrNull { it.id == id || it.name == id } ?: return false
-        app.getSystemService(AlarmManager::class.java).cancel(pending(job.id))
+        cancel(job)
         save(l - job)
         return true
     }
 
+    fun job(id: String) = current().firstOrNull { it.id == id }
+
+    /** Pause or resume a routine without losing it. */
+    fun setPaused(id: String, paused: Boolean) {
+        val job = job(id) ?: return
+        job.paused = paused
+        if (!paused && job.next < System.currentTimeMillis()) job.cron?.let { runCatching { job.next = Cron(it).next(System.currentTimeMillis()) } }
+        save(current().map { if (it.id == id) job else it }); arm(job)
+    }
+
+    /** Replace a routine's settings (from the editor); keeps its history. */
+    fun update(job: Job) {
+        val old = job(job.id)
+        if (old != null) { job.runs.clear(); job.runs.addAll(old.runs); job.lastRun = old.lastRun }
+        add(job)
+    }
+
+    private fun record(id: String, change: (Job) -> Unit) {
+        val job = job(id) ?: return
+        change(job)
+        while (job.runs.size > KEEP) job.runs.removeAt(0)
+        save(current().map { if (it.id == id) job else it })
+    }
+
+    /**
+     * A routine's task finished: note how it went. Returns true when it had nothing new to say
+     * (the caller then archives it quietly instead of notifying).
+     */
+    fun settled(ui: io.github.pimobile.ui.state.TaskUi): Boolean {
+        val id = ui.routineId ?: return false
+        val job = job(id) ?: return false
+        val reply = ui.items.lastOrNull { it is io.github.pimobile.ui.state.Item.Assistant && it.text.isNotBlank() }
+            ?.let { (it as io.github.pimobile.ui.state.Item.Assistant).text.trim() }.orEmpty()
+        val quiet = job.quiet && reply.uppercase().startsWith(NOTHING_NEW)
+        record(id) { j ->
+            val run = j.runs.lastOrNull { it.taskId == ui.task.id } ?: Run(System.currentTimeMillis(), ui.task.id, "running").also { j.runs += it }
+            run.cost = ui.cost
+            run.state = when { run.state == "capped" -> "capped"; ui.lastError != null -> "failed"; quiet -> "quiet"; else -> "ok" }
+            j.lastResult = if (quiet) "nothing new" else reply.lineSequence().firstOrNull { it.isNotBlank() }?.take(140) ?: ui.lastError?.take(140)
+        }
+        ui.routineId = null
+        return quiet
+    }
+
     /** Runs a job now (from its alarm or "Run now"); reschedules cron jobs, drops one-off ones. */
-    fun fire(id: String, finished: () -> Unit = {}) {
+    fun fire(id: String, manual: Boolean = false, finished: () -> Unit = {}) {
         val job = current().firstOrNull { it.id == id } ?: return finished()
+        if (job.paused && !manual) return finished()
         val cron = job.cron?.let { runCatching { Cron(it) }.getOrNull() }
         val l = current().filter { it.id != id }
         if (cron != null) {
@@ -113,8 +195,22 @@ object Scheduler {
                 runCatching {
                     val ui = io.github.pimobile.ui.state.UiStore
                     ui.init(app)
-                    ui.newTask(job.prompt, File(job.cwd).takeIf { it.isDirectory } ?: PiRuntime.get(app).projects)
-                    notify(job, "Started a scheduled task", job.prompt)
+                    val t = ui.newTask(job.prompt + if (job.quiet) QUIET_NOTE else "", File(job.cwd).takeIf { it.isDirectory } ?: PiRuntime.get(app).projects)
+                    t.routineId = job.id
+                    ui.rename(t, job.name)
+                    record(job.id) { it.runs += Run(System.currentTimeMillis(), t.task.id, "running"); it.lastRun = System.currentTimeMillis() }
+                    // The spend cap: stop the run once it costs more than allowed.
+                    job.cap?.let { cap ->
+                        val watch = object : Runnable { override fun run() {
+                            if (t.routineId == null) return
+                            if (t.cost > cap && (t.status == TaskManager.Status.RUNNING || t.status == TaskManager.Status.NEEDS_INPUT)) {
+                                record(job.id) { j -> j.runs.lastOrNull { it.taskId == t.task.id }?.state = "capped" }
+                                ui.stop(t)
+                                notify(job, "${job.name} stopped at its \$${"%.2f".format(cap)} cap", "Open the task to see how far it got.")
+                            } else main.postDelayed(this, 3_000)
+                        } }
+                        main.postDelayed(watch, 3_000)
+                    }
                 }.onFailure { notify(job, "Scheduled task couldn't start", it.message ?: it.toString()) }
                 finished()
             }
@@ -189,7 +285,7 @@ object Scheduler {
                 return if (remove(key)) "Removed $key." else throw IllegalArgumentException("no job \"$key\"")
             }
             "log" -> { val j = find(args.getOrNull(1) ?: return USAGE); return File(logs, "${j.id}.log").takeIf { it.exists() }?.readText()?.takeLast(8000) ?: "No runs yet." }
-            "run" -> { val j = find(args.getOrNull(1) ?: return USAGE); fire(j.id); return "Started ${j.name}." }
+            "run" -> { val j = find(args.getOrNull(1) ?: return USAGE); fire(j.id, manual = true); return "Started ${j.name}." }
             "in", "at", "cron" -> {}
             "-h", "--help", "help" -> return USAGE
             else -> throw IllegalArgumentException("unknown action \"$verb\"\n$USAGE")
@@ -302,6 +398,17 @@ object Scheduler {
             throw IllegalArgumentException("cron never fires")
         }
     }
+}
+
+/** An overnight routine's conditions are met (charging, Wi-Fi, after its time): run it. */
+class RoutineJobService : android.app.job.JobService() {
+    override fun onStartJob(params: android.app.job.JobParameters): Boolean {
+        val id = params.extras.getString("id") ?: return false
+        io.github.pimobile.ui.state.UiStore.init(this)
+        Scheduler.fire(id) { jobFinished(params, false) }
+        return true
+    }
+    override fun onStopJob(params: android.app.job.JobParameters) = false
 }
 
 /** An alarm went off: run the job. */

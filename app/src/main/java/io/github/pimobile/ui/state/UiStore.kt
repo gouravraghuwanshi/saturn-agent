@@ -68,6 +68,8 @@ class TaskUi(val task: TaskManager.Task) {
     var stopping by mutableStateOf(false)
     /** Bumped whenever the transcript is replaced from pi's history. */
     var rebuilds by mutableStateOf(0)
+    /** Set while this task is a run of a routine (Scheduler job id). */
+    var routineId: String? = null
     internal var current: Item.Assistant? = null
     internal val echoes = ArrayDeque<String>()
     internal var historyLoaded = false
@@ -467,6 +469,10 @@ object UiStore : TaskManager.Listener {
     /** Whether you've ever tapped Saturn on home (until then its status line hints that you can). */
     val saturnKnown: Boolean get() = prefs.getBoolean("saturn_tapped", false)
     fun markSaturnTapped() { prefs.edit().putBoolean("saturn_tapped", true).apply() }
+    /** Home's page (0 tasks, 1 routines): it reopens where you left it. */
+    var homePage: Int
+        get() = prefs.getInt("home_page", 0)
+        set(v) { prefs.edit().putInt("home_page", v).apply() }
 
     fun selectProject(dir: File) {
         project = dir
@@ -567,7 +573,12 @@ object UiStore : TaskManager.Listener {
                 ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null
                 ui.items.add(Item.Notice(ui.key("n"), "Stopped. Saturn ended the run and everything it had started.", false))
             }
-            "agent_settled" -> { Haptics.finished(ok = ui.lastError == null && !ui.stopping); io.github.pimobile.runtime.Notifier.settled(app, ui); ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
+            "agent_settled" -> {
+                // A routine with nothing new to say goes straight to the archive, without a notification.
+                val quiet = runCatching { io.github.pimobile.runtime.Scheduler.settled(ui) }.getOrDefault(false)
+                if (quiet) setArchived(ui, true, undoable = false)
+                else { Haptics.finished(ok = ui.lastError == null && !ui.stopping); io.github.pimobile.runtime.Notifier.settled(app, ui) }
+                ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return
                 when (m.optString("role")) {

@@ -75,6 +75,7 @@ import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import java.io.File
@@ -154,19 +155,26 @@ fun HomeScreen(
     val projectLabel = if (isGeneral) "General" else projectDir.name
     val projectTasks = UiStore.tasksIn(projectDir)
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
+    // Two pages under Saturn: tasks and routines. Swipe Saturn (or tap the dots) to switch; it remembers.
+    var page by rememberSaveable { mutableStateOf(UiStore.homePage) }
+    LaunchedEffect(page) { UiStore.homePage = page }
+    var routineEdit by remember { mutableStateOf<io.github.pimobile.runtime.Scheduler.Job?>(null) }
+    val showList = projectTasks.isNotEmpty() || page == 1
     var showArchived by rememberSaveable { mutableStateOf(false) }
     val spent = projectTasks.sumOf { it.cost }
     // Work going on in other projects stays visible from here.
     val elsewhere = UiStore.tasks.count { it.status in ACTIVE } - projectTasks.count { it.status in ACTIVE }
 
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    var heroDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var swipeJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val hostView = androidx.compose.ui.platform.LocalView.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val heroPx = with(density) { 200.dp.toPx() }
     val heroSize by remember { androidx.compose.runtime.derivedStateOf {
         list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "hero" }?.size?.toFloat()?.takeIf { it > 0f } ?: heroPx } }
     val collapse by remember { androidx.compose.runtime.derivedStateOf {
-        if (projectTasks.isEmpty() || list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / heroSize).coerceIn(0f, 1f)
+        if (!showList || list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / heroSize).coerceIn(0f, 1f)
     } }
     // A short list can't scroll, so Saturn could never tuck away: pad the end so it always can.
     var fillerPx by remember { mutableStateOf(0) }
@@ -183,7 +191,7 @@ fun HomeScreen(
     // Typing: tuck Saturn away so the tasks and the box you're typing in have the room.
     val imeVisible = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0
     LaunchedEffect(imeVisible) {
-        if (imeVisible && projectTasks.isNotEmpty() && list.firstVisibleItemIndex == 0) list.animateScrollToItem(1)
+        if (imeVisible && showList && list.firstVisibleItemIndex == 0) list.animateScrollToItem(1)
     }
     // Let go halfway and Saturn settles: fully open or fully tucked away.
     LaunchedEffect(list) {
@@ -219,7 +227,7 @@ fun HomeScreen(
         androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(4_000), androidx.compose.animation.core.RepeatMode.Reverse), label = "breathe")
     Box(Modifier.fillMaxSize().background(Ph.Ground).drawBehind {
         val c = heroCenter
-        if (c != null && projectTasks.isNotEmpty()) saturnGlow(c, 1f - collapse, breathe)
+        if (c != null && showList) saturnGlow(c, 1f - collapse, breathe)
     }) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             // ---- header (a selection bar while tasks are selected)
@@ -279,8 +287,8 @@ fun HomeScreen(
                 else if (spent >= 0.005) Text(String.format(Locale.US, "$%.2f spent", spent), style = Ph.monoSmall)
             }
             // ---- tasks
-            if (projectTasks.isEmpty()) ProjectRow(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp))
-            if (projectTasks.isEmpty()) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
+            if (!showList) ProjectRow(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp))
+            if (!showList) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
                 project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() }) { sheet = "login" }
             else LazyColumn(
                 Modifier.weight(1f), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
@@ -291,12 +299,43 @@ fun HomeScreen(
                 // Saturn and its moons: shrinks, rises and fades as the list scrolls up.
                 item(key = "hero") {
                     OrbitHero(UiStore.tasks.filter { it.status in ACTIVE }, visible.size, onOpen = { if (!selecting) onOpen(it) }, onPlanet = { sheet = "saturn" },
-                        modifier = Modifier.onGloballyPositioned { heroCenter = it.boundsInRoot().center }.graphicsLayer {
+                        page = page, pageStatus = if (page == 1) routinesStatus() else null, onPage = { page = it; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) },
+                        modifier = Modifier.onGloballyPositioned { heroCenter = it.boundsInRoot().center }
+                            // Swipe Saturn sideways: it follows your finger (with weight) and flips the page past the threshold.
+                            .pointerInput(page) {
+                                val threshold = 72.dp.toPx()
+                                var crossed = false
+                                detectHorizontalDragGestures(
+                                    onDragStart = { swipeJob?.cancel(); crossed = false },
+                                    onDragEnd = {
+                                        val go = (page == 0 && heroDrag < -threshold) || (page == 1 && heroDrag > threshold)
+                                        if (go) { page = 1 - page; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM) }
+                                        swipeJob = scope.launch { androidx.compose.animation.core.animate(heroDrag, 0f,
+                                            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)) { v, _ -> heroDrag = v } }
+                                    },
+                                    onDragCancel = { swipeJob = scope.launch { androidx.compose.animation.core.animate(heroDrag, 0f) { v, _ -> heroDrag = v } } },
+                                ) { change, dx ->
+                                    change.consume()
+                                    // The way that leads somewhere moves freely; the other way barely gives.
+                                    val toward = (page == 0 && dx < 0) || (page == 1 && dx > 0) || (page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0)
+                                    heroDrag = (heroDrag + dx * if (toward) 0.6f else 0.15f).coerceIn(-size.width * 0.45f, size.width * 0.45f)
+                                    val now = kotlin.math.abs(heroDrag) > threshold && ((page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0))
+                                    if (now != crossed) { crossed = now; hostView.performHapticFeedback(
+                                        if (now) android.view.HapticFeedbackConstants.CLOCK_TICK else android.view.HapticFeedbackConstants.CLOCK_TICK) }
+                                }
+                            }.graphicsLayer {
                             val p = collapse
+                            translationX = heroDrag
+                            rotationZ = heroDrag / size.width * 8f
                             translationY = if (list.firstVisibleItemIndex == 0) list.firstVisibleItemScrollOffset * 0.45f else 0f
                             scaleX = 1f - 0.45f * p; scaleY = scaleX; alpha = 1f - p
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.3f)
                         })
+                }
+                if (page == 1) {
+                    routinesPage(onNew = { j -> routineEdit = j; sheet = "routine" }, onOpenTask = { id -> UiStore.find(id)?.let(onOpen) })
+                    item(key = "filler") { Spacer(Modifier.height(with(density) { fillerPx.toDp() })) }
+                    return@LazyColumn
                 }
                 item(key = "project") { ProjectRow(Modifier.padding(start = 0.dp, end = 4.dp, bottom = 2.dp)) }
                 val earlier = visible.filter { it.status !in ACTIVE && !it.archived }
@@ -384,9 +423,10 @@ fun HomeScreen(
             onTerminal = onTerminal, onArtifacts = onArtifacts, onStore = onStore,
             onImport = { importFrom.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/json", "*/*")) },
             onSelect = { projectTasks.firstOrNull { !it.hidden }?.let { selected.add(it.task.id) } },
-            onScheduled = { sheet = "scheduled" },
+            onScheduled = { page = 1; sheet = null },
         ) { if (sheet == "saturn") sheet = null }
         "scheduled" -> ScheduleSheet { sheet = null }
+        "routine" -> RoutineSheet(routineEdit) { sheet = null; routineEdit = null }
     }
 }
 
@@ -410,7 +450,7 @@ private fun SaturnSheet(onTerminal: () -> Unit, onArtifacts: () -> Unit, onStore
         listOf(
             Triple(PhIcons.Sparkle, "Artifacts", "Files Saturn made for you") to onArtifacts,
             Triple(PhIcons.Terminal, "Terminal", "bash · npm · git · node") to onTerminal,
-            Triple(PhIcons.Clock, "Scheduled", io.github.pimobile.runtime.Scheduler.jobs.size.let { if (it == 0) "Timers and repeating jobs" else "$it job${if (it == 1) "" else "s"} waiting" }) to onScheduled,
+            Triple(PhIcons.Clock, "Routines", io.github.pimobile.runtime.Scheduler.jobs.size.let { if (it == 0) "Saturn on a schedule" else "$it ${if (it == 1) "routine" else "routines"}" }) to onScheduled,
             Triple(PhIcons.Cube, "Extension store", "Packages from pi.dev") to onStore,
             Triple(PhIcons.Check, "Select tasks", "Export or delete several") to onSelect,
             Triple(PhIcons.Import, "Import tasks", "From a Saturn export or pi session") to onImport,

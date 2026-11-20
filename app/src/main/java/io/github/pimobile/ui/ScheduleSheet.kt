@@ -82,7 +82,7 @@ fun ScheduleSheet(onDismiss: () -> Unit) {
                         maxLines = 3, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Ph.Deep).padding(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Chip("Run now", Ph.TextSoft) { Scheduler.fire(j.id) }
+                        Chip("Run now", Ph.TextSoft) { Scheduler.fire(j.id, manual = true) }
                         val armed = confirm == j.id
                         Chip(if (armed) "Tap again to cancel" else "Cancel job", Ph.Red) {
                             if (armed) { Scheduler.remove(j.id); confirm = null } else confirm = j.id

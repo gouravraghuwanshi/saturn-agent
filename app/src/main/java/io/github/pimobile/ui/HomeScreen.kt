@@ -39,6 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
@@ -204,7 +208,14 @@ fun HomeScreen(
     )
     val commands = paletteOf(builtins)
 
-    Box(Modifier.fillMaxSize().background(Ph.Ground)) {
+    // Saturn's warm light, behind everything: follows Saturn as it scrolls and fades as it tucks away.
+    var heroCenter by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    val breathe by androidx.compose.animation.core.rememberInfiniteTransition(label = "glow").animateFloat(0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(4_000), androidx.compose.animation.core.RepeatMode.Reverse), label = "breathe")
+    Box(Modifier.fillMaxSize().background(Ph.Ground).drawBehind {
+        val c = heroCenter
+        if (c != null && projectTasks.isNotEmpty()) saturnGlow(c, 1f - collapse, breathe)
+    }) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             // ---- header (a selection bar while tasks are selected)
             if (selecting) Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
@@ -274,7 +285,7 @@ fun HomeScreen(
                 // Saturn and its moons: shrinks, rises and fades as the list scrolls up.
                 item(key = "hero") {
                     OrbitHero(UiStore.tasks.filter { it.status in ACTIVE }, visible.size, onOpen = { if (!selecting) onOpen(it) }, onPlanet = { sheet = "saturn" },
-                        modifier = Modifier.graphicsLayer {
+                        modifier = Modifier.onGloballyPositioned { heroCenter = it.boundsInRoot().center }.graphicsLayer {
                             val p = collapse
                             translationY = if (list.firstVisibleItemIndex == 0) list.firstVisibleItemScrollOffset * 0.45f else 0f
                             scaleX = 1f - 0.45f * p; scaleY = scaleX; alpha = 1f - p

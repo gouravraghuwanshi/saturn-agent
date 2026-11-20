@@ -104,7 +104,10 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
     val working = active.count { it.status != Status.NEEDS_INPUT }
     val waiting = active.size - working
     val view = androidx.compose.ui.platform.LocalView.current
+    val density0 = androidx.compose.ui.platform.LocalDensity.current
+    val glowPx = with(density0) { 9.dp.toPx() }
     val frame = AsciiSaturn.frame(t, moons.map { it.status == Status.NEEDS_INPUT })
+    val breathe = 0.5f + 0.5f * sin(t * 1.1f)
 
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -244,7 +247,7 @@ object AsciiSaturn {
     /** [moons]: the task moons in order, true where that task needs you. Moon hits are (col, row, index). */
     class Frame(val text: androidx.compose.ui.text.AnnotatedString, val moons: List<Triple<Int, Int, Int>>)
 
-    fun frame(t: Float, moons: List<Boolean>): Frame {
+    fun frame(t: Float, moons: List<Boolean>, glow: Float = 0f): Frame {
         val tilt = -0.26; val ct = cos(tilt); val st = sin(tilt); val e = 0.27
         val ln = kotlin.math.sqrt(0.5 * 0.5 + 0.62 * 0.62 + 0.6 * 0.6)
         val lx = -0.5 / ln; val ly = -0.62 / ln; val lz = 0.6 / ln
@@ -257,7 +260,15 @@ object AsciiSaturn {
         }
         val b = androidx.compose.ui.text.AnnotatedString.Builder()
         var runColor: Color? = null; val run = StringBuilder()
-        fun flush() { if (run.isNotEmpty()) { b.withStyle(androidx.compose.ui.text.SpanStyle(color = runColor ?: Color.Transparent)) { append(run.toString()) }; run.clear() } }
+        // Each character glows in its own colour, like a phosphor screen: brighter for the spark and moons.
+        fun shadowFor(c: Color?) = when {
+            c == null || glow <= 0f -> null
+            c == Spark || c == Moon || c == Waiting -> androidx.compose.ui.graphics.Shadow(c.copy(alpha = 0.95f), blurRadius = glow * 2.2f)
+            c == Planet -> androidx.compose.ui.graphics.Shadow(c.copy(alpha = 0.8f), blurRadius = glow * 1.3f)
+            c == PlanetDim -> androidx.compose.ui.graphics.Shadow(c.copy(alpha = 0.5f), blurRadius = glow)
+            else -> androidx.compose.ui.graphics.Shadow(c.copy(alpha = 0.45f), blurRadius = glow)
+        }
+        fun flush() { if (run.isNotEmpty()) { b.withStyle(androidx.compose.ui.text.SpanStyle(color = runColor ?: Color.Transparent, shadow = shadowFor(runColor))) { append(run.toString()) }; run.clear() } }
         fun put(c: Char, color: Color?) { if (color != runColor) { flush(); runColor = color }; run.append(c) }
         val sparkAt = ((t * 0.6) % (2 * PI)) - PI
         for (j in 0 until ROWS) {
@@ -302,4 +313,21 @@ object AsciiSaturn {
         flush()
         return Frame(b.toAnnotatedString(), hits)
     }
+}
+
+/**
+ * The warm light behind Saturn: one wide, soft amber glow that fades very slowly outward, so a
+ * little of it reaches the header and the lines around Saturn. Drawn behind the whole screen.
+ */
+fun DrawScope.saturnGlow(center: Offset, strength: Float, breathe: Float) {
+    if (strength <= 0.01f) return
+    val r = size.width * 0.95f
+    val a = strength * (0.85f + 0.15f * breathe)
+    drawCircle(Brush.radialGradient(
+        0f to Ph.Amber.copy(alpha = 0.26f * a),
+        0.22f to Ph.Amber.copy(alpha = 0.15f * a),
+        0.45f to Color(0xFFE08A3A).copy(alpha = 0.07f * a),
+        0.7f to Color(0xFFC0682A).copy(alpha = 0.025f * a),
+        1f to Color.Transparent,
+        center = center, radius = r), r, center)
 }

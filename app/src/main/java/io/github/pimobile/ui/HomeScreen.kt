@@ -315,7 +315,7 @@ fun HomeScreen(
                     if (!collapsed) items(list, key = { it.task.id }) { t ->
                         with(shared) {
                             Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
-                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
+                                boundsTransform = CardMorph, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
                                 SwipeCard(t, enabled = !selecting) {
                                     TaskCard(t, selected = if (selecting) t.task.id in selected else null,
                                         onOpen = { if (selecting) toggle(t) else onOpen(t) }, onSelect = { toggle(t) })

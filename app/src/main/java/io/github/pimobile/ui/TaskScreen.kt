@@ -48,6 +48,13 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
@@ -91,7 +98,7 @@ private fun blocks(items: List<Item>): List<Block> {
     return out
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVisibilityScope,
                onOpenTask: (TaskUi) -> Unit = {}, onBack: () -> Unit) {
@@ -148,6 +155,22 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     LaunchedEffect(t.rebuilds, tab) {
         if (tab == "chat" && blocks.isNotEmpty()) { follow = true; list.scrollToItem(blocks.size, Int.MAX_VALUE / 2) }
     }
+
+    // The header's Saturn and its warm light: bright and breathing while Saturn works,
+    // a faint ember once it's done, red if it failed. Folds away while you read back or type.
+    val imeOpen = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    val collapse by androidx.compose.animation.core.animateFloatAsState(
+        if (!follow || imeOpen || tab != "chat") 1f else 0f, androidx.compose.animation.core.tween(320), label = "collapse")
+    val failedNow = t.status == Status.FAILED || (t.lastError != null && !running)
+    val glow by androidx.compose.animation.core.animateFloatAsState(when {
+        running -> 1f; t.status == Status.NEEDS_INPUT -> 0.85f; failedNow -> 0.5f; else -> 0.28f
+    }, androidx.compose.animation.core.tween(1400), label = "glow")
+    val breatheAnim = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe")
+    val breatheV by breatheAnim.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(2200), androidx.compose.animation.core.RepeatMode.Reverse), label = "b")
+    val breathe = if (running || t.status == Status.NEEDS_INPUT) breatheV else 1f
+    var glowAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified) }
+    var rootAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
     val ctx = LocalContext.current
     var loginArg by remember { mutableStateOf("") }
@@ -213,12 +236,16 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     with(shared) {
         Box(
             Modifier.fillMaxSize()
-                .sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
+                .sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility, boundsTransform = CardMorph,
                     clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))
                 .background(Ph.Ground)
+                .onGloballyPositioned { rootAt = it.boundsInRoot().topLeft }
+                .drawBehind { if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
+                    saturnGlow(glowAt - rootAt, glow * (1f - 0.55f * collapse), breathe, red = failedNow) }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                Header(t, tab, showBrowserTab, onTab = { tab = it; if (it != "browser") holdBrowser = false },
+                Header(t, tab, showBrowserTab, collapse, onSaturn = { glowAt = it },
+                    onTab = { tab = it; if (it != "browser") holdBrowser = false },
                     onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" })
                 io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 if (tab == "browser") {
@@ -268,7 +295,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     val pick = rememberAttachPicker { attachments.addAll(it) }
                     Composer(
                         value = input, onValue = { input = it },
-                        placeholder = "Continue task #${t.task.number}…",
+                        placeholder = "Ask Saturn · task #${t.task.number}…",
                         commands = commands,
                         attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
                         onSend = { text ->
@@ -329,23 +356,26 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
 }
 
 @Composable
-private fun Header(t: TaskUi, tab: String, browser: Boolean, onTab: (String) -> Unit, onBack: () -> Unit, onMenu: () -> Unit) {
+private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, onSaturn: (androidx.compose.ui.geometry.Offset) -> Unit,
+                   onTab: (String) -> Unit, onBack: () -> Unit, onMenu: () -> Unit) {
+    val running = t.status == Status.RUNNING || t.status == Status.STARTING
+    val failed = t.status == Status.FAILED || (t.lastError != null && !running)
+    val status = when {
+        t.status == Status.STARTING -> "starting"; t.status == Status.RUNNING -> "working"; t.status == Status.NEEDS_INPUT -> "needs you"
+        failed -> "failed"; t.status == Status.STOPPED -> "paused"; t.items.isEmpty() -> "ready"; else -> "done"
+    }
+    val tint = when { failed -> Ph.Red; running || t.status == Status.NEEDS_INPUT -> Ph.Amber; status == "done" -> Ph.Green; else -> Ph.Muted }
     Column {
         Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (tab == "chat") "Back to tasks" else "Back to chat") { onBack() },
                 contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 22.dp, "Back") }
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                 Text(t.title, style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    when (t.status) {
-                        Status.RUNNING, Status.STARTING, Status.NEEDS_INPUT -> PulseDot(Ph.Amber, 6)
-                        else -> Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(when (t.status) {
-                            Status.FAILED -> Ph.Red; Status.IDLE -> Ph.Green; else -> Ph.Muted }))
-                    }
-                    val status = when (t.status) {
-                        Status.STARTING -> "starting"; Status.RUNNING -> "working"; Status.NEEDS_INPUT -> "needs you"
-                        Status.IDLE -> "ready"; Status.STOPPED -> "paused"; Status.FAILED -> "failed"
-                    }
+                // Folded: the status moves up here, one line.
+                if (collapse > 0.5f) Row(Modifier.padding(top = 2.dp).graphicsLayer { alpha = (collapse - 0.5f) * 2f },
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (running || t.status == Status.NEEDS_INPUT) PulseDot(tint, 6)
+                    else Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(tint))
                     Text("#${t.task.number} · $status · ${t.task.cwd.name}", style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -355,9 +385,38 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, onTab: (String) -> 
                 onTab(if (tab == "terminal") "chat" else "terminal") }
             HeaderIcon(PhIcons.More, false, "Task options") { onMenu() }
         }
-        Box(Modifier.fillMaxWidth().size(1.dp).background(Ph.Line))
+        // Open: a small Saturn in text, turning while it works, and where things stand.
+        Box(Modifier.fillMaxWidth().clipToBounds().foldAway(collapse)) {
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp).graphicsLayer { alpha = 1f - collapse },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT,
+                    Modifier.width(118.dp).onGloballyPositioned { c -> onSaturn(c.boundsInRoot().center) })
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (running || t.status == Status.NEEDS_INPUT) PulseDot(tint, 7)
+                        else Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(tint))
+                        androidx.compose.animation.AnimatedContent(status, label = "status") { st ->
+                            Text(st.replaceFirstChar { it.uppercase() }, style = Ph.title.copy(fontSize = 17.sp, color = if (failed) Ph.Red else Ph.Text))
+                        }
+                    }
+                    val time = elapsed(if (running) t.runStartedAt else null)
+                    Text(listOfNotNull("#${t.task.number}", t.task.cwd.name, time.takeIf { it.isNotEmpty() },
+                        t.tools.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "step" else "steps"}" },
+                        t.cost.takeIf { it >= 0.005 }?.let { String.format(Locale.US, "$%.2f", it) }).joinToString(" · "),
+                        style = Ph.monoSmall.copy(color = Ph.TextSoft), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().size(1.dp).background(Ph.Line.copy(alpha = 0.4f + 0.6f * collapse)))
     }
 }
+
+/** Shrinks to nothing as [f] goes 0 → 1, keeping the top. */
+private fun Modifier.foldAway(f: Float) = this.then(Modifier.layout { m, c ->
+    val p = m.measure(c)
+    val h = (p.height * (1f - f)).toInt().coerceAtLeast(0)
+    layout(p.width, h) { p.place(0, 0) }
+})
 
 @Composable
 private fun HeaderIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, on: Boolean, label: String, dot: Boolean = false, onClick: () -> Unit) {
@@ -372,16 +431,8 @@ private fun HeaderIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, on
 @Composable
 private fun SaturnLabel() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        androidx.compose.foundation.Canvas(Modifier.size(18.dp)) {
-            val c = center
-            drawCircle(Ph.Amber, radius = size.minDimension * 5f / 24f, center = c)
-            rotate(-20f, c) {
-                drawOval(Ph.Amber, topLeft = androidx.compose.ui.geometry.Offset(c.x - size.width * 10.5f / 24f, c.y - size.height * 3.6f / 24f),
-                    size = androidx.compose.ui.geometry.Size(size.width * 21f / 24f, size.height * 7.2f / 24f),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4.dp.toPx()))
-            }
-        }
-        Text("Saturn", style = Ph.title.copy(fontSize = 13.sp))
+        SaturnMark(Modifier.size(18.dp))
+        Text("SATURN", style = Ph.label.copy(fontSize = 10.5.sp, color = Ph.Amber))
     }
 }
 
@@ -390,22 +441,52 @@ private fun SaturnLabel() {
 private fun ToolsBlock(tools: List<Item.Tool>) {
     val running = tools.any { it.state == io.github.pimobile.ui.state.ToolState.RUNNING }
     val failed = tools.count { it.state == io.github.pimobile.ui.state.ToolState.ERROR }
-    var open by rememberSaveable(tools.first().key) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(14.dp)
+    // Live output shows while it runs unless you hide it; afterwards it's folded unless you open it.
+    var choice by rememberSaveable(tools.first().key) { mutableStateOf<Boolean?>(null) }
+    val open = choice ?: running
+    val toggle = Modifier.clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { choice = !open }
+    val last = tools.last()
+    val target = "${last.name}  ${io.github.pimobile.ui.components.toolTarget(last.name, last.args)}".trim()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape)
-            .clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { open = !open }.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            when {
-                running -> PulseDot(Ph.Amber, 6)
-                failed > 0 -> PhIcon(PhIcons.Warning, Ph.Red, 14.dp)
-                else -> PhIcon(PhIcons.Check, Ph.Green, 14.dp)
+        androidx.compose.animation.AnimatedContent(running, label = "tools",
+            transitionSpec = { fadeIn(androidx.compose.animation.core.tween(300)) togetherWith fadeOut(androidx.compose.animation.core.tween(200)) using
+                androidx.compose.animation.SizeTransform(clip = false) }) { live ->
+            if (live) {
+                // Same as the task's card on home: light round the edge, liquid along the foot.
+                LiquidFrame(Modifier.clip(RoundedCornerShape(22.dp)).then(toggle), wave = 40.dp, footer = {
+                    Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                        Text(toolSummary(tools, false), style = Ph.monoSmall.copy(color = Ph.Text), maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text("step ${tools.size}", style = Ph.monoSmall.copy(color = Ph.Text))
+                    }
+                }) {
+                    Row(Modifier.padding(start = 16.dp, end = 14.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PulseDot(Ph.Amber, 7)
+                        Text("Working", style = Ph.title.copy(fontSize = 15.sp), modifier = Modifier.weight(1f))
+                        PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
+                    }
+                    StepLine(target, Ph.TextSoft, Modifier.padding(start = 33.dp, end = 16.dp, top = 8.dp))
+                }
+            } else {
+                // Done: home's quiet card. A dot, what it did, the last thing it touched.
+                val shape = RoundedCornerShape(18.dp)
+                Column(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape).then(toggle)
+                    .padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(if (failed > 0) Ph.Red else Ph.Green))
+                        Text(toolSummary(tools, false), style = Ph.title.copy(fontSize = 14.5.sp, color = Ph.TextSoft), maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(if (failed > 0) "$failed failed" else "${tools.size} ${if (tools.size == 1) "step" else "steps"}",
+                            style = Ph.monoSmall.copy(color = if (failed > 0) Ph.Red else Ph.Muted))
+                        PhIcon(PhIcons.Chevron, Ph.Muted, 13.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
+                    }
+                    Text(target, style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.Muted), maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 19.dp))
+                }
             }
-            Text(toolSummary(tools, running) + if (failed > 0 && !running) " · $failed failed" else "",
-                style = Ph.body.copy(fontSize = 13.sp, color = Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open || running) 180f else 0f })
         }
-        AnimatedVisibility(open || running, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { ToolPanel(tools) }
+        AnimatedVisibility(open, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { ToolPanel(tools) }
     }
 }
 
@@ -552,7 +633,7 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
     // with a faint Saturn ring in the corner.
     val shape = RoundedCornerShape(18.dp)
     Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().clip(shape).background(if (Ph.amoled) Color(0xFF0F0D09) else Color(0xFF15130F))
+        Box(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface)
             .border(1.dp, Ph.AmberLine, shape).clickable(onClickLabel = "Message actions") { open = !open }) {
             androidx.compose.foundation.Canvas(Modifier.align(Alignment.TopEnd).offset(x = 30.dp, y = (-34).dp).size(150.dp, 90.dp)) {
                 val c = center

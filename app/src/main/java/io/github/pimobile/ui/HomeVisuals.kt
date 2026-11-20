@@ -159,6 +159,48 @@ private fun DrawScope.moon(at: Offset, t: TaskUi, ping: Float) {
  */
 @Composable
 fun LiquidCard(t: TaskUi, leading: @Composable RowScope.() -> Unit, modifier: Modifier = Modifier) {
+    LiquidFrame(modifier, footer = {
+        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 9.dp)) {
+            Text(listOfNotNull(t.tools.size.takeIf { it > 0 }?.let { "step $it" }, t.task.cwd.name).joinToString(" · "),
+                style = Ph.monoSmall.copy(color = Ph.Text), modifier = Modifier.weight(1f))
+            if (t.cost >= 0.005) Text(String.format(Locale.US, "$%.2f", t.cost), style = Ph.monoSmall.copy(color = Ph.Text))
+        }
+    }) {
+        Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 15.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            leading()
+            PulseDot(Ph.Amber, 7)
+            Text(t.title, style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            elapsed(t.runStartedAt).takeIf { it.isNotEmpty() }?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Amber)) }
+        }
+        val page = if (t.browsing) io.github.pimobile.browser.BrowserManager.pages[t.task.id] else null
+        val tool = t.tools.lastOrNull()
+        val step = when {
+            page != null -> "◉ " + page.url.removePrefix("https://").takeIf { !it.startsWith("data:") }.orEmpty()
+            tool != null && tool.state == ToolState.RUNNING -> "${tool.name}  ${toolTarget(tool.name, tool.args)}"
+            t.status == Status.STARTING -> "starting Saturn…"
+            else -> (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text?.lines()?.lastOrNull { it.isNotBlank() }?.trim()
+                ?: tool?.let { "${it.name}  ${toolTarget(it.name, it.args)}" } ?: "thinking…"
+        }
+        StepLine(step, if (page != null) Ph.Cyan else Ph.TextSoft, Modifier.padding(start = 33.dp, end = 16.dp, top = 10.dp))
+    }
+}
+
+/** The current step, sliding up as it changes. */
+@Composable
+fun StepLine(step: String, color: Color, modifier: Modifier = Modifier) {
+    AnimatedContent(step, transitionSpec = {
+        (fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 2 }) togetherWith (fadeOut(tween(250)) + slideOutVertically(tween(250)) { -it / 2 })
+    }, label = "step", modifier = modifier) { s ->
+        Text(s, style = Ph.mono.copy(color = color), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Something in motion: light travelling round the edge and liquid along the foot. Home's running card and the chat's live steps. */
+@Composable
+fun LiquidFrame(modifier: Modifier = Modifier, wave: androidx.compose.ui.unit.Dp = 54.dp,
+                footer: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
+                content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     val inf = rememberInfiniteTransition(label = "liquid")
     val spin by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(3_600, easing = LinearEasing)), label = "spin")
     val flow by inf.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(6_000, easing = LinearEasing)), label = "flow")
@@ -170,39 +212,40 @@ fun LiquidCard(t: TaskUi, leading: @Composable RowScope.() -> Unit, modifier: Mo
         .drawBehind { rotate(spin) { drawCircle(sweep, radius = size.maxDimension, center = center) } }
         .padding(1.5.dp)) {
         Column(Modifier.fillMaxWidth().clip(inner).background(if (Ph.amoled) Color(0xFF0A0A0B) else Color(0xFF121317))) {
-            Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 15.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                leading()
-                PulseDot(Ph.Amber, 7)
-                Text(t.title, style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                elapsed(t.runStartedAt).takeIf { it.isNotEmpty() }?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Amber)) }
-            }
-            val page = if (t.browsing) io.github.pimobile.browser.BrowserManager.pages[t.task.id] else null
-            val tool = t.tools.lastOrNull()
-            val step = when {
-                page != null -> "◉ " + page.url.removePrefix("https://").takeIf { !it.startsWith("data:") }.orEmpty()
-                tool != null && tool.state == ToolState.RUNNING -> "${tool.name}  ${toolTarget(tool.name, tool.args)}"
-                t.status == Status.STARTING -> "starting Saturn…"
-                else -> (t.items.lastOrNull { it is Item.Assistant } as? Item.Assistant)?.text?.lines()?.lastOrNull { it.isNotBlank() }?.trim()
-                    ?: tool?.let { "${it.name}  ${toolTarget(it.name, it.args)}" } ?: "thinking…"
-            }
-            AnimatedContent(step, transitionSpec = {
-                (fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 2 }) togetherWith (fadeOut(tween(250)) + slideOutVertically(tween(250)) { -it / 2 })
-            }, label = "step", modifier = Modifier.padding(start = 33.dp, end = 16.dp, top = 10.dp)) { s ->
-                Text(s, style = Ph.mono.copy(color = if (page != null) Ph.Cyan else Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Box(Modifier.fillMaxWidth().height(54.dp)) {
+            content()
+            Box(Modifier.fillMaxWidth().height(wave)) {
                 Canvas(Modifier.fillMaxSize()) {
                     drawPath(wave(size, size.height * 0.40f, 6.dp.toPx(), 97.dp.toPx(), -flow * 1.5f), Ph.Amber.copy(alpha = 0.10f))
                     drawPath(wave(size, size.height * 0.52f, 5.dp.toPx(), 130.dp.toPx(), flow), Ph.Amber.copy(alpha = 0.16f))
                 }
-                Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 9.dp)) {
-                    Text(listOfNotNull(t.tools.size.takeIf { it > 0 }?.let { "step $it" }, t.task.cwd.name).joinToString(" · "),
-                        style = Ph.monoSmall.copy(color = Ph.Text), modifier = Modifier.weight(1f))
-                    if (t.cost >= 0.005) Text(String.format(Locale.US, "$%.2f", t.cost), style = Ph.monoSmall.copy(color = Ph.Text))
-                }
+                footer()
             }
         }
+    }
+}
+
+/** Card ⇄ task screen: the card grows into the chat and shrinks back, on a soft spring. */
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+val CardMorph = androidx.compose.animation.BoundsTransform { _, _ ->
+    androidx.compose.animation.core.spring<androidx.compose.ui.geometry.Rect>(dampingRatio = 0.86f, stiffness = 380f)
+}
+
+/** A small, live Saturn in text for the chat header: turns while [spinning], a white moon when Saturn needs you. */
+@Composable
+fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifier) {
+    var t by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0.6f) }
+    androidx.compose.runtime.LaunchedEffect(spinning) { while (spinning) { kotlinx.coroutines.delay(66); t += 0.08f } }
+    val cols = 30; val rows = 9
+    val frame = AsciiSaturn.frame(t, if (needsYou) listOf(true) else emptyList(), cols = cols, rows = rows, r = 4.6)
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val fontPx = with(density) { maxWidth.toPx() } / (cols * 0.6f)
+        Text(frame.text, softWrap = false, maxLines = rows,
+            style = androidx.compose.ui.text.TextStyle(fontFamily = Ph.Mono, fontWeight = FontWeight.Bold,
+                fontSize = with(density) { fontPx.toSp() }, lineHeight = with(density) { (fontPx * 1.08f).toSp() },
+                fontFeatureSettings = "liga 0, calt 0",
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    androidx.compose.ui.text.style.LineHeightStyle.Trim.None)))
     }
 }
 
@@ -247,7 +290,8 @@ object AsciiSaturn {
     /** [moons]: the task moons in order, true where that task needs you. Moon hits are (col, row, index). */
     class Frame(val text: androidx.compose.ui.text.AnnotatedString, val moons: List<Triple<Int, Int, Int>>)
 
-    fun frame(t: Float, moons: List<Boolean>, glow: Float = 0f): Frame {
+    fun frame(t: Float, moons: List<Boolean>, glow: Float = 0f, cols: Int = COLS, rows: Int = ROWS, r: Double = R): Frame {
+        val COLS = cols; val ROWS = rows; val R = r
         val tilt = -0.26; val ct = cos(tilt); val st = sin(tilt); val e = 0.27
         val ln = kotlin.math.sqrt(0.5 * 0.5 + 0.62 * 0.62 + 0.6 * 0.6)
         val lx = -0.5 / ln; val ly = -0.62 / ln; val lz = 0.6 / ln
@@ -319,15 +363,15 @@ object AsciiSaturn {
  * The warm light behind Saturn: one wide, soft amber glow that fades very slowly outward, so a
  * little of it reaches the header and the lines around Saturn. Drawn behind the whole screen.
  */
-fun DrawScope.saturnGlow(center: Offset, strength: Float, breathe: Float) {
+fun DrawScope.saturnGlow(center: Offset, strength: Float, breathe: Float, red: Boolean = false) {
     if (strength <= 0.01f) return
     val r = size.width * 0.95f
     val a = strength * (0.85f + 0.15f * breathe)
     drawCircle(Brush.radialGradient(
-        0f to Ph.Amber.copy(alpha = 0.26f * a),
-        0.22f to Ph.Amber.copy(alpha = 0.15f * a),
-        0.45f to Color(0xFFE08A3A).copy(alpha = 0.07f * a),
-        0.7f to Color(0xFFC0682A).copy(alpha = 0.025f * a),
+        0f to (if (red) Ph.Red else Ph.Amber).copy(alpha = 0.26f * a),
+        0.22f to (if (red) Ph.Red else Ph.Amber).copy(alpha = 0.15f * a),
+        0.45f to (if (red) Ph.Red else Color(0xFFE08A3A)).copy(alpha = 0.07f * a),
+        0.7f to (if (red) Ph.Red else Color(0xFFC0682A)).copy(alpha = 0.025f * a),
         1f to Color.Transparent,
         center = center, radius = r), r, center)
 }

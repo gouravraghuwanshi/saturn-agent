@@ -319,6 +319,8 @@ object UiStore : TaskManager.Listener {
     var focusComposer by mutableStateOf(false)
     /** The widget's mic: the home composer starts listening once. */
     var voiceRequest by mutableStateOf(false)
+    /** Home should open its composer (e.g. after "pull up for a new task"). */
+    var composeRequest by mutableStateOf(false)
     /** MainActivity is on screen (so finished tasks don't need a notification). */
     @Volatile var foreground = false
     /** The task currently open on screen, if any. */

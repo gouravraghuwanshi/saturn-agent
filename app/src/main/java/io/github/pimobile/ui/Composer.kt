@@ -170,6 +170,9 @@ fun Composer(
             else -> micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
         }
     }
+    if (acceptVoiceRequest && UiStore.composeRequest) androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(450); UiStore.composeRequest = false; runCatching { focus.requestFocus() }; keyboard?.show()
+    }
     if (acceptVoiceRequest && UiStore.voiceRequest) androidx.compose.runtime.LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(400); UiStore.voiceRequest = false; startDictation()
     }

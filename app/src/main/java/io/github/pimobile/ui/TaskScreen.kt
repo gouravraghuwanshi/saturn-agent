@@ -48,6 +48,10 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
@@ -134,6 +138,19 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     }
     // Follow new output until the user scrolls up; resume when they return to the bottom.
     var follow by remember { mutableStateOf(true) }
+    // Saturn and the status show only when you pull the chat down; any push up (or the keyboard) hides them.
+    var reveal by remember { mutableStateOf(false) }
+    // Pull up past the end and let go: start a new task. [pull] is how far the finger went past the end.
+    var pull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var armed by remember { mutableStateOf(false) }
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val pullArm = with(density) { 150.dp.toPx() }
+    val slop = with(density) { 6.dp.toPx() }
+    val startNewTask = {
+        hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        UiStore.selectProject(t.task.cwd); UiStore.composeRequest = true; onBack()
+    }
     LaunchedEffect(list) {
         list.interactionSource.interactions.collect { i ->
             when (i) {
@@ -151,6 +168,12 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         // Offset beyond the end is clamped, so this lands at the very bottom.
         if (follow && list.layoutInfo.totalItemsCount > 0) list.scrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2)
     }
+    // Whatever makes the content grow (streamed text, tool output, the header folding),
+    // keep the bottom in view while following.
+    LaunchedEffect(list) {
+        snapshotFlow { follow && list.canScrollForward }.collect { if (it && list.layoutInfo.totalItemsCount > 0)
+            list.scrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2) }
+    }
     // Opening the task, coming back from the terminal, or a history reload: show the latest.
     LaunchedEffect(t.rebuilds, tab) {
         if (tab == "chat" && blocks.isNotEmpty()) { follow = true; list.scrollToItem(blocks.size, Int.MAX_VALUE / 2) }
@@ -159,8 +182,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     // The header's Saturn and its warm light: bright and breathing while Saturn works,
     // a faint ember once it's done, red if it failed. Folds away while you read back or type.
     val imeOpen = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    LaunchedEffect(imeOpen) { if (imeOpen) reveal = false }
     val collapse by androidx.compose.animation.core.animateFloatAsState(
-        if (!follow || imeOpen || tab != "chat") 1f else 0f, androidx.compose.animation.core.tween(320), label = "collapse")
+        if (reveal && !imeOpen && tab == "chat") 0f else 1f, androidx.compose.animation.core.tween(320), label = "collapse")
     val failedNow = t.status == Status.FAILED || (t.lastError != null && !running)
     val glow by androidx.compose.animation.core.animateFloatAsState(when {
         running -> 1f; t.status == Status.NEEDS_INPUT -> 0.85f; failedNow -> 0.5f; else -> 0.28f
@@ -241,10 +265,11 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 .background(Ph.Ground)
                 .onGloballyPositioned { rootAt = it.boundsInRoot().topLeft }
                 .drawBehind { if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
-                    saturnGlow(glowAt - rootAt, glow * (1f - 0.55f * collapse), breathe, red = failedNow) }
+                    saturnGlow(glowAt - rootAt, glow * (1f - collapse), breathe, red = failedNow) }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(t, tab, showBrowserTab, collapse, onSaturn = { glowAt = it },
+                    onModel = { sheet = "model" }, onThinking = { sheet = "thinking" },
                     onTab = { tab = it; if (it != "browser") holdBrowser = false },
                     onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" })
                 io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -259,8 +284,36 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     else TerminalPane(t)
                     return@Column
                 }
+                Box(Modifier.weight(1f).pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        var lastY = down.position.y; var travel = 0f; var anchor: Float? = null
+                        while (true) {
+                            val e = awaitPointerEvent(PointerEventPass.Initial)
+                            val c = e.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!c.pressed) break
+                            val dy = c.position.y - lastY; lastY = c.position.y; travel += kotlin.math.abs(dy)
+                            if (travel > slop) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
+                            // Measured from where the list hit its end, so dragging back down cancels.
+                            if (!list.canScrollForward) {
+                                val a = anchor ?: c.position.y.also { anchor = it }
+                                pull = (a - c.position.y).coerceAtLeast(0f)
+                            } else { anchor = null; pull = 0f }
+                            val nowArmed = pull >= pullArm
+                            if (nowArmed != armed) {
+                                armed = nowArmed
+                                hostView.performHapticFeedback(if (android.os.Build.VERSION.SDK_INT >= 34) {
+                                    if (nowArmed) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+                                    else android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
+                                } else if (nowArmed) android.view.HapticFeedbackConstants.CONTEXT_CLICK else android.view.HapticFeedbackConstants.CLOCK_TICK)
+                            }
+                        }
+                        if (armed) startNewTask()
+                        armed = false; pull = 0f
+                    }
+                }) {
                 LazyColumn(
-                    state = list, modifier = Modifier.weight(1f).clipToBounds(),
+                    state = list, modifier = Modifier.fillMaxSize().clipToBounds(),
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -279,6 +332,19 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         }
                     }
                     if (running) item(key = "working") { Working(t) }
+                }
+                // Revealed as the list springs up past its end.
+                val hint = with(density) { ((pull - 20.dp.toPx()) / 50.dp.toPx()).coerceIn(0f, 1f) }
+                if (hint > 0f) Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp).graphicsLayer { alpha = hint }
+                    .clip(RoundedCornerShape(20.dp)).background(if (armed) Ph.AmberWash else Ph.Surface)
+                    .border(1.dp, if (armed) Ph.AmberLine else Ph.Line, RoundedCornerShape(20.dp))
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PhIcon(PhIcons.Plus, if (armed) Ph.Amber else Ph.TextSoft, 15.dp,
+                        modifier = Modifier.graphicsLayer { val k = if (armed) 1.25f else 1f; scaleX = k; scaleY = k })
+                    Text(if (armed) "Release to start a new task" else "Pull up for a new task",
+                        style = Ph.mono.copy(color = if (armed) Ph.Amber else Ph.TextSoft))
+                }
                 }
 
                 // ---- composer
@@ -317,7 +383,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             }
                         },
                     )
-                    ModelLine(t, onModel = { sheet = "model" }, onThinking = { sheet = "thinking" })
+                    Box(Modifier.size(6.dp))
                 }
             }
         }
@@ -357,6 +423,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
 
 @Composable
 private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, onSaturn: (androidx.compose.ui.geometry.Offset) -> Unit,
+                   onModel: () -> Unit, onThinking: () -> Unit,
                    onTab: (String) -> Unit, onBack: () -> Unit, onMenu: () -> Unit) {
     val running = t.status == Status.RUNNING || t.status == Status.STARTING
     val failed = t.status == Status.FAILED || (t.lastError != null && !running)
@@ -404,6 +471,20 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
                         t.tools.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "step" else "steps"}" },
                         t.cost.takeIf { it >= 0.005 }?.let { String.format(Locale.US, "$%.2f", it) }).joinToString(" · "),
                         style = Ph.monoSmall.copy(color = Ph.TextSoft), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // What used to sit under the message box: model and thinking (tap to change), context size.
+                    Row(Modifier.offset(x = (-6).dp), verticalAlignment = Alignment.CenterVertically) {
+                        val tap = Modifier.clip(RoundedCornerShape(8.dp))
+                        Text(io.github.pimobile.ui.state.modelLabel(UiStore.model)?.first ?: "model", style = Ph.monoSmall.copy(color = Ph.Amber),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).then(tap).clickable(onClickLabel = "Change model") { onModel() }.padding(horizontal = 6.dp, vertical = 6.dp))
+                        t.thinkingLevel?.let {
+                            Text("·", style = Ph.monoSmall)
+                            Text(it, style = Ph.monoSmall.copy(color = Ph.Amber), modifier = tap.clickable(onClickLabel = "Change thinking level") { onThinking() }
+                                .padding(horizontal = 6.dp, vertical = 6.dp))
+                        }
+                        if (t.contextTokens > 0) Text("· " + String.format(Locale.US, "%.1fk ctx", t.contextTokens / 1000.0), style = Ph.monoSmall,
+                            modifier = Modifier.padding(start = 4.dp), maxLines = 1)
+                    }
                 }
             }
         }

@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +88,9 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
     val turn by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(14_000, easing = LinearEasing)), label = "turn")
     val glow by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(2_000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "glow")
     val ping by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "ping")
+    // Always moving, even with nothing running: a spark circling the ring, bands drifting over the planet.
+    val spark by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(9_000, easing = LinearEasing)), label = "spark")
+    val spinPlanet by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(16_000, easing = LinearEasing)), label = "bands")
     val moons = active.take(6)
     val spots = remember { ArrayList<Pair<Offset, TaskUi>>() }
     val working = active.count { it.status != Status.NEEDS_INPUT }
@@ -121,13 +125,33 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
                 drawOval(Ph.Amber.copy(alpha = 0.12f), Offset(c.x - rx * 0.79f, c.y - ry * 0.77f), Size(rx * 1.58f, ry * 1.54f), style = Stroke(1.dp.toPx()))
             }
             placed.filter { it.second }.forEach { moon(it.first, it.third, ping) }
+            // The spark and its fading tail.
+            val sparkAt = 2 * PI * spark
+            val sparkFar = sin(sparkAt) < 0
+            fun sparkTail() = (0 until 14).forEach { k ->
+                val p = place(sparkAt - k * 0.035)
+                drawCircle(AmberLight.copy(alpha = (1f - k / 14f) * 0.8f), radius = (2.6f - k * 0.13f).dp.toPx(), center = p)
+            }
+            if (sparkFar) sparkTail()
             val pr = 40.dp.toPx()
             val halo = pr * 2.6f
             drawCircle(Brush.radialGradient(listOf(Ph.Amber.copy(alpha = 0.16f + 0.14f * glow), Color.Transparent), center = c, radius = halo), halo, c)
             drawCircle(Brush.radialGradient(listOf(AmberLight, Ph.Amber, AmberDeep), center = c + Offset(-pr * 0.35f, -pr * 0.45f), radius = pr * 1.7f), pr, c)
+            // Soft bands sliding across the planet, so it looks like it turns.
+            val disc = Path().apply { addOval(androidx.compose.ui.geometry.Rect(c, pr)) }
+            clipPath(disc) {
+                rotate(tilt, c) {
+                    listOf(-0.42f to 0.10f, -0.05f to 0.14f, 0.33f to 0.09f).forEachIndexed { i, (dy, h) ->
+                        val shift = ((spinPlanet + i * 0.37f) % 1f) * pr * 2f
+                        val y = c.y + dy * pr * 2f
+                        for (k in -1..1) drawOval(AmberDeep.copy(alpha = 0.22f), Offset(c.x - pr * 2f + shift + k * pr * 2f, y - h * pr), Size(pr * 1.6f, h * pr * 2f))
+                    }
+                }
+            }
             rotate(tilt, c) {
                 drawArc(Ph.Amber.copy(alpha = 0.55f), 0f, 180f, false, Offset(c.x - rx, c.y - ry), Size(rx * 2, ry * 2), style = Stroke(1.4.dp.toPx()))
             }
+            if (!sparkFar) sparkTail()
             placed.filterNot { it.second }.forEach { moon(it.first, it.third, ping) }
         }
         Text(
@@ -211,22 +235,16 @@ private fun wave(size: Size, base: Float, amp: Float, length: Float, phase: Floa
     lineTo(size.width, base); lineTo(size.width, size.height); close()
 }
 
-/** A task that's done (or paused, or failed): one quiet row. */
+/** A task that's done (or paused, or failed): one quiet line, like H2. */
 @Composable
 fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: String?, selected: Boolean, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (selected) Ph.AmberWash else Ph.Ground)
-        .padding(horizontal = 6.dp, vertical = 11.dp),
+    val failed = t.lastError != null || t.status == Status.FAILED
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (selected) Ph.AmberWash else Ph.Ground)
+        .padding(horizontal = 6.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         leading()
-        Box(Modifier.padding(start = 2.dp).clip(RoundedCornerShape(3.dp)).background(when {
-            t.lastError != null || t.status == Status.FAILED -> Ph.Red
-            t.status == Status.IDLE -> Ph.Green
-            else -> Ph.Muted
-        }).padding(3.dp))
-        Column(Modifier.weight(1f)) {
-            Text(t.title, style = Ph.body.copy(fontSize = 14.5.sp, color = Ph.Text, fontWeight = FontWeight.Normal), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            preview?.let { Text(it, style = Ph.monoSmall.copy(color = if (t.lastError != null) Ph.Red else Ph.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        }
-        Text("#${t.task.number}", style = Ph.monoSmall)
+        Text(t.title, style = Ph.body.copy(fontSize = 14.5.sp, color = Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f))
+        Text(if (failed) "failed" else "#${t.task.number}", style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted))
     }
 }

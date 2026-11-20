@@ -191,10 +191,10 @@ fun HomeScreen(
                 IconBox(PhIcons.Trash, "Delete selected") {
                     UiStore.deleteManyWithUndo(UiStore.tasks.filter { it.task.id in selected }); selected.clear()
                 }
-            } else Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            } else Row(Modifier.padding(start = 20.dp - (6 * collapse).dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((12 * collapse).dp)) {
                 // The big Saturn below tucks away as you scroll; this small one takes its place.
-                Box(Modifier.size(34.dp).graphicsLayer { alpha = 0.25f + 0.75f * collapse; scaleX = 0.7f + 0.3f * collapse; scaleY = scaleX }
+                Box(Modifier.size(width = (34 * collapse).dp, height = 34.dp).graphicsLayer { alpha = collapse; scaleX = 0.6f + 0.4f * collapse; scaleY = scaleX }
                     .clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Saturn menu") { sheet = "saturn" }, contentAlignment = Alignment.Center) {
                     SaturnMark(Modifier.size(28.dp))
                 }

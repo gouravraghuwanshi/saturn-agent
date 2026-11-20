@@ -532,6 +532,7 @@ object UiStore : TaskManager.Listener {
     override fun onTaskEvent(task: TaskManager.Task, record: JSONObject?, log: String?) {
         if (TaskManager.tasks.none { it.id == task.id }) return
         val ui = ui(task)
+        if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT) Haptics.finished(ok = true)
         if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT &&
             !watching(task.id)) io.github.pimobile.runtime.Notifier.show(app, ui,
                 "Task #${task.number} needs you", "Saturn is waiting for your answer: ${ui.title}")
@@ -560,7 +561,7 @@ object UiStore : TaskManager.Listener {
                 ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null
                 ui.items.add(Item.Notice(ui.key("n"), "Stopped. Saturn ended the run and everything it had started.", false))
             }
-            "agent_settled" -> { io.github.pimobile.runtime.Notifier.settled(app, ui); ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
+            "agent_settled" -> { Haptics.finished(ok = ui.lastError == null && !ui.stopping); io.github.pimobile.runtime.Notifier.settled(app, ui); ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return
                 when (m.optString("role")) {

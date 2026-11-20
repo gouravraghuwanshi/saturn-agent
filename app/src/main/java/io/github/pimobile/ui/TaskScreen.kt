@@ -113,6 +113,18 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val blocks by remember(t) { derivedStateOf { blocks(t.items.toList()) } }
 
     LaunchedEffect(t) { UiStore.open(t) }
+    // While this task is on screen: a tick for every tool call Saturn starts, a "no" when one fails.
+    LaunchedEffect(t) {
+        var seen = -1; var failed = -1
+        androidx.compose.runtime.snapshotFlow {
+            t.items.count { it is Item.Tool } to t.items.count { it is Item.Tool && it.state == io.github.pimobile.ui.state.ToolState.ERROR }
+        }.collect { (n, f) ->
+            val live = t.status == Status.RUNNING
+            if (seen >= 0 && n > seen && live) io.github.pimobile.ui.state.Haptics.tool()
+            if (failed >= 0 && f > failed && live) io.github.pimobile.ui.state.Haptics.toolFailed()
+            seen = n; failed = f
+        }
+    }
     // Follow new output until the user scrolls up; resume when they return to the bottom.
     var follow by remember { mutableStateOf(true) }
     LaunchedEffect(list) {

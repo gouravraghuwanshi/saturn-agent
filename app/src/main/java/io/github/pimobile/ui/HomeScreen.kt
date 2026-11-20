@@ -48,6 +48,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -535,44 +539,106 @@ private fun NeedsYou(t: TaskUi) {
     }
 }
 
-/** Swipe left to delete (with undo), right to archive — or, in Archived, to restore. */
+/**
+ * Swipe left to delete (with undo), right to archive (or restore, in Archived).
+ * - It only counts as a swipe when the drag is clearly sideways; otherwise the list scrolls.
+ * - Nothing happens until you lift your finger: drag back before letting go and it's cancelled.
+ * - Crossing the threshold ticks (and back again ticks lighter); holding there buzzes firmly.
+ */
 @Composable
 private fun SwipeCard(t: TaskUi, enabled: Boolean, content: @Composable () -> Unit) {
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val canArchive = t.status !in ACTIVE
-    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
-        when (v) {
-            SwipeToDismissBoxValue.EndToStart -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm); UiStore.deleteWithUndo(t) }
-            SwipeToDismissBoxValue.StartToEnd -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm); UiStore.setArchived(t, !t.archived) }
-            else -> {}
-        }
-        false // the card leaves its section on its own; snap back so a restored card looks right
-    })
-    SwipeToDismissBox(
-        state, enableDismissFromStartToEnd = canArchive && enabled, enableDismissFromEndToStart = enabled,
-        backgroundContent = {
-            val dir = state.dismissDirection
-            val delete = dir == SwipeToDismissBoxValue.EndToStart
-            if (dir == SwipeToDismissBoxValue.Settled) return@SwipeToDismissBox
-            Row(
-                Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))
-                    .background(if (delete) Ph.RedWash else Ph.AmberWash)
-                    .border(1.dp, if (delete) androidx.compose.ui.graphics.Color(0xFF3A2A28) else Ph.AmberLine, RoundedCornerShape(18.dp))
-                    .padding(horizontal = 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (delete) Arrangement.End else Arrangement.Start,
-            ) {
-                val (icon, label, color) = when {
-                    delete -> Triple(PhIcons.Trash, "Delete", Ph.Red)
-                    t.archived -> Triple(PhIcons.Archive, "Restore", Ph.Amber)
-                    else -> Triple(PhIcons.Archive, "Archive", Ph.Amber)
+    val offset = remember { androidx.compose.animation.core.Animatable(0f) }
+    var width by remember { mutableStateOf(1f) }
+    var armed by remember { mutableStateOf(false) }
+    val threshold = width * 0.38f
+    fun tick(c: Int) { view.performHapticFeedback(c) }
+    val armOn = if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK
+    val armOff = if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE else android.view.HapticFeedbackConstants.CLOCK_TICK
+
+    Box(Modifier.onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }.pointerInput(enabled, canArchive) {
+        if (!enabled) return@pointerInput
+        val slop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var dx = 0f; var dy = 0f
+            // 1. Decide the direction: clearly sideways, or leave it to the list.
+            var horizontal = false
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                val c = e.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                if (!c.pressed) return@awaitEachGesture
+                val d = c.positionChange()
+                dx += d.x; dy += d.y
+                if (kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) >= kotlin.math.abs(dx) * 0.8f) return@awaitEachGesture
+                if (kotlin.math.abs(dx) > slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.6f) { horizontal = true; c.consume(); break }
+            }
+            if (!horizontal) return@awaitEachGesture
+            // 2. Follow the finger; tick on crossing the threshold, buzz if held there.
+            val velocity = androidx.compose.ui.input.pointer.util.VelocityTracker()
+            var heldSince = 0L; var buzzed = false
+            var pos = 0f
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                val c = e.changes.firstOrNull { it.id == down.id } ?: break
+                velocity.addPosition(c.uptimeMillis, c.position)
+                if (!c.pressed) break
+                val d = c.positionChange().x
+                c.consume()
+                pos += d
+                // Right is archive: only for finished tasks; otherwise it barely moves.
+                val shown = when {
+                    pos > 0 && !canArchive -> kotlin.math.min(pos * 0.15f, 24.dp.toPx())
+                    kotlin.math.abs(pos) > threshold -> kotlin.math.sign(pos) * (threshold + (kotlin.math.abs(pos) - threshold) * 0.45f)
+                    else -> pos
                 }
+                scope.launch { offset.snapTo(shown) }
+                val nowArmed = kotlin.math.abs(shown) >= threshold && !(pos > 0 && !canArchive)
+                if (nowArmed != armed) { armed = nowArmed; tick(if (nowArmed) armOn else armOff); heldSince = c.uptimeMillis; buzzed = false }
+                if (armed && kotlin.math.abs(d) > 2f) heldSince = c.uptimeMillis
+                if (armed && !buzzed && c.uptimeMillis - heldSince > 550) { buzzed = true; tick(android.view.HapticFeedbackConstants.LONG_PRESS) }
+            }
+            // 3. Let go: do it only if still past the threshold (or flung hard that way).
+            val vx = velocity.calculateVelocity().x
+            val toLeft = offset.value < 0
+            val fling = kotlin.math.abs(vx) > 2200f && kotlin.math.sign(vx) == kotlin.math.sign(offset.value) && kotlin.math.abs(offset.value) > threshold * 0.4f
+            val go = (armed || fling) && !(!toLeft && !canArchive)
+            armed = false
+            scope.launch {
+                if (go) {
+                    if (fling) tick(android.view.HapticFeedbackConstants.CONFIRM)
+                    offset.animateTo(if (toLeft) -width * 1.1f else width * 1.1f, androidx.compose.animation.core.tween(180))
+                    if (toLeft) UiStore.deleteWithUndo(t) else UiStore.setArchived(t, !t.archived)
+                    offset.snapTo(0f)
+                } else offset.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+            }
+        }
+    }) {
+        // What's underneath: delete (left) or archive/restore (right); the icon grows once armed.
+        val o = offset.value
+        if (o != 0f) {
+            val delete = o < 0
+            val ready = kotlin.math.abs(o) >= threshold
+            Row(Modifier.matchParentSize().clip(RoundedCornerShape(18.dp))
+                .background(if (delete) Ph.RedWash else Ph.AmberWash)
+                .border(1.dp, if (delete) androidx.compose.ui.graphics.Color(0xFF3A2A28) else Ph.AmberLine, RoundedCornerShape(18.dp))
+                .padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (delete) Arrangement.End else Arrangement.Start) {
+                val (icon, label, color) = when {
+                    delete -> Triple(PhIcons.Trash, if (ready) "Release to delete" else "Delete", Ph.Red)
+                    t.archived -> Triple(PhIcons.Archive, if (ready) "Release to restore" else "Restore", Ph.Amber)
+                    else -> Triple(PhIcons.Archive, if (ready) "Release to archive" else "Archive", Ph.Amber)
+                }
+                val scale by androidx.compose.animation.core.animateFloatAsState(if (ready) 1.25f else 1f, androidx.compose.animation.core.spring(0.5f), label = "arm")
                 if (delete) Text(label, style = Ph.mono.copy(color = color), modifier = Modifier.padding(end = 10.dp))
-                PhIcon(icon, color, 20.dp)
+                PhIcon(icon, color, 20.dp, modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale })
                 if (!delete) Text(label, style = Ph.mono.copy(color = color), modifier = Modifier.padding(start = 10.dp))
             }
-        },
-    ) { content() }
+        }
+        Box(Modifier.graphicsLayer { translationX = offset.value }) { content() }
+    }
 }
 
 @Composable

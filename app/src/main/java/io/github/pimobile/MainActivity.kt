@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        io.github.pimobile.ui.state.Haptics.view = window.decorView
         UiStore.init(this)
         io.github.pimobile.device.Permissions.attach(this)
         requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)

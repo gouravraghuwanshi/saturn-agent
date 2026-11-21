@@ -88,6 +88,8 @@ import io.github.pimobile.ui.state.Item
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -142,6 +144,10 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf("chat") }
+    var lampOpen by remember { mutableStateOf(false) }
+    var lampTouch by remember { mutableStateOf(0L) }
+    // The lamp slider folds away 3 s after you last touched it.
+    LaunchedEffect(lampOpen, lampTouch) { if (lampOpen) { kotlinx.coroutines.delay(3000); lampOpen = false } }
     // Reading mode: paper colours while this chat is on screen; dark again the moment you leave
     // (so home never flashes cream during the way back), and dark status-bar icons on the page.
     val leaving = visibility.transition.targetState == androidx.compose.animation.EnterExitState.PostExit
@@ -346,7 +352,11 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 Header(t, tab, showBrowserTab, collapse, onSaturn = { glowAt = it },
                     onModel = { sheet = "model" }, onThinking = { sheet = "thinking" },
                     onTab = { tab = it; if (it != "browser") holdBrowser = false },
-                    onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" })
+                    onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" },
+                    lampOpen = lampOpen, onLamp = { lampOpen = it; lampTouch = System.currentTimeMillis() })
+                AnimatedVisibility(lampOpen && tab == "chat", enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    LampSlider(onTouch = { lampTouch = System.currentTimeMillis() })
+                }
                 io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 if (tab == "browser") {
                     BrowserPane(t, onClose = {
@@ -628,7 +638,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
 @Composable
 private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, onSaturn: (androidx.compose.ui.geometry.Offset) -> Unit,
                    onModel: () -> Unit, onThinking: () -> Unit,
-                   onTab: (String) -> Unit, onBack: () -> Unit, onMenu: () -> Unit) {
+                   onTab: (String) -> Unit, onBack: () -> Unit, onMenu: () -> Unit,
+                   lampOpen: Boolean = false, onLamp: (Boolean) -> Unit = {}) {
     val running = t.status == Status.RUNNING || t.status == Status.STARTING
     val failed = t.status == Status.FAILED || (t.lastError != null && !running)
     val status = when {
@@ -652,7 +663,7 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             }
             if (browser) HeaderIcon(PhIcons.Globe, tab == "browser", if (tab == "browser") "Back to chat" else "Show browser", dot = true) {
                 onTab(if (tab == "browser") "chat" else "browser") }
-            if (tab == "chat") ReadingIcon()
+            if (tab == "chat") ReadingIcon(lampOpen, onLamp)
             HeaderIcon(PhIcons.Terminal, tab == "terminal", if (tab == "terminal") "Back to chat" else "Open terminal") {
                 onTab(if (tab == "terminal") "chat" else "terminal") }
             HeaderIcon(PhIcons.More, false, "Task options") { onMenu() }
@@ -1249,75 +1260,67 @@ private fun RetryLine(raw: String) {
 }
 
 
+/** The reading-mode switch. Tap: paper on/off (or close the lamp slider). Long-press: the lamp slider. */
+@Composable
+private fun ReadingIcon(lampOpen: Boolean, onLamp: (Boolean) -> Unit) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val on = UiStore.reading
+    Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (on || lampOpen) Ph.Selected else Color.Transparent)
+        .semantics { contentDescription = if (on) "Reading mode on. Long-press for the lamp" else "Reading mode" }
+        .pointerInput(lampOpen) {
+            detectTapGestures(
+                onTap = {
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                    if (lampOpen) onLamp(false) else UiStore.toggleReading()
+                },
+                onLongPress = {
+                    if (!UiStore.reading) UiStore.toggleReading()
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    onLamp(true)
+                },
+            )
+        }, contentAlignment = Alignment.Center) {
+        PhIcon(if (lampOpen) PhIcons.Lamp else PhIcons.Book, if (on) Ph.Amber else Ph.TextSoft, 19.dp)
+    }
+}
+
 /**
- * The reading-mode switch. Tap: paper on/off. Long-press and drag down: a darker, shadier page
- * (up: back toward cream), with a tick every 10%; a little vertical gauge shows the level.
+ * Like the phone's torch control, sideways: a big rounded pill that fills with warm lamp light
+ * from the left. Slide (or tap) to set how strongly the lamp shades the page; a tick every 10%.
  */
 @Composable
-private fun ReadingIcon() {
+private fun LampSlider(onTouch: () -> Unit) {
     val view = androidx.compose.ui.platform.LocalView.current
-    var adjusting by remember { mutableStateOf(false) }
-    var iconTop by remember { mutableStateOf(0f) }
-    val on = UiStore.reading
-    Box {
-        Box(Modifier.size(42.dp).onGloballyPositioned { iconTop = it.boundsInRoot().top }
-            .clip(RoundedCornerShape(12.dp)).background(if (on || adjusting) Ph.Selected else Color.Transparent)
-            .semantics { contentDescription = if (on) "Reading mode on. Long-press and drag down to darken the page" else "Reading mode" }
-            .pointerInput(Unit) {
-                val range = 150.dp.toPx()
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    // "tap", "cancel", or null = held long enough
-                    val outcome = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                        while (true) {
-                            val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull "cancel"
-                            if (!c.pressed) return@withTimeoutOrNull "tap"
-                            if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull "cancel"
-                        }
-                        @Suppress("UNREACHABLE_CODE") "cancel"
-                    }
-                    when (outcome) {
-                        "tap" -> { view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK); UiStore.toggleReading() }
-                        "cancel" -> {}
-                        else -> {
-                            if (!UiStore.reading) UiStore.toggleReading()
-                            adjusting = true
-                            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                            val start = UiStore.shade
-                            var step = (start * 10).toInt()
-                            while (true) {
-                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                                if (!c.pressed) break
-                                c.consume()
-                                // Down: toward full shade over `range`. Up: back to cream over whatever room there is
-                                // above your finger (the icon sits near the top), so lightening never runs out of screen.
-                                val dy = c.position.y - down.position.y
-                                val upRoom = (iconTop + down.position.y - 6.dp.toPx()).coerceAtLeast(24.dp.toPx())
-                                val v = (if (dy >= 0) start + (1f - start) * (dy / range) else start * (1f + dy / upRoom)).coerceIn(0f, 1f)
-                                UiStore.previewShade(v)
-                                val now = (v * 10).toInt()
-                                if (now != step) { step = now; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) }
-                            }
-                            UiStore.saveShade()
-                            adjusting = false
-                        }
-                    }
-                }
-            }, contentAlignment = Alignment.Center) {
-            PhIcon(PhIcons.Book, if (on) Ph.Amber else Ph.TextSoft, 19.dp)
+    val v = UiStore.shade
+    val shown by androidx.compose.animation.core.animateFloatAsState(v,
+        androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 900f), label = "lamp")
+    var step by remember { mutableStateOf((v * 10).toInt()) }
+    fun set(x: Float, w: Float) {
+        val nv = (x / w).coerceIn(0f, 1f)
+        UiStore.previewShade(nv); onTouch()
+        val now = (nv * 10).toInt()
+        if (now != step) { step = now; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) }
+    }
+    val shape = RoundedCornerShape(30.dp)
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp).height(60.dp)
+        .shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+        .clip(shape).background(Ph.Chip)
+        .pointerInput(Unit) {
+            detectTapGestures { o -> set(o.x, size.width.toFloat()); UiStore.saveShade() }
         }
-        if (adjusting) androidx.compose.ui.window.Popup(alignment = Alignment.TopCenter,
-            offset = androidx.compose.ui.unit.IntOffset(0, with(androidx.compose.ui.platform.LocalDensity.current) { 50.dp.roundToPx() })) {
-            val shape = RoundedCornerShape(16.dp)
-            Column(Modifier.clip(shape).background(Ph.Raised).border(1.dp, Ph.LineStrong, shape).padding(horizontal = 8.dp, vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("☀", style = Ph.monoSmall)
-                Box(Modifier.size(width = 10.dp, height = 130.dp).clip(RoundedCornerShape(5.dp)).background(Ph.Chip)) {
-                    Box(Modifier.fillMaxWidth().fillMaxHeight(UiStore.shade.coerceAtLeast(0.02f)).clip(RoundedCornerShape(5.dp)).background(Ph.Amber))
-                }
-                Text("☾", style = Ph.monoSmall)
-                Text("${(UiStore.shade * 100).toInt()}%", style = Ph.monoSmall.copy(color = Ph.Text))
-            }
+        .pointerInput(Unit) {
+            detectHorizontalDragGestures(onDragEnd = { UiStore.saveShade() }) { c, _ -> c.consume(); set(c.position.x, size.width.toFloat()) }
+        }) {
+        // The light: a warm glow filling from the left, brightest at its leading edge.
+        Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0f, 1f)).background(
+            androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFFE9A54B), Color(0xFFFFD58E), Color(0xFFFFF1CF)))))
+        Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            val lit = shown > 0.12f
+            PhIcon(PhIcons.Lamp, if (lit) Color(0xFF3A2507) else Ph.TextSoft, 22.dp)
+            Text("Lamp", style = Ph.title.copy(fontSize = 15.sp, color = if (lit) Color(0xFF3A2507) else Ph.Text),
+                modifier = Modifier.padding(start = 12.dp).weight(1f))
+            Text("${(shown * 100).toInt()}%", style = Ph.mono.copy(fontSize = 13.sp,
+                color = if (shown > 0.85f) Color(0xFF3A2507) else Ph.TextSoft))
         }
     }
 }

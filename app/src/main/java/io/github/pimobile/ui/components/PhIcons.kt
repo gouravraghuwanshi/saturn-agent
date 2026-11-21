@@ -37,6 +37,8 @@ object PhIcons {
     val Settings = stroke("M4 7h10M18 7h2M4 17h4M12 17h8", circle(16f, 7f, 2f), circle(10f, 17f, 2f), width = 1.7f)
     val Plus = stroke("M12 5v14M5 12h14")
     val Chart = stroke("M5 20v-7M12 20V5M19 20v-11M3 20h18")
+    /** A desk lamp: reading light. */
+    val Lamp = stroke("M8 4h8l3 7H5z", "M12 11v8", "M8 20h8")
     /** An open book: reading (paper) mode. */
     val Book = stroke("M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5z", "M12 6.5v13")
     /** Two arrows squeezing a line: compact. */

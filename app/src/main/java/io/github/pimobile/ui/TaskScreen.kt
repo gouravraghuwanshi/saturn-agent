@@ -430,15 +430,15 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     state = list, overscrollEffect = null,
                     modifier = Modifier.fillMaxSize().graphicsLayer { translationY = lift; translationX = liftX },
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     itemsIndexed(blocks, key = { _, b -> b.key }) { i, b ->
                         // Saturn's turn starts after each of your messages: label it once.
                         val prev = blocks.getOrNull(i - 1)
                         val isUser = b is Block.Single && b.item is Item.User
                         val turnStart = !isUser && (prev == null || (prev is Block.Single && prev.item is Item.User))
-                        Column(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null).padding(top = if (isUser && i > 0) 10.dp else 0.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null).padding(top = if (isUser && i > 0) 8.dp else 0.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (turnStart) SaturnLabel()
                             when (b) {
                                 is Block.Work -> WorkBlock(b, live = running && i == blocks.lastIndex, startedAt = t.runStartedAt)
@@ -702,44 +702,46 @@ private fun WorkBlock(b: Block.Work, live: Boolean, startedAt: Long?) {
         .border(1.dp, if (active) Ph.AmberLine else Ph.Line, shape)
         .clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { open = !open }
         .padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        // Header
+        val few = tools.size <= 3
+        // Header: what it's doing / did, and (for longer runs) the dots on the right.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            var frame by remember { mutableStateOf(0) }
             if (active) {
-                var frame by remember { mutableStateOf(0) }
                 LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(90); frame++ } }
                 Text("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[frame % 10].toString(), style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Amber))
                 Text("Working", style = Ph.title.copy(fontSize = 14.5.sp))
-                Text("· step ${tools.size}", style = Ph.mono.copy(color = Ph.Muted), modifier = Modifier.weight(1f))
-                if (startedAt != null) Text(elapsed(startedAt).let { _ -> frame; elapsed(startedAt) }, style = Ph.monoSmall)
+                Text("· step ${tools.size}", style = Ph.mono.copy(color = Ph.Muted))
             } else {
                 Text("Worked", style = Ph.title.copy(fontSize = 14.5.sp, color = Ph.TextSoft))
-                Text("· ${tools.size} ${if (tools.size == 1) "step" else "steps"}" + if (failed > 0) "" else "",
-                    style = Ph.mono.copy(color = Ph.Muted))
+                Text("· ${tools.size} ${if (tools.size == 1) "step" else "steps"}", style = Ph.mono.copy(color = Ph.Muted))
                 if (failed > 0) Text("· $failed failed", style = Ph.mono.copy(color = Ph.Red))
-                Box(Modifier.weight(1f))
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                if (!few) StepDots(tools)
+                else if (active && startedAt != null) Text(elapsed(startedAt).let { _ -> frame; elapsed(startedAt) }, style = Ph.monoSmall)
             }
             PhIcon(PhIcons.Chevron, Ph.Muted, 13.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
         }
-        // Running: the current step's line, rolling up as each new one lands.
-        if (active && !open) {
-            val lastItem = b.items.lastOrNull()
-            val current = when {
-                lastItem is Item.Tool -> lastItem.key to "${lastItem.name}  ${io.github.pimobile.ui.components.toolTarget(lastItem.name, lastItem.args)}"
-                lastItem is Item.Assistant && lastItem.thinking.isNotBlank() -> lastItem.key to "thinking…"
-                else -> "idle" to "thinking…"
-            }
-            androidx.compose.animation.AnimatedContent(current, label = "step", contentKey = { it.first },
-                transitionSpec = {
-                    (slideInVertically(androidx.compose.animation.core.tween(220)) { it } + fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
-                        (slideOutVertically(androidx.compose.animation.core.tween(180)) { -it } + fadeOut(androidx.compose.animation.core.tween(150))) using
-                        androidx.compose.animation.SizeTransform(clip = true)
-                }) { (_, line) ->
-                Text(line.trim(), style = Ph.mono.copy(fontSize = 12.sp, color = Ph.TextSoft), maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(start = 2.dp))
-            }
+        if (!open) {
+            if (few && !active) Column { tools.forEach { StepRow(it, compact = true) } }
+            else if (active) {
+                // Running: the current step's line, rolling up as each new one lands.
+                val lastItem = b.items.lastOrNull()
+                val current = when {
+                    lastItem is Item.Tool -> lastItem.key to "${lastItem.name}  ${io.github.pimobile.ui.components.toolTarget(lastItem.name, lastItem.args)}"
+                    else -> (lastItem?.key ?: "idle") to "thinking…"
+                }
+                androidx.compose.animation.AnimatedContent(current, label = "step", contentKey = { it.first },
+                    transitionSpec = {
+                        (slideInVertically(androidx.compose.animation.core.tween(220)) { it } + fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
+                            (slideOutVertically(androidx.compose.animation.core.tween(180)) { -it } + fadeOut(androidx.compose.animation.core.tween(150))) using
+                            androidx.compose.animation.SizeTransform(clip = true)
+                    }) { (_, line) ->
+                    Text(line.trim(), style = Ph.mono.copy(fontSize = 12.sp, color = Ph.TextSoft), maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(start = 2.dp))
+                }
+            } else Text(shortSummary(tools), style = Ph.monoSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        StepDots(tools)
-        if (!active && !open) Text(toolSummary(tools, false), style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         // Open: one line per step.
         AnimatedVisibility(open, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -760,37 +762,55 @@ private fun WorkBlock(b: Block.Work, live: Boolean, startedAt: Long?) {
     }
 }
 
-/** One dot per step: green done, red failed, amber running. Wraps to at most three rows (newest kept). */
+/** One dot per step (green done, red failed, amber running) in a single right-aligned row; "+n" when they don't all fit. */
 @Composable
 private fun StepDots(tools: List<Item.Tool>) {
     if (tools.isEmpty()) return
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         val d = 6.dp; val g = 4.dp
-        val perRow = ((maxWidth + g) / (d + g)).toInt().coerceAtLeast(1)
-        val shown = tools.takeLast(perRow * 3)
-        val rows = (shown.size + perRow - 1) / perRow
-        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(d * rows + g * (rows - 1))) {
-            val dp = d.toPx(); val gp = g.toPx()
-            shown.forEachIndexed { i, tl ->
-                val c = when (tl.state) {
-                    io.github.pimobile.ui.state.ToolState.RUNNING -> Ph.Amber
-                    io.github.pimobile.ui.state.ToolState.ERROR -> Ph.Red
-                    else -> Ph.Green.copy(alpha = 0.7f)
+        val fit = ((maxWidth + g) / (d + g)).toInt().coerceAtLeast(1)
+        val overflow = tools.size > fit
+        val room = if (overflow) (fit - 4).coerceAtLeast(1) else fit
+        val shown = tools.takeLast(room)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (overflow) Text("+${tools.size - shown.size}", style = Ph.monoSmall.copy(fontSize = 10.sp))
+            androidx.compose.foundation.Canvas(Modifier.size(width = d * shown.size + g * (shown.size - 1), height = d)) {
+                val dp = d.toPx(); val gp = g.toPx()
+                shown.forEachIndexed { i, tl ->
+                    val c = when (tl.state) {
+                        io.github.pimobile.ui.state.ToolState.RUNNING -> Ph.Amber
+                        io.github.pimobile.ui.state.ToolState.ERROR -> Ph.Red
+                        else -> Ph.Green.copy(alpha = 0.7f)
+                    }
+                    drawCircle(c, dp / 2, androidx.compose.ui.geometry.Offset(i * (dp + gp) + dp / 2, dp / 2))
                 }
-                val x = (i % perRow) * (dp + gp) + dp / 2; val y = (i / perRow) * (dp + gp) + dp / 2
-                drawCircle(c, dp / 2, androidx.compose.ui.geometry.Offset(x, y))
             }
         }
     }
 }
 
+/** "4 commands · 1 read · 1 edit": short enough for one line. */
+private fun shortSummary(tools: List<Item.Tool>): String {
+    val by = tools.groupingBy { it.name.lowercase() }.eachCount()
+    fun n(c: Int, one: String, many: String) = "$c ${if (c == 1) one else many}"
+    val known = setOf("bash", "read", "edit", "write", "grep", "find", "ls")
+    return buildList {
+        by["bash"]?.let { add(n(it, "command", "commands")) }
+        by["read"]?.let { add(n(it, "read", "reads")) }
+        ((by["edit"] ?: 0) + (by["write"] ?: 0)).takeIf { it > 0 }?.let { add(n(it, "edit", "edits")) }
+        ((by["grep"] ?: 0) + (by["find"] ?: 0) + (by["ls"] ?: 0)).takeIf { it > 0 }?.let { add(n(it, "search", "searches")) }
+        val other = tools.size - by.filterKeys { it in known }.values.sum()
+        if (other > 0) add(n(other, "other tool", "other tools"))
+    }.joinToString(" · ")
+}
+
 /** A step as one mono line: ✓/✗ name target. Tap for its full command and output. */
 @Composable
-private fun StepRow(tool: Item.Tool) {
+private fun StepRow(tool: Item.Tool, compact: Boolean = false) {
     var open by rememberSaveable(tool.key) { mutableStateOf(false) }
     val st = tool.state
     Column {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = 5.dp),
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = if (compact) 3.dp else 5.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(when (st) { io.github.pimobile.ui.state.ToolState.RUNNING -> "◌"; io.github.pimobile.ui.state.ToolState.ERROR -> "✗"; else -> "✓" },
                 style = Ph.mono.copy(color = when (st) { io.github.pimobile.ui.state.ToolState.RUNNING -> Ph.Amber; io.github.pimobile.ui.state.ToolState.ERROR -> Ph.Red; else -> Ph.Green }))

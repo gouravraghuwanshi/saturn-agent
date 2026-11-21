@@ -554,8 +554,49 @@ object UiStore : TaskManager.Listener {
     fun open(ui: TaskUi) {
         lastOpened = ui
         if (ui.task.restored && !ui.historyLoaded && ui.items.isEmpty()) {
+            // Show the chat straight from pi's session file (milliseconds), instead of waiting for
+            // pi to start just to hand it back; pi still starts so the task is ready to continue.
+            val sessionId = ui.task.sessionId
+            val cwd = ui.task.cwd
+            Thread {
+                val msgs = runCatching { readSessionMessages(sessionId, cwd) }.getOrNull()
+                if (msgs != null && msgs.length() > 0) android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    if (ui.items.isEmpty() && !ui.historyLoaded) { ui.historyLoaded = true; rebuild(ui, msgs) }
+                }
+            }.apply { isDaemon = true }.start()
             TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
         }
+    }
+
+    /**
+     * The messages on a session's current branch, read from its .jsonl: the last entry is the
+     * leaf; follow parentId back to the root. Same shape as pi's get_messages.
+     */
+    private fun readSessionMessages(sessionId: String, cwd: File): JSONArray? {
+        val dir = File(runtime.home, ".pi/agent/sessions/" + io.github.pimobile.runtime.Usage.folderFor(cwd))
+        val file = dir.listFiles()?.firstOrNull { it.name.endsWith("_$sessionId.jsonl") }
+            ?: File(runtime.home, ".pi/agent/sessions").walkTopDown().maxDepth(2)
+                .firstOrNull { it.isFile && it.name.endsWith("_$sessionId.jsonl") } ?: return null
+        val parent = HashMap<String, String?>()
+        val messages = HashMap<String, JSONObject>()
+        var leaf: String? = null
+        file.bufferedReader().useLines { lines ->
+            for (line in lines) {
+                if (line.isBlank()) continue
+                val e = runCatching { JSONObject(line) }.getOrNull() ?: continue
+                val id = e.optString("id").ifBlank { null } ?: continue
+                parent[id] = e.optString("parentId").ifBlank { null }
+                leaf = id
+                if (e.optString("type") == "message") e.optJSONObject("message")?.let { m ->
+                    if (m.optString("role") in setOf("user", "assistant", "toolResult")) messages[id] = m
+                }
+            }
+        }
+        val path = ArrayList<JSONObject>()
+        var cur = leaf
+        val seen = HashSet<String>()
+        while (cur != null && seen.add(cur)) { messages[cur]?.let { path += it }; cur = parent[cur] }
+        return JSONArray().apply { path.asReversed().forEach { put(it) } }
     }
 
     private fun addUser(ui: TaskUi, text: String) {

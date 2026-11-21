@@ -494,6 +494,11 @@ object UiStore : TaskManager.Listener {
     private var readingState by mutableStateOf<Boolean?>(null)
     val reading: Boolean get() = readingState ?: prefs.getBoolean("reading", false).also { readingState = it }
     fun toggleReading() { val v = !reading; readingState = v; prefs.edit().putBoolean("reading", v).apply() }
+    /** Paper shade 0..1 (long-press the book icon and drag down). */
+    private var shadeState by mutableStateOf<Float?>(null)
+    val shade: Float get() = shadeState ?: prefs.getFloat("reading_shade", 0f).also { shadeState = it }
+    fun previewShade(v: Float) { shadeState = v.coerceIn(0f, 1f) }
+    fun saveShade() { prefs.edit().putFloat("reading_shade", shade).apply() }
     /** Times the chat box's hold actions were used; the hint stops after a few. */
     var holdUses: Int
         get() = prefs.getInt("hold_uses", 0)

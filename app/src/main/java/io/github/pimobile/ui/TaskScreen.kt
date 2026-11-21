@@ -88,6 +88,8 @@ import io.github.pimobile.ui.state.Item
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -152,6 +154,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         }
     }
     LaunchedEffect(paperOn) { Ph.paper = paperOn; barsFor(paperOn) }
+    LaunchedEffect(UiStore.shade) { Ph.paperShade = UiStore.shade }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Ph.paper = false; barsFor(false) } }
     var holdBrowser by rememberSaveable { mutableStateOf(false) } // user took over
     // Once the agent opened a page it stays until the user closes it: runs often end with
@@ -634,7 +637,7 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             }
             if (browser) HeaderIcon(PhIcons.Globe, tab == "browser", if (tab == "browser") "Back to chat" else "Show browser", dot = true) {
                 onTab(if (tab == "browser") "chat" else "browser") }
-            if (tab == "chat") HeaderIcon(PhIcons.Book, UiStore.reading, if (UiStore.reading) "Dark mode" else "Reading mode") { UiStore.toggleReading() }
+            if (tab == "chat") ReadingIcon()
             HeaderIcon(PhIcons.Terminal, tab == "terminal", if (tab == "terminal") "Back to chat" else "Open terminal") {
                 onTab(if (tab == "terminal") "chat" else "terminal") }
             HeaderIcon(PhIcons.More, false, "Task options") { onMenu() }
@@ -1225,6 +1228,74 @@ private fun RetryLine(raw: String) {
             SelectionContainer {
                 Text(why.trim(), style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.Muted), modifier = Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp)).background(Ph.Ground).padding(10.dp))
+            }
+        }
+    }
+}
+
+
+/**
+ * The reading-mode switch. Tap: paper on/off. Long-press and drag down: a darker, shadier page
+ * (up: back toward cream), with a tick every 10%; a little vertical gauge shows the level.
+ */
+@Composable
+private fun ReadingIcon() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    var adjusting by remember { mutableStateOf(false) }
+    val on = UiStore.reading
+    Box {
+        Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (on || adjusting) Ph.Selected else Color.Transparent)
+            .semantics { contentDescription = if (on) "Reading mode on. Long-press and drag down to darken the page" else "Reading mode" }
+            .pointerInput(Unit) {
+                val range = 150.dp.toPx()
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    // "tap", "cancel", or null = held long enough
+                    val outcome = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        while (true) {
+                            val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull "cancel"
+                            if (!c.pressed) return@withTimeoutOrNull "tap"
+                            if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull "cancel"
+                        }
+                        @Suppress("UNREACHABLE_CODE") "cancel"
+                    }
+                    when (outcome) {
+                        "tap" -> { view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK); UiStore.toggleReading() }
+                        "cancel" -> {}
+                        else -> {
+                            if (!UiStore.reading) UiStore.toggleReading()
+                            adjusting = true
+                            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                            val start = UiStore.shade
+                            var step = (start * 10).toInt()
+                            while (true) {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                if (!c.pressed) break
+                                c.consume()
+                                val v = (start + (c.position.y - down.position.y) / range).coerceIn(0f, 1f)
+                                UiStore.previewShade(v)
+                                val now = (v * 10).toInt()
+                                if (now != step) { step = now; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) }
+                            }
+                            UiStore.saveShade()
+                            adjusting = false
+                        }
+                    }
+                }
+            }, contentAlignment = Alignment.Center) {
+            PhIcon(PhIcons.Book, if (on) Ph.Amber else Ph.TextSoft, 19.dp)
+        }
+        if (adjusting) androidx.compose.ui.window.Popup(alignment = Alignment.TopCenter,
+            offset = androidx.compose.ui.unit.IntOffset(0, with(androidx.compose.ui.platform.LocalDensity.current) { 50.dp.roundToPx() })) {
+            val shape = RoundedCornerShape(16.dp)
+            Column(Modifier.clip(shape).background(Ph.Raised).border(1.dp, Ph.LineStrong, shape).padding(horizontal = 8.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("☀", style = Ph.monoSmall)
+                Box(Modifier.size(width = 10.dp, height = 130.dp).clip(RoundedCornerShape(5.dp)).background(Ph.Chip)) {
+                    Box(Modifier.fillMaxWidth().fillMaxHeight(UiStore.shade.coerceAtLeast(0.02f)).clip(RoundedCornerShape(5.dp)).background(Ph.Amber))
+                }
+                Text("☾", style = Ph.monoSmall)
+                Text("${(UiStore.shade * 100).toInt()}%", style = Ph.monoSmall.copy(color = Ph.Text))
             }
         }
     }

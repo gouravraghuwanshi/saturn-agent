@@ -324,8 +324,23 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))
                 .background(Ph.Ground)
                 .onGloballyPositioned { rootAt = it.boundsInRoot().topLeft }
-                .drawBehind { if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
-                    saturnGlow(glowAt - rootAt, glow * (1f - collapse), breathe, red = failedNow) }
+                .drawBehind {
+                    // Lamp light: the shadier the paper, the more the edges fall into shadow while a warm
+                    // pool of light stays on the page, as if read under a lamp above it.
+                    val sh = if (Ph.paper) Ph.paperShade else 0f
+                    if (sh > 0.01f) {
+                        val c = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * 0.32f)
+                        val r = size.maxDimension * 0.78f
+                        drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
+                            0f to Color(0xFFFFE6B0).copy(alpha = 0.22f * sh),
+                            0.38f to Color(0xFFFFE6B0).copy(alpha = 0.06f * sh),
+                            0.62f to Color.Transparent,
+                            1f to Color(0xFF2B1B0A).copy(alpha = 0.42f * sh),
+                            center = c, radius = r))
+                    }
+                    if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
+                        saturnGlow(glowAt - rootAt, glow * (1f - collapse), breathe, red = failedNow)
+                }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(t, tab, showBrowserTab, collapse, onSaturn = { glowAt = it },
@@ -1242,9 +1257,11 @@ private fun RetryLine(raw: String) {
 private fun ReadingIcon() {
     val view = androidx.compose.ui.platform.LocalView.current
     var adjusting by remember { mutableStateOf(false) }
+    var iconTop by remember { mutableStateOf(0f) }
     val on = UiStore.reading
     Box {
-        Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (on || adjusting) Ph.Selected else Color.Transparent)
+        Box(Modifier.size(42.dp).onGloballyPositioned { iconTop = it.boundsInRoot().top }
+            .clip(RoundedCornerShape(12.dp)).background(if (on || adjusting) Ph.Selected else Color.Transparent)
             .semantics { contentDescription = if (on) "Reading mode on. Long-press and drag down to darken the page" else "Reading mode" }
             .pointerInput(Unit) {
                 val range = 150.dp.toPx()
@@ -1272,7 +1289,11 @@ private fun ReadingIcon() {
                                 val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                                 if (!c.pressed) break
                                 c.consume()
-                                val v = (start + (c.position.y - down.position.y) / range).coerceIn(0f, 1f)
+                                // Down: toward full shade over `range`. Up: back to cream over whatever room there is
+                                // above your finger (the icon sits near the top), so lightening never runs out of screen.
+                                val dy = c.position.y - down.position.y
+                                val upRoom = (iconTop + down.position.y - 6.dp.toPx()).coerceAtLeast(24.dp.toPx())
+                                val v = (if (dy >= 0) start + (1f - start) * (dy / range) else start * (1f + dy / upRoom)).coerceIn(0f, 1f)
                                 UiStore.previewShade(v)
                                 val now = (v * 10).toInt()
                                 if (now != step) { step = now; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) }

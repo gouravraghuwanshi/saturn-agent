@@ -152,6 +152,24 @@ object UiStore : TaskManager.Listener {
     }
 
     /**
+     * A custom endpoint (Ollama, LM Studio, vLLM, a proxy…) goes into pi's
+     * models.json as its own provider; the first model becomes the default.
+     */
+    fun saveCustomProvider(id: String, name: String, baseUrl: String, api: String, key: String, models: List<String>) {
+        val f = File(runtime.home, ".pi/agent/models.json")
+        val root = runCatching { JSONObject(f.readText()) }.getOrElse { JSONObject() }
+        val providers = root.optJSONObject("providers") ?: JSONObject().also { root.put("providers", it) }
+        // A literal key: pi reads a leading "$" or "!" as env/command, "$$"/"$!" escape them.
+        val literal = key.trim().ifBlank { "none" }.let { if (it.startsWith("$") || it.startsWith("!")) "$" + it else it }
+        val list = org.json.JSONArray().apply { models.forEach { put(JSONObject().put("id", it)) } }
+        providers.put(id, JSONObject().put("name", name).put("baseUrl", baseUrl.trim().trimEnd('/')).put("api", api)
+            .put("apiKey", literal).put("models", list))
+        f.parentFile?.mkdirs(); f.writeText(root.toString(2))
+        models.firstOrNull()?.let { setModel(null, id, it) }
+        Control.restart(); TaskManager.restartIdle()
+    }
+
+    /**
      * API keys now live in /login (pi's auth.json). Keys saved by the old Settings
      * section move there once, unless pi already has a credential for that provider.
      */

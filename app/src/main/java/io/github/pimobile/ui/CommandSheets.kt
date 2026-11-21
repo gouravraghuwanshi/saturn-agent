@@ -62,6 +62,7 @@ import io.github.pimobile.ui.state.Control
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -144,6 +145,8 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
         return
     }
 
+    if (method == "custom") { CustomEndpoint(onBack = { method = "api_key" }); return }
+
     Row(Modifier.padding(start = 12.dp, end = 20.dp, top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (!logoutMode) Box(Modifier.size(40.dp).clip(CircleShape).clickable { method = null; onQuery("") }, contentAlignment = Alignment.Center) {
             PhIcon(PhIcons.Back, Ph.TextSoft, 20.dp)
@@ -187,6 +190,9 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
             }
             val openrouter = providers.firstOrNull { it.id == "openrouter" }
             LazyColumn(Modifier.heightIn(max = 540.dp)) {
+                if (method == "api_key" && query.isBlank()) item(key = "custom") {
+                    MethodRow(PhIcons.Terminal, "Custom endpoint", "Any OpenAI- or Anthropic-compatible API: Ollama, LM Studio, vLLM, a proxy…") { method = "custom" }
+                }
                 if (method == "oauth" && query.isBlank() && openrouter != null) item(key = "free") {
                     Column {
                         Section("RECOMMENDED", Ph.Amber)
@@ -412,6 +418,161 @@ private fun DialogStep(d: Control.Dialog) {
             }
             Btn("Continue", primary = true, enabled = value.isNotBlank(), wide = true) { Control.answer(value.trim()) }
         }
+    }
+}
+
+/** API styles pi can talk to, as (pi api id, label). */
+private val API_KINDS = listOf("openai-completions" to "OpenAI-compatible", "anthropic-messages" to "Anthropic",
+    "openai-responses" to "OpenAI Responses", "google-generative-ai" to "Gemini")
+
+@Composable
+private fun Field(label: String, value: String, hint: String, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text,
+                  onChange: (String) -> Unit) = Column(Modifier.padding(horizontal = 20.dp, vertical = 5.dp)) {
+    Text(label, style = Ph.label, modifier = Modifier.padding(bottom = 6.dp))
+    BasicTextField(value, onChange, singleLine = true, textStyle = Ph.mono.copy(fontSize = 14.sp, color = Ph.Text),
+        cursorBrush = SolidColor(Ph.Amber), keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)
+            .border(1.dp, if (value.isEmpty()) Ph.LineStrong else Ph.AmberLine, RoundedCornerShape(12.dp)).padding(14.dp),
+        decorationBox = { inner -> Box { if (value.isEmpty()) Text(hint, style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() } })
+}
+
+/** Any compatible endpoint, saved to pi's models.json. "Find models" asks the endpoint's /models. */
+@Composable
+private fun CustomEndpoint(onBack: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var key by remember { mutableStateOf("") }
+    var api by remember { mutableStateOf(API_KINDS[0].first) }
+    var models by remember { mutableStateOf("") }
+    var found by remember { mutableStateOf<List<String>>(emptyList()) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var saved by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val ids = models.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val okUrl = url.trim().let { it.startsWith("http://") || it.startsWith("https://") }
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Row(Modifier.padding(start = 12.dp, end = 20.dp, top = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 20.dp) }
+            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                Text("Custom endpoint", style = Ph.heading.copy(fontSize = 20.sp))
+                Text("Point Saturn at any compatible API", style = Ph.monoSmall)
+            }
+        }
+        if (saved) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(64.dp).clip(CircleShape).background(Ph.Green.copy(alpha = 0.12f)).border(1.dp, Ph.Green.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center) { PhIcon(PhIcons.Check, Ph.Green, 28.dp) }
+                Text("${name.ifBlank { "Custom" }} added", style = Ph.heading.copy(fontSize = 19.sp))
+                Text("${ids.first()} is now the default model. The others are in /model.",
+                    style = Ph.body.copy(fontSize = 13.sp, color = Ph.Muted, textAlign = TextAlign.Center))
+            }
+            return@Column
+        }
+        Field("NAME", name, "e.g. My Ollama") { name = it }
+        Field("BASE URL", url, "http://192.168.1.5:11434/v1", keyboard = KeyboardType.Uri) { url = it.trim() }
+        Text("API STYLE", style = Ph.label, modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 6.dp))
+        Row(Modifier.padding(horizontal = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            API_KINDS.forEach { (id, label) ->
+                val on = id == api
+                Text(label, style = Ph.mono.copy(color = if (on) Ph.AmberInk else Ph.TextSoft), modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .background(if (on) Ph.Amber else Ph.Raised).border(1.dp, if (on) Ph.Amber else Ph.LineStrong, RoundedCornerShape(10.dp))
+                    .clickable { api = id }.padding(horizontal = 12.dp, vertical = 9.dp))
+            }
+        }
+        Field("API KEY", key, "optional for local servers", secret = true, keyboard = KeyboardType.Password) { key = it.trim() }
+        Field("MODELS", models, "model id, or several separated by commas") { models = it }
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Btn("Find models", enabled = okUrl) {
+                status = "Asking ${url.trim().trimEnd('/')}/models…"
+                scope.launch {
+                    val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { listModels(url, key, api) } }
+                    r.onSuccess { found = it; status = if (it.isEmpty()) "No models listed; type the id yourself." else "${it.size} found, tap to add" }
+                        .onFailure { status = "Couldn't list models: ${it.message ?: it.javaClass.simpleName}" }
+                }
+            }
+            status?.let { Text(it, style = Ph.monoSmall, modifier = Modifier.weight(1f)) }
+        }
+        if (found.isNotEmpty()) Column(Modifier.padding(horizontal = 20.dp).heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+            found.forEach { m ->
+                val on = m in ids
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
+                    models = (if (on) ids - m else ids + m).joinToString(", ")
+                }.padding(vertical = 8.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (on) "●" else "○", style = Ph.mono.copy(color = if (on) Ph.Amber else Ph.Muted), modifier = Modifier.width(20.dp))
+                    Text(m, style = Ph.mono.copy(color = if (on) Ph.Text else Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Btn("Save endpoint", primary = true, enabled = okUrl && ids.isNotEmpty(), wide = true) {
+                val slug = name.ifBlank { url.substringAfter("//").substringBefore('/').substringBefore(':') }
+                    .lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "endpoint" }
+                UiStore.saveCustomProvider("custom-$slug", name.ifBlank { slug }, url, api, key, ids)
+                saved = true
+            }
+        }
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            PhIcon(PhIcons.Lock, Ph.Muted, 12.dp); Text("  Saved in pi's models.json on this phone", style = Ph.monoSmall)
+        }
+    }
+}
+
+/** GET {base}/models, the way each API style authenticates. */
+private fun listModels(base: String, key: String, api: String): List<String> {
+    val b = base.trim().trimEnd('/')
+    val url = if (api == "google-generative-ai") "$b/models" + (if (key.isNotBlank()) "?key=$key" else "") else "$b/models"
+    val headers = buildMap {
+        if (key.isNotBlank()) when (api) {
+            "anthropic-messages" -> { put("x-api-key", key); put("anthropic-version", "2023-06-01") }
+            "google-generative-ai" -> {}
+            else -> put("Authorization", "Bearer $key")
+        }
+    }
+    val body = if (url.startsWith("http://")) plainGet(java.net.URL(url), headers) else {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 8000; c.readTimeout = 10000
+        headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
+        if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
+        c.inputStream.bufferedReader().readText()
+    }
+    val j = JSONObject(body)
+    val arr = j.optJSONArray("data") ?: j.optJSONArray("models") ?: JSONArray()
+    return (0 until arr.length()).mapNotNull { i ->
+        arr.optJSONObject(i)?.let { o -> (o.optString("id").ifBlank { o.optString("name") }).removePrefix("models/").ifBlank { null } } ?: arr.optString(i).ifBlank { null }
+    }.sorted()
+}
+
+/**
+ * Android refuses the app's own cleartext HTTP, but local servers (Ollama, LM
+ * Studio on the LAN) rarely have TLS. A bare socket GET is enough for /models.
+ */
+private fun plainGet(u: java.net.URL, headers: Map<String, String>): String {
+    java.net.Socket().use { sock ->
+        sock.connect(java.net.InetSocketAddress(u.host, if (u.port > 0) u.port else 80), 8000); sock.soTimeout = 10000
+        val path = (u.path.ifBlank { "/" }) + (u.query?.let { "?$it" } ?: "")
+        val req = buildString {
+            append("GET $path HTTP/1.1\r\nHost: ${u.host}${if (u.port > 0) ":${u.port}" else ""}\r\nAccept: application/json\r\nConnection: close\r\n")
+            headers.forEach { (k, v) -> append("$k: $v\r\n") }
+            append("\r\n")
+        }
+        sock.getOutputStream().apply { write(req.toByteArray()); flush() }
+        val raw = sock.getInputStream().readBytes().toString(Charsets.UTF_8)
+        val head = raw.substringBefore("\r\n\r\n"); var rest = raw.substringAfter("\r\n\r\n", "")
+        val code = head.lineSequence().first().split(' ').getOrNull(1)?.toIntOrNull() ?: 0
+        if (code !in 200..299) error("HTTP $code")
+        if (head.contains("transfer-encoding: chunked", ignoreCase = true)) rest = buildString {
+            var r = rest
+            while (true) {
+                val n = r.substringBefore("\r\n").trim().substringBefore(';').toIntOrNull(16) ?: break
+                if (n == 0) break
+                val start = r.indexOf("\r\n") + 2
+                // sizes are bytes; the payload is JSON (ASCII-safe in practice)
+                append(r.substring(start, minOf(r.length, start + n))); r = r.substring(minOf(r.length, start + n + 2))
+            }
+        }
+        return rest
     }
 }
 

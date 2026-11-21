@@ -499,9 +499,9 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     Composer(
                         contextFill = t.contextWindow.takeIf { it > 0 && t.contextTokens > 0 }?.let { t.contextTokens / it.toFloat() },
                         pulls = buildList {
-                            if (!running && t.contextTokens > 0) add(PullAction(PhIcons.Compact, "Compact", "drop to compact",
+                            if (!running && t.contextTokens > 0) add(PullAction(PhIcons.Compact, "Compact", "Release to compact",
                                 note = t.contextWindow.takeIf { it > 0 }?.let { w -> "${(t.contextTokens * 100L / w)}% full" }) { UiStore.rpc(t, "compact") })
-                            if (t.items.isNotEmpty()) add(PullAction(PhIcons.Share, "Share", "drop to share", note = "markdown") { shareMarkdown(ctx, t) })
+                            if (t.items.isNotEmpty()) add(PullAction(PhIcons.Share, "Share", "Release to share", note = "as markdown") { shareMarkdown(ctx, t) })
                         },
                         thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l -> UiStore.setThinking(t, l) } },
                         value = input, onValue = { input = it },

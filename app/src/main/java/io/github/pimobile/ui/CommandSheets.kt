@@ -2,6 +2,20 @@ package io.github.pimobile.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import io.github.pimobile.ui.components.PhIcon
+import io.github.pimobile.ui.components.PhIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,8 +76,8 @@ private fun Title(title: String, sub: String? = null) = Column(Modifier.padding(
 }
 
 @Composable
-private fun Btn(label: String, primary: Boolean = false, color: Color = Ph.Text, enabled: Boolean = true, onClick: () -> Unit) =
-    Box(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+private fun Btn(label: String, primary: Boolean = false, color: Color = Ph.Text, enabled: Boolean = true, wide: Boolean = false, onClick: () -> Unit) =
+    Box((if (wide) Modifier.fillMaxWidth() else Modifier).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
         .background(if (primary && enabled) Ph.Amber else Color.Transparent)
         .border(1.dp, if (primary && enabled) Ph.Amber else Ph.LineStrong, RoundedCornerShape(12.dp))
         .clickable(enabled = enabled) { onClick() }.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
@@ -85,6 +99,9 @@ internal fun copier(): (String) -> Unit {
 
 // ------------------------------------------------------------------- login
 
+/** Providers people reach for first; shown above the full list when not searching. */
+private val POPULAR = listOf("anthropic", "openai", "openai-codex", "openrouter", "google", "github-copilot", "deepseek", "xai", "groq")
+
 /** /login and /logout: pi's own provider flows (OAuth subscriptions, device codes, API keys). */
 @Composable
 fun LoginSheet(logoutMode: Boolean = false, initialQuery: String = "", onDismiss: () -> Unit) {
@@ -93,8 +110,11 @@ fun LoginSheet(logoutMode: Boolean = false, initialQuery: String = "", onDismiss
     LaunchedEffect(Unit) { if (Control.providers == null) Control.loadProviders(); Control.refreshSignedIn() }
     PhSheet({ if (login.running) Control.cancelLogin(); login.reset(); onDismiss() }) {
         val p = login.provider
-        if (p != null && (login.running || login.done || login.error != null)) LoginFlow(p, onBack = { login.reset(); login.provider = null })
-        else ProviderList(logoutMode, query, { query = it })
+        AnimatedContent(p != null && (login.running || login.done || login.error != null), label = "login",
+            transitionSpec = { (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (targetState) it / 6 else -it / 6 }) togetherWith fadeOut(tween(140)) }) { flow ->
+            if (flow && p != null) LoginFlow(p, onBack = { login.reset(); login.provider = null })
+            else ProviderList(logoutMode, query, { query = it })
+        }
     }
 }
 
@@ -106,83 +126,167 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
     val radius = providers?.firstOrNull { it.id == "radius" }
 
     if (method == null) {
-        Title("Log in", "How do you want to sign in?")
-        MethodRow("Sign in with an account", "Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot and more — uses your subscription") { method = "oauth" }
-        MethodRow("Sign in with an API key", "OpenRouter, Anthropic, OpenAI, Gemini, Groq and 40 more") { method = "api_key" }
-        if (radius != null) MethodRow("Sign in with ${radius.name}" + if (radius.id in Control.signedIn) "  ✓" else "", "One account for many models") {
-            Control.startLogin(radius, "oauth")
-        } else if (providers == null) Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) { PulseDot(Ph.Amber); Text("Loading providers from pi…", style = Ph.body.copy(color = Ph.Muted)) }
+        Column(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            MiniSaturn(spinning = providers == null, needsYou = false, modifier = Modifier.width(118.dp))
+            Text("Connect a model", style = Ph.heading, modifier = Modifier.padding(top = 6.dp))
+            Text("Saturn thinks with the AI you choose. Bring a plan you already pay for, or a key.",
+                style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp, textAlign = TextAlign.Center),
+                modifier = Modifier.padding(horizontal = 36.dp, vertical = 4.dp))
+        }
+        val signed = providers?.filter { it.id in Control.signedIn }.orEmpty()
+        if (signed.isNotEmpty()) {
+            Section("CONNECTED", Ph.Green)
+            Row(Modifier.padding(horizontal = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                signed.forEach { s ->
+                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Ph.Raised).border(1.dp, Ph.Green.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(Ph.Green))
+                        Text(s.name, style = Ph.mono.copy(color = Ph.Text))
+                    }
+                }
+            }
+        }
+        Section("HOW TO CONNECT")
+        MethodRow(PhIcons.Sparkle, "Use a subscription", "Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot… signs in through your browser",
+            tag = "no key needed", highlight = true) { method = "oauth" }
+        MethodRow(PhIcons.Key, "Paste an API key", "OpenRouter, Anthropic, OpenAI, Gemini, Groq and 40 more") { method = "api_key" }
+        if (radius != null) MethodRow(PhIcons.Globe, "Sign in with ${radius.name}", "One account for many models",
+            done = radius.id in Control.signedIn) { Control.startLogin(radius, "oauth") }
+        if (providers == null && Control.providersError == null) Loading("Loading providers from pi…")
         Control.providersError?.let { Text("Couldn't load providers: $it", style = Ph.body.copy(color = Ph.Red), modifier = Modifier.padding(20.dp)) }
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            PhIcon(PhIcons.Lock, Ph.Muted, 13.dp)
+            Text("  Keys stay on this phone, encrypted", style = Ph.monoSmall)
+        }
         return
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (!logoutMode) Text("‹", style = Ph.heading.copy(color = Ph.TextSoft), modifier = Modifier.clickable { method = null; onQuery("") }.padding(start = 20.dp, end = 4.dp))
-        Title(when { logoutMode -> "Log out"; method == "oauth" -> "Sign in with an account"; method == "api_key" -> "Sign in with an API key"; else -> "Log in" },
-            if (logoutMode) "Remove a saved credential from pi." else null)
+    Row(Modifier.padding(start = 12.dp, end = 20.dp, top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!logoutMode) Box(Modifier.size(40.dp).clip(CircleShape).clickable { method = null; onQuery("") }, contentAlignment = Alignment.Center) {
+            PhIcon(PhIcons.Back, Ph.TextSoft, 20.dp)
+        } else Box(Modifier.width(8.dp))
+        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+            Text(when { logoutMode -> "Log out"; method == "oauth" -> "Use a subscription"; method == "api_key" -> "Paste an API key"; else -> "Log in" }, style = Ph.heading.copy(fontSize = 20.sp))
+            Text(when { logoutMode -> "Remove a saved sign-in from this phone"; method == "oauth" -> "Pick your plan, then finish in the browser"; method == "api_key" -> "Pick a provider, then paste its key"; else -> "Pick a provider" },
+                style = Ph.monoSmall)
+        }
     }
-    BasicTextField(query, onQuery, singleLine = true, textStyle = Ph.mono.copy(fontSize = 14.sp, color = Ph.Text),
-        cursorBrush = SolidColor(Ph.Amber),
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(Ph.Ground).border(1.dp, Ph.LineStrong, RoundedCornerShape(12.dp)).padding(14.dp),
-        decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search providers", style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() } })
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)
+        .border(1.dp, if (query.isEmpty()) Ph.Line else Ph.AmberLine, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text("›", style = Ph.mono.copy(color = Ph.Amber, fontSize = 15.sp, fontWeight = FontWeight.Bold))
+        Box(Modifier.weight(1f).padding(start = 10.dp)) {
+            BasicTextField(query, onQuery, singleLine = true, textStyle = Ph.mono.copy(fontSize = 14.sp, color = Ph.Text),
+                cursorBrush = SolidColor(Ph.Amber), modifier = Modifier.fillMaxWidth(),
+                decorationBox = { inner -> Box { if (query.isEmpty()) Text("search providers", style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() } })
+        }
+        if (query.isNotEmpty()) Box(Modifier.size(22.dp).clip(CircleShape).clickable { onQuery("") }, contentAlignment = Alignment.Center) { PhIcon(PhIcons.Close, Ph.Muted, 14.dp) }
+    }
     when {
         Control.providersError != null -> Text("Couldn't load providers: ${Control.providersError}", style = Ph.body.copy(color = Ph.Red),
             modifier = Modifier.padding(20.dp))
-        providers == null -> Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PulseDot(Ph.Amber); Text("Loading providers from pi…", style = Ph.body.copy(color = Ph.Muted))
-        }
+        providers == null -> Loading("Loading providers from pi…")
         else -> {
             val shown = providers.filter {
                 (when (method) { "oauth" -> it.oauth && it.id != "radius"; "api_key" -> it.apiKey; else -> true }) &&
                     (!logoutMode || it.id in Control.signedIn) &&
                     (query.isBlank() || it.name.contains(query, true) || it.id.contains(query, true))
             }
-            if (shown.isEmpty()) Text(if (logoutMode) "You're not signed in to any provider." else "No provider matches.",
+            if (shown.isEmpty()) Text(if (logoutMode) "You're not signed in to any provider." else "Nothing matches “$query”.",
                 style = Ph.body.copy(color = Ph.Muted), modifier = Modifier.padding(20.dp))
-            LazyColumn(Modifier.heightIn(max = 520.dp)) {
-                items(shown, key = { it.id }) { p -> ProviderRow(p, logoutMode, method ?: "any") }
+            // Signed-in first, then the popular ones, then everything else A→Z.
+            val groups = if (query.isNotBlank() || logoutMode || shown.size < 8) listOf<Pair<String?, List<Control.Provider>>>(null to shown)
+            else {
+                val signed = shown.filter { it.id in Control.signedIn }
+                val popular = shown.filter { it.id !in Control.signedIn && it.id in POPULAR }.sortedBy { POPULAR.indexOf(it.id) }
+                val rest = shown.filter { it !in signed && it !in popular }.sortedBy { it.name.lowercase() }
+                listOf("SIGNED IN" to signed, "POPULAR" to popular, "ALL PROVIDERS · ${rest.size}" to rest).filter { it.second.isNotEmpty() }
+            }
+            LazyColumn(Modifier.heightIn(max = 540.dp)) {
+                groups.forEach { (label, list) ->
+                    if (label != null) item(key = "h-$label") { Section(label, if (label == "SIGNED IN") Ph.Green else Ph.Muted) }
+                    items(list, key = { (label ?: "") + it.id }) { p -> ProviderRow(p, logoutMode, method ?: "any") }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MethodRow(title: String, sub: String, onClick: () -> Unit) = Column(
-    Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Ph.Raised)
-        .border(1.dp, Ph.LineStrong, RoundedCornerShape(14.dp)).clickable { onClick() }.padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(4.dp),
+private fun Section(text: String, color: Color = Ph.Muted) =
+    Text(text, style = Ph.label.copy(color = color), modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp))
+
+@Composable
+private fun Loading(text: String) = Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(10.dp)) { PulseDot(Ph.Amber); Text(text, style = Ph.body.copy(color = Ph.Muted)) }
+
+@Composable
+private fun MethodRow(icon: ImageVector, title: String, sub: String, tag: String? = null, highlight: Boolean = false,
+                      done: Boolean = false, onClick: () -> Unit) = Row(
+    Modifier.padding(horizontal = 20.dp, vertical = 5.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
+        .background(if (highlight) Ph.AmberWash else Ph.Raised)
+        .border(1.dp, if (highlight) Ph.AmberLine else Ph.Line, RoundedCornerShape(16.dp)).clickable { onClick() }.padding(14.dp),
+    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
 ) {
-    Text(title, style = Ph.title)
-    Text(sub, style = Ph.body.copy(fontSize = 12.5.sp, lineHeight = 18.sp, color = Ph.Muted))
+    Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(if (highlight) Ph.Amber else Ph.Ground)
+        .border(1.dp, if (highlight) Ph.Amber else Ph.LineStrong, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+        PhIcon(icon, if (highlight) Ph.AmberInk else Ph.Amber, 20.dp)
+    }
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = Ph.title)
+            tag?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Amber, fontSize = 10.sp)) }
+        }
+        Text(sub, style = Ph.body.copy(fontSize = 12.5.sp, lineHeight = 18.sp, color = Ph.Muted))
+    }
+    if (done) PhIcon(PhIcons.Check, Ph.Green, 18.dp)
+    else PhIcon(PhIcons.Chevron, Ph.Muted, 18.dp, modifier = Modifier.rotate(-90f))
+}
+
+/** A two-letter monogram tile: providers have no logos we can ship, so give each a steady mark. */
+@Composable
+private fun Monogram(p: Control.Provider, size: Int = 38, signedIn: Boolean = false) {
+    val letters = p.name.split(' ', '-', '.').filter { it.isNotBlank() }.let { w ->
+        if (w.size >= 2) "${w[0][0]}${w[1][0]}" else p.name.take(2) }.uppercase()
+    Box(Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.3f).dp)).background(if (signedIn) Ph.Green.copy(alpha = 0.12f) else Ph.Ground)
+        .border(1.dp, if (signedIn) Ph.Green.copy(alpha = 0.45f) else Ph.LineStrong, RoundedCornerShape((size * 0.3f).dp)),
+        contentAlignment = Alignment.Center) {
+        Text(letters, style = Ph.mono.copy(fontSize = (size * 0.34f).sp, fontWeight = FontWeight.SemiBold, color = if (signedIn) Ph.Green else Ph.Amber))
+    }
 }
 
 @Composable
 private fun ProviderRow(p: Control.Provider, logoutMode: Boolean, method: String) {
     val signedIn = p.id in Control.signedIn
-    Column(Modifier.fillMaxWidth().clickable {
+    Row(Modifier.fillMaxWidth().clickable {
         when {
             logoutMode -> Control.logout(p)
             method == "oauth" -> Control.startLogin(p, "oauth")
             method == "api_key" -> Control.startLogin(p, "api_key")
             else -> Control.startLogin(p, if (p.oauth) "oauth" else "api_key")
         }
-    }.padding(horizontal = 20.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (method == "oauth") p.oauthLabel ?: p.name else p.name, style = Ph.title.copy(fontSize = 14.sp),
-                modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (p.subscription && method == "oauth") Badge("subscription", Ph.Amber)
-            if (signedIn) Badge("signed in", Ph.Green)
-            if (logoutMode) Text("log out", style = Ph.monoSmall.copy(color = Ph.Red))
+    }.padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Monogram(p, signedIn = signedIn)
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (method == "oauth") p.oauthLabel ?: p.name else p.name, style = Ph.title.copy(fontSize = 14.5.sp),
+                    modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (p.subscription && method == "oauth") Badge("plan", Ph.Amber)
+            }
+            Text(listOfNotNull(p.id, p.source?.let { "via $it" }, if (signedIn) "signed in" else null).joinToString(" · "),
+                style = Ph.monoSmall.copy(color = if (signedIn) Ph.Green.copy(alpha = 0.8f) else Ph.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(listOfNotNull(p.id, p.source?.let { "via $it" }).joinToString(" · "), style = Ph.monoSmall)
+        when {
+            logoutMode -> Text("log out", style = Ph.mono.copy(color = Ph.Red))
+            signedIn -> PhIcon(PhIcons.Check, Ph.Green, 16.dp)
+            else -> PhIcon(PhIcons.Chevron, Ph.Muted, 16.dp, modifier = Modifier.rotate(-90f))
+        }
     }
 }
 
 @Composable
-private fun Badge(text: String, color: Color) = Text(text, style = Ph.monoSmall.copy(color = color, fontSize = 10.5.sp),
-    modifier = Modifier.border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+private fun Badge(text: String, color: Color) = Text(text, style = Ph.monoSmall.copy(color = color, fontSize = 10.sp),
+    modifier = Modifier.border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
 
 @Composable
 private fun LoginFlow(p: Control.Provider, onBack: () -> Unit) {
@@ -194,75 +298,117 @@ private fun LoginFlow(p: Control.Provider, onBack: () -> Unit) {
     LaunchedEffect(login.authUrl) { login.authUrl?.let { if (openedUrl != it) { openedUrl = it; runCatching { uri.openUri(it) } } } }
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
-        Title(p.name, if (login.authType == "oauth") "Signing in through ${p.oauthLabel ?: "the provider"}" else "API key")
-        login.authUrl?.let { url ->
+        Row(Modifier.padding(start = 12.dp, end = 20.dp, top = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).clickable { if (login.running) Control.cancelLogin(); onBack() }, contentAlignment = Alignment.Center) {
+                PhIcon(PhIcons.Back, Ph.TextSoft, 20.dp)
+            }
+            Monogram(p, 44, signedIn = login.done)
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(p.name, style = Ph.heading.copy(fontSize = 20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (login.authType == "oauth") "signing in with ${p.oauthLabel ?: "your account"}" else "connecting with an API key", style = Ph.monoSmall)
+            }
+        }
+        login.authUrl?.takeIf { !login.done }?.let { url ->
             Card {
-                Text("Finish signing in in your browser", style = Ph.title.copy(fontSize = 14.sp))
-                Text(login.authInstructions ?: "When it redirects back, pi completes the login automatically. If it doesn't, paste the final URL or code below.",
-                    style = Ph.body.copy(fontSize = 13.sp))
+                StepHead("1", "Finish in your browser")
+                Text(login.authInstructions ?: "We opened the sign-in page. Once you approve, Saturn picks it up by itself. If it doesn't, paste the final URL or code below.",
+                    style = Ph.body.copy(fontSize = 13.sp, lineHeight = 20.sp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("Open sign-in page", primary = true) { uri.openUri(url) }
                     Btn("Copy link") { copy(url) }
                 }
             }
         }
-        login.deviceCode?.let { (code, verify) ->
+        login.deviceCode?.takeIf { !login.done }?.let { (code, verify) ->
             Card {
-                Text("Enter this code at ${verify.removePrefix("https://")}", style = Ph.body.copy(fontSize = 13.sp))
-                Text(code, style = Ph.mono.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = Ph.Amber, letterSpacing = 3.sp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Btn("Copy & open", primary = true) { copy(code); uri.openUri(verify) }
-                    Btn("Copy code") { copy(code) }
+                StepHead("1", "Enter this code at ${verify.removePrefix("https://").removeSuffix("/")}")
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground).border(1.dp, Ph.AmberLine, RoundedCornerShape(12.dp))
+                    .clickable { copy(code) }.padding(vertical = 16.dp), horizontalArrangement = Arrangement.Center) {
+                    Text(code, style = Ph.mono.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = Ph.Amber, letterSpacing = 4.sp))
                 }
+                Btn("Copy code & open", primary = true) { copy(code); uri.openUri(verify) }
             }
         }
         login.dialog?.let { DialogStep(it) }
-        if (login.lines.isNotEmpty()) Text(login.lines.takeLast(6).joinToString("\n"), style = Ph.mono.copy(color = Ph.TextSoft),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        if (login.lines.isNotEmpty() && !login.done) Text(login.lines.takeLast(4).joinToString("\n"), style = Ph.monoSmall.copy(color = Ph.Muted),
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp))
         when {
-            login.done -> Card {
-                Text("✓ Signed in to ${p.name}", style = Ph.title.copy(color = Ph.Green))
-                Text("Its models are now available in /model. Idle tasks pick it up on their next message.", style = Ph.body.copy(fontSize = 13.sp))
-                Btn("Done") { onBack() }
+            login.done -> Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(64.dp).clip(CircleShape).background(Ph.Green.copy(alpha = 0.12f)).border(1.dp, Ph.Green.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center) { PhIcon(PhIcons.Check, Ph.Green, 28.dp) }
+                Text("Connected to ${p.name}", style = Ph.heading.copy(fontSize = 19.sp))
+                Text("Its models are in /model now. Running tasks switch on their next message.",
+                    style = Ph.body.copy(fontSize = 13.sp, color = Ph.Muted, textAlign = TextAlign.Center))
+                Box(Modifier.padding(top = 6.dp).fillMaxWidth()) { Btn("Done", primary = true, wide = true) { onBack() } }
             }
-            login.error != null -> Card {
-                Text("Sign-in didn't complete", style = Ph.title.copy(color = Ph.Red))
+            login.error != null -> Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .background(Ph.RedWash).border(1.dp, Ph.Red.copy(alpha = 0.35f), RoundedCornerShape(14.dp)).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PhIcon(PhIcons.Warning, Ph.Red, 16.dp); Text("Sign-in didn't finish", style = Ph.title.copy(color = Ph.Red))
+                }
                 Text(login.error!!, style = Ph.mono.copy(color = Ph.TextSoft))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("Try again", primary = true) { Control.startLogin(p, login.authType) }
                     Btn("Back") { onBack() }
                 }
             }
-            login.running && login.dialog == null && login.authUrl == null && login.deviceCode == null ->
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PulseDot(Ph.Amber); Text("Waiting for pi…", style = Ph.body.copy(color = Ph.Muted))
-                }
+            login.running && login.dialog == null -> Row(Modifier.padding(horizontal = 24.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PulseDot(Ph.Amber)
+                Text(if (login.authUrl != null || login.deviceCode != null) "Waiting for you to approve…" else "Starting…", style = Ph.mono.copy(color = Ph.TextSoft))
+            }
         }
-        if (login.running) Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { Btn("Cancel", color = Ph.Red) { Control.cancelLogin(); onBack() } }
+        if (login.running) Text("Cancel", style = Ph.mono.copy(color = Ph.Red), modifier = Modifier.padding(horizontal = 12.dp)
+            .clip(RoundedCornerShape(8.dp)).clickable { Control.cancelLogin(); onBack() }.padding(12.dp))
     }
+}
+
+@Composable
+private fun StepHead(n: String, text: String) = Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Box(Modifier.size(22.dp).clip(CircleShape).background(Ph.Amber), contentAlignment = Alignment.Center) {
+        Text(n, style = Ph.monoSmall.copy(color = Ph.AmberInk, fontWeight = FontWeight.Bold))
+    }
+    Text(text, style = Ph.title.copy(fontSize = 14.5.sp))
 }
 
 @Composable
 private fun DialogStep(d: Control.Dialog) {
     var value by remember(d.requestId) { mutableStateOf("") }
     Card {
-        Text(d.title, style = Ph.title.copy(fontSize = 14.sp))
+        StepHead(if (Control.login.authUrl != null || Control.login.deviceCode != null) "2" else "1", d.title)
         if (d.method == "select") d.options.forEach { o ->
-            Text(o, style = Ph.mono.copy(color = Ph.Text), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                .border(1.dp, Ph.LineStrong, RoundedCornerShape(10.dp)).clickable { Control.answer(o) }.padding(horizontal = 12.dp, vertical = 12.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)
+                .border(1.dp, Ph.LineStrong, RoundedCornerShape(12.dp)).clickable { Control.answer(o) }.padding(horizontal = 14.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(o, style = Ph.mono.copy(color = Ph.Text, fontSize = 13.sp), modifier = Modifier.weight(1f))
+                PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp, modifier = Modifier.rotate(-90f))
+            }
         } else {
             val secret = d.kind == "secret"
-            BasicTextField(value, { value = it }, singleLine = true, textStyle = Ph.mono.copy(fontSize = 14.sp, color = Ph.Text),
-                cursorBrush = SolidColor(Ph.Amber),
-                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Ph.Ground)
-                    .border(1.dp, Ph.LineStrong, RoundedCornerShape(10.dp)).padding(12.dp),
-                decorationBox = { inner -> Box { if (value.isEmpty()) Text(d.placeholder.ifBlank { if (d.kind == "manual_code") "Paste redirect URL or code" else "" }, style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() } })
-            if (secret) Text("Saved only on this phone, in Saturn's private storage.", style = Ph.monoSmall.copy(color = Ph.Muted))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Btn("Continue", primary = true, enabled = value.isNotBlank()) { Control.answer(value.trim()) }
+            var reveal by remember(d.requestId) { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)
+                .border(1.dp, if (value.isEmpty()) Ph.LineStrong else Ph.AmberLine, RoundedCornerShape(12.dp)).padding(start = 14.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(value, { value = it }, singleLine = true, textStyle = Ph.mono.copy(fontSize = 14.sp, color = Ph.Text),
+                    cursorBrush = SolidColor(Ph.Amber),
+                    visualTransformation = if (secret && !reveal) PasswordVisualTransformation() else VisualTransformation.None,
+                    keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri),
+                    modifier = Modifier.weight(1f).padding(vertical = 14.dp),
+                    decorationBox = { inner -> Box { if (value.isEmpty()) Text(d.placeholder.ifBlank { if (d.kind == "manual_code") "Paste redirect URL or code" else if (secret) "Paste your key" else "" }, style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() } })
+                if (secret && value.isNotEmpty()) Text(if (reveal) "hide" else "show", style = Ph.monoSmall.copy(color = Ph.Amber),
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { reveal = !reveal }.padding(8.dp))
+                val paste = LocalContext.current
+                if (value.isEmpty()) Text("paste", style = Ph.monoSmall.copy(color = Ph.Amber), modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                    paste.getSystemService(ClipboardManager::class.java).primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(paste)
+                        ?.toString()?.trim()?.let { value = it }
+                }.padding(8.dp))
             }
+            if (secret) Row(verticalAlignment = Alignment.CenterVertically) {
+                PhIcon(PhIcons.Lock, Ph.Muted, 12.dp); Text("  Saved only on this phone, in Saturn's private storage", style = Ph.monoSmall)
+            }
+            Btn("Continue", primary = true, enabled = value.isNotBlank(), wide = true) { Control.answer(value.trim()) }
         }
     }
 }

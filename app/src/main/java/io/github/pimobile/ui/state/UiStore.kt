@@ -489,6 +489,10 @@ object UiStore : TaskManager.Listener {
     /** Whether you've ever tapped Saturn on home (until then its status line hints that you can). */
     val saturnKnown: Boolean get() = prefs.getBoolean("saturn_tapped", false)
     fun markSaturnTapped() { prefs.edit().putBoolean("saturn_tapped", true).apply() }
+    /** Times the chat box's hold actions were used; the hint stops after a few. */
+    var holdUses: Int
+        get() = prefs.getInt("hold_uses", 0)
+        set(v) { prefs.edit().putInt("hold_uses", v).apply() }
     /** Home's page (0 tasks, 1 routines): it reopens where you left it. */
     var homePage: Int
         get() = prefs.getInt("home_page", 0)

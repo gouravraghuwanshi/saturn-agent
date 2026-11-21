@@ -12,6 +12,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -172,6 +173,23 @@ fun Composer(
     // The wave: starts with the "ting", swells when your finger is on an option.
     val wave by androidx.compose.animation.core.animateFloatAsState(when { active && hoverIdx >= 0 -> 1f; active -> 0.6f; else -> 0f },
         androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f), label = "wave")
+    // Now and then, while the box is idle: "hold to compact or share" and a tiny wobble.
+    var hint by remember { mutableStateOf(false) }
+    val nudge = remember { androidx.compose.animation.core.Animatable(0f) }
+    val hintText = remember(pulls.map { it.label }) { "hold to " + pulls.joinToString(" or ") { it.label.lowercase() } }
+    androidx.compose.runtime.LaunchedEffect(pulls.isNotEmpty(), value.text.isEmpty(), inputFocused) {
+        hint = false
+        if (pulls.isEmpty() || value.text.isNotEmpty() || inputFocused) return@LaunchedEffect
+        kotlinx.coroutines.delay(6000)
+        while (UiStore.holdUses < 3) {
+            hint = true
+            nudge.snapTo(0f)
+            nudge.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.3f, stiffness = 420f), initialVelocity = 4f)
+            kotlinx.coroutines.delay(3200)
+            hint = false
+            kotlinx.coroutines.delay(20000)
+        }
+    }
     var clock by remember { mutableStateOf(0f) }
     androidx.compose.runtime.LaunchedEffect(wave > 0.001f || kotlin.math.abs(stretch) > 0.5f) {
         if (wave <= 0.001f && kotlin.math.abs(stretch) <= 0.5f) return@LaunchedEffect
@@ -333,14 +351,14 @@ fun Composer(
                                         else (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE else android.view.HapticFeedbackConstants.CLOCK_TICK))
                                 }
                             }
-                            if (hoverIdx >= 0) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); pulls[hoverIdx].onRelease() }
+                            if (hoverIdx >= 0) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); UiStore.holdUses += 1; pulls[hoverIdx].onRelease() }
                         } finally {
                             ticks.cancel(); charging = false; active = false; hoverIdx = -1; stretchTarget = 0f
                         }
                     }
                 })
                 // Charging: the box sinks a touch, as if pressed in.
-                .graphicsLayer { scaleX = 1f - 0.016f * charge; scaleY = 1f - 0.04f * charge
+                .graphicsLayer { scaleX = 1f - 0.016f * charge + 0.006f * nudge.value; scaleY = 1f - 0.04f * charge - 0.02f * nudge.value
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) }
                 .shadow(28.dp, RoundedCornerShape(22.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
                 .drawWithContent {
@@ -387,8 +405,13 @@ fun Composer(
                     .semantics { contentDescription = placeholder },
                 decorationBox = { inner ->
                     Box {
-                        if (text.isEmpty()) Text(if (dictation.listening) "Listening…" else placeholder,
-                            style = Ph.body.copy(fontSize = 16.sp, color = if (dictation.listening) Ph.Amber else Ph.Muted))
+                        if (text.isEmpty()) androidx.compose.animation.AnimatedContent(
+                            when { dictation.listening -> "Listening…"; hint -> hintText; else -> placeholder }, label = "placeholder",
+                            transitionSpec = { (fadeIn(androidx.compose.animation.core.tween(380)) + slideInVertically { it / 3 }) togetherWith
+                                (fadeOut(androidx.compose.animation.core.tween(240)) + slideOutVertically { -it / 3 }) }) { ph ->
+                            Text(ph, maxLines = 1, style = Ph.body.copy(fontSize = 16.sp,
+                                color = if (dictation.listening || ph == hintText) Ph.Amber.copy(alpha = if (ph == hintText) 0.85f else 1f) else Ph.Muted))
+                        }
                         inner()
                     }
                 },

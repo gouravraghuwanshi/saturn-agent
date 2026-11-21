@@ -37,6 +37,8 @@ object PhIcons {
     val Settings = stroke("M4 7h10M18 7h2M4 17h4M12 17h8", circle(16f, 7f, 2f), circle(10f, 17f, 2f), width = 1.7f)
     val Plus = stroke("M12 5v14M5 12h14")
     val Chart = stroke("M5 20v-7M12 20V5M19 20v-11M3 20h18")
+    /** Two arrows squeezing a line: compact. */
+    val Compact = stroke("M4 12h16", "M12 3v6M9 6l3 3 3-3", "M12 21v-6M9 18l3-3 3 3")
     val Folder = stroke("M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
     val Send = stroke("M12 19V5M5 12l7-7 7 7", width = 2.2f)
     val Stop = fill("M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z")

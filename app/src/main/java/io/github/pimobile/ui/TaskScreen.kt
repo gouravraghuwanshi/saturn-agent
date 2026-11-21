@@ -498,6 +498,10 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         ?.let { a -> (0 until a.length()).map { a.getString(it) } }
                     Composer(
                         contextFill = t.contextWindow.takeIf { it > 0 && t.contextTokens > 0 }?.let { t.contextTokens / it.toFloat() },
+                        pull = if (!running && t.contextTokens > 0) PullAction(PhIcons.Compact, "Keep pulling to compact", "Release to compact",
+                            note = t.contextWindow.takeIf { it > 0 }?.let { w -> "context ${(t.contextTokens * 100L / w)}% full" }) {
+                            UiStore.rpc(t, "compact")
+                        } else null,
                         thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l -> UiStore.setThinking(t, l) } },
                         value = input, onValue = { input = it },
                         placeholder = "Ask Saturn · task #${t.task.number}…",

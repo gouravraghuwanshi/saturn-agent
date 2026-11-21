@@ -1,6 +1,8 @@
 package io.github.pimobile.ui
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -134,7 +136,17 @@ fun Composer(
     thinking: ThinkingControl? = null,
     /** How full the model's context is (0..1), drawn as a ring round the mic/send button; null hides it. */
     contextFill: Float? = null,
+    /** Hold the box and pull it up to do this (e.g. compact), like the other pull actions. */
+    pull: PullAction? = null,
 ) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val pullMax = with(density) { 220.dp.toPx() }
+    val pullArm = with(density) { 170.dp.toPx() }
+    val liftAtArm = pullMax * (1f - kotlin.math.exp(-pullArm / pullMax))
+    var lift by remember { mutableStateOf(0f) }
+    var armed by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var thinkOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -199,10 +211,85 @@ fun Composer(
                 }
             }
         }
+        Box {
+        // Revealed under the box as it rises: the same panel as the chat's pull-up.
+        val shown = -lift
+        if (pull != null && shown > 1f) {
+            val progress = (shown / liftAtArm).coerceIn(0f, 1f)
+            val shape = RoundedCornerShape(22.dp)
+            Box(Modifier.matchParentSize().layout { m, c ->
+                val h = shown.toInt().coerceAtLeast(1)
+                val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(c.maxWidth, h))
+                layout(c.maxWidth, c.maxHeight) { p.place(0, c.maxHeight - h) }
+            }) {
+                Box(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = 2.dp).clip(shape)
+                    .background(if (armed) Ph.AmberWash else Ph.Surface).border(1.dp, if (armed) Ph.AmberLine else Ph.Line, shape)) {
+                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(progress)
+                        .background(Ph.Amber.copy(alpha = if (armed) 0.16f else 0.08f)))
+                    val pop by androidx.compose.animation.core.animateFloatAsState(if (armed) 1.2f else 1f,
+                        androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "pullPop")
+                    Column(Modifier.align(Alignment.Center).graphicsLayer { alpha = (progress * 2.5f).coerceAtMost(1f) },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(44.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(RoundedCornerShape(22.dp))
+                            .background(if (armed) Ph.Amber else Ph.Chip), contentAlignment = Alignment.Center) {
+                            PhIcon(pull.icon, if (armed) Ph.AmberInk else Ph.Amber, 20.dp)
+                        }
+                        Text(if (armed) pull.ready else pull.hint, style = Ph.mono.copy(color = if (armed) Ph.Amber else Ph.TextSoft))
+                        pull.note?.let { Text(it, style = Ph.monoSmall) }
+                    }
+                }
+            }
+        }
         Column(
             Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                .graphicsLayer { translationY = lift }
+                .then(if (pull == null) Modifier else Modifier.pointerInput(pull) {
+                    // Pull the box up (vertical, upward): it lifts with weight; past the line it arms.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false,
+                            pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        var dx = 0f; var dy = 0f; var locked = false
+                        val slop = viewConfiguration.touchSlop
+                        while (true) {
+                            val ev = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!ch.pressed) break
+                            val d = ch.position - ch.previousPosition
+                            dx += d.x; dy += d.y
+                            if (!locked) {
+                                if (kotlin.math.abs(dx) > slop * 1.5f && kotlin.math.abs(dx) > kotlin.math.abs(dy)) return@awaitEachGesture
+                                if (dy < -slop && kotlin.math.abs(dy) > 1.5f * kotlin.math.abs(dx)) {
+                                    locked = true; dy = 0f
+                                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                                } else continue
+                            }
+                            ch.consume()
+                            val pulled = (-dy).coerceAtLeast(0f)
+                            lift = -pullMax * (1f - kotlin.math.exp(-pulled / pullMax))
+                            val now = pulled >= pullArm
+                            if (now != armed) {
+                                armed = now
+                                view.performHapticFeedback(if (now) (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                                    else (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE else android.view.HapticFeedbackConstants.CLOCK_TICK))
+                            }
+                        }
+                        if (locked) {
+                            if (armed) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); pull.onRelease() }
+                            armed = false
+                            val from = lift
+                            scope.launch { androidx.compose.animation.core.animate(from, 0f,
+                                animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 380f)) { v, _ -> lift = v } }
+                        }
+                    }
+                })
                 .shadow(28.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black, spotColor = Color.Black)
                 .clip(RoundedCornerShape(22.dp)).background(Ph.Raised)
+                .drawBehind {
+                    // How full the context is: a faint wash filling the box from the left.
+                    val f = (contextFill ?: 0f).coerceIn(0f, 1f)
+                    if (f > 0.003f) drawRect(Ph.Text.copy(alpha = if (f >= 0.9f) 0.085f else 0.05f),
+                        size = androidx.compose.ui.geometry.Size(size.width * f, size.height))
+                }
                 .border(1.dp, if (showPalette) accent else Ph.LineStrong, RoundedCornerShape(22.dp))
                 .pointerInput(Unit) { detectTapGestures { focus.requestFocus(); keyboard?.show() } }
                 .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 10.dp)
@@ -218,8 +305,8 @@ fun Composer(
                 value = value, onValueChange = onValue,
                 textStyle = (if (text.startsWith("/")) Ph.mono.copy(fontSize = 16.sp) else Ph.body.copy(fontSize = 16.sp)).copy(color = Ph.Text),
                 cursorBrush = SolidColor(accent),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send() }),
+                // Enter makes a new line; sending is the round button's job.
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
                 maxLines = 6,
                 modifier = Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 12.dp).focusRequester(focus)
                     .semantics { contentDescription = placeholder },
@@ -246,12 +333,11 @@ fun Composer(
                     extra()
                 }
                 // One round button: the mic while the box is empty, Send once there's something to send.
-                ContextRing(if (dictation.listening) null else contextFill) {
-                    if (dictation.listening || (text.isBlank() && attachments.isEmpty())) MicButton(dictation) {
+                if (dictation.listening || (text.isBlank() && attachments.isEmpty())) MicButton(dictation) {
                         if (dictation.listening) dictation.stop() else startDictation()
                     } else SendButton(enabled = true, color = accent) { send() }
-                }
             }
+        }
         }
     }
 }
@@ -555,24 +641,6 @@ private fun ThinkingSlider(c: ThinkingControl, modifier: Modifier, onDone: () ->
     }
 }
 
-
-/**
- * A hairline arc round the round button showing how much of the model's
- * context this chat uses: quiet grey, amber past 70%, red past 90%.
- */
-@Composable
-private fun ContextRing(fill: Float?, content: @Composable () -> Unit) {
-    val f by androidx.compose.animation.core.animateFloatAsState((fill ?: 0f).coerceIn(0f, 1f),
-        androidx.compose.animation.core.tween(600), label = "ctx")
-    val color = when { f >= 0.9f -> Ph.Red; f >= 0.7f -> Ph.Amber; else -> Ph.TextSoft.copy(alpha = 0.55f) }
-    Box(Modifier.size(52.dp).semantics { if (fill != null) contentDescription = "Context ${(f * 100).toInt()}% full" }
-        .drawBehind {
-            if (fill == null) return@drawBehind
-            val w = 2.dp.toPx(); val inset = w / 2f
-            val arc = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
-            val tl = androidx.compose.ui.geometry.Offset(inset, inset)
-            drawArc(Ph.Line, 0f, 360f, false, tl, arc, style = androidx.compose.ui.graphics.drawscope.Stroke(w))
-            if (f > 0.005f) drawArc(color, -90f, 360f * f, false, tl, arc,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-        }, contentAlignment = Alignment.Center) { content() }
-}
+/** A pull-up action on the composer: what it does, and what the panel says before and at the line. */
+class PullAction(val icon: androidx.compose.ui.graphics.vector.ImageVector, val hint: String, val ready: String,
+                 val note: String? = null, val onRelease: () -> Unit)

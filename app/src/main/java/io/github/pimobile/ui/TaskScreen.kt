@@ -107,7 +107,13 @@ private fun blocks(items: List<Item>): List<Block> {
     val out = mutableListOf<Block>()
     var i = 0
     while (i < items.size) {
-        if (items[i] !is Item.Tool && items[i] !is Item.Assistant) { out += Block.Single(items[i]); i++; continue }
+        if (items[i] !is Item.Tool && items[i] !is Item.Assistant) {
+            // Retries in a row: only the latest one is worth a line.
+            val retry = (items[i] as? Item.Notice)?.text?.startsWith("Retrying (") == true
+            val nextRetry = (items.getOrNull(i + 1) as? Item.Notice)?.text?.startsWith("Retrying (") == true
+            if (!(retry && nextRetry)) out += Block.Single(items[i])
+            i++; continue
+        }
         var j = i
         while (j < items.size && (items[j] is Item.Tool || items[j] is Item.Assistant)) j++
         val run = items.subList(i, j)
@@ -884,6 +890,7 @@ private fun Row1(t: TaskUi, item: Item, hideThinking: Boolean = false, latest: B
             if (item.text.isNotBlank() && !item.streaming && endOfTurn(t, item)) ReplyActions(t, item)
         }
         is Item.Notice -> if (item.error) ErrorCard(t, item.text, actionable = latest && !t.status.let { it == Status.RUNNING || it == Status.STARTING }, onSheet)
+            else if (item.text.startsWith("Retrying (")) RetryLine(item.text)
             else Text(item.text, style = Ph.mono.copy(color = Ph.Muted))
         is Item.Dialog -> DialogCard(t, item)
         is Item.Tool -> ToolPanel(listOf(item))
@@ -1086,6 +1093,8 @@ private fun classifyError(raw: String): ErrorKind {
             ErrorKind("Model unavailable", "That model isn't available right now. Pick another one.", listOf("model", "retry"))
         has("timeout", "timed out", "econn", "network", "fetch failed", "socket", "enotfound", "eai_again", "offline") ->
             ErrorKind("Connection dropped", "Saturn couldn't reach the AI. Check your internet and try again.", listOf("retry"))
+        has("capacity", "resource_exhausted", "model_capacity") ->
+            ErrorKind("Model is busy", "The provider has no room for this model right now. Saturn retries by itself; you can also switch models.", listOf("retry", "model"))
         has("500", "502", "503", "529", "overloaded", "server error", "internal error", "bad gateway", "unavailable") ->
             ErrorKind("Provider is having trouble", "The AI service is overloaded or down for a moment. Try again, or switch models.", listOf("retry", "model"))
         else -> ErrorKind("Something went wrong", "The last step didn't finish. You can try it again.", listOf("retry"))
@@ -1146,3 +1155,28 @@ internal fun displayTitle(title: String): String =
     if (title.startsWith("http://") || title.startsWith("https://"))
         runCatching { java.net.URI(title.trim().substringBefore(' ')).host?.removePrefix("www.") }.getOrNull() ?: title
     else title
+
+
+/** pi retrying after a provider error: one quiet line ("↻ Retrying 2/3 · Rate limited"), raw text behind details. */
+@Composable
+private fun RetryLine(raw: String) {
+    val count = raw.substringAfter("Retrying (").substringBefore(")")
+    val why = raw.substringAfter("): ", "")
+    val k = remember(why) { classifyError(why) }
+    var details by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PhIcon(PhIcons.Retry, Ph.Amber, 13.dp)
+            Text("Retrying $count", style = Ph.mono.copy(color = Ph.TextSoft))
+            Text("· " + k.title, style = Ph.mono.copy(color = Ph.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (why.isNotBlank()) Text(if (details) "hide" else "details", style = Ph.monoSmall,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { details = !details }.padding(horizontal = 6.dp, vertical = 3.dp))
+        }
+        AnimatedVisibility(details) {
+            SelectionContainer {
+                Text(why.trim(), style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.Muted), modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp)).background(Ph.Ground).padding(10.dp))
+            }
+        }
+    }
+}

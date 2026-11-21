@@ -112,8 +112,10 @@ fun LoginSheet(logoutMode: Boolean = false, initialQuery: String = "", onDismiss
         val p = login.provider
         AnimatedContent(p != null && (login.running || login.done || login.error != null), label = "login",
             transitionSpec = { (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (targetState) it / 6 else -it / 6 }) togetherWith fadeOut(tween(140)) }) { flow ->
-            if (flow && p != null) LoginFlow(p, onBack = { login.reset(); login.provider = null })
-            else ProviderList(logoutMode, query, { query = it })
+            Column(Modifier.fillMaxWidth()) {
+                if (flow && p != null) LoginFlow(p, onBack = { login.reset(); login.provider = null })
+                else ProviderList(logoutMode, query, { query = it })
+            }
         }
     }
 }
@@ -126,38 +128,19 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
     val radius = providers?.firstOrNull { it.id == "radius" }
 
     if (method == null) {
-        Column(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            MiniSaturn(spinning = providers == null, needsYou = false, modifier = Modifier.width(118.dp))
-            Text("Connect a model", style = Ph.heading, modifier = Modifier.padding(top = 6.dp))
-            Text("Saturn thinks with the AI you choose. Bring a plan you already pay for, or a key.",
-                style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp, textAlign = TextAlign.Center),
-                modifier = Modifier.padding(horizontal = 36.dp, vertical = 4.dp))
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 10.dp)) {
+            Text("Log in", style = Ph.heading)
+            Text("Choose how Saturn connects to an AI.", style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp))
         }
-        val signed = providers?.filter { it.id in Control.signedIn }.orEmpty()
-        if (signed.isNotEmpty()) {
-            Section("CONNECTED", Ph.Green)
-            Row(Modifier.padding(horizontal = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                signed.forEach { s ->
-                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Ph.Raised).border(1.dp, Ph.Green.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(Ph.Green))
-                        Text(s.name, style = Ph.mono.copy(color = Ph.Text))
-                    }
-                }
-            }
+        MethodRow(PhIcons.Key, "API key", "OpenRouter, Anthropic, OpenAI, Gemini, Groq and 40 more") { method = "api_key" }
+        MethodRow(PhIcons.Sparkle, "Subscription", "Free OpenRouter, Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot…",
+            tag = "free option") { method = "oauth" }
+        when {
+            radius != null -> MethodRow(PhIcons.Globe, radius.name, "One account for many models", done = radius.id in Control.signedIn) {
+                Control.startLogin(radius, "oauth") }
+            providers == null && Control.providersError == null -> Loading("Loading providers…")
         }
-        Section("HOW TO CONNECT")
-        MethodRow(PhIcons.Sparkle, "Use a subscription", "Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot… signs in through your browser",
-            tag = "no key needed", highlight = true) { method = "oauth" }
-        MethodRow(PhIcons.Key, "Paste an API key", "OpenRouter, Anthropic, OpenAI, Gemini, Groq and 40 more") { method = "api_key" }
-        if (radius != null) MethodRow(PhIcons.Globe, "Sign in with ${radius.name}", "One account for many models",
-            done = radius.id in Control.signedIn) { Control.startLogin(radius, "oauth") }
-        if (providers == null && Control.providersError == null) Loading("Loading providers from pi…")
         Control.providersError?.let { Text("Couldn't load providers: $it", style = Ph.body.copy(color = Ph.Red), modifier = Modifier.padding(20.dp)) }
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            PhIcon(PhIcons.Lock, Ph.Muted, 13.dp)
-            Text("  Keys stay on this phone, encrypted", style = Ph.monoSmall)
-        }
         return
     }
 
@@ -202,7 +185,19 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
                 val rest = shown.filter { it !in signed && it !in popular }.sortedBy { it.name.lowercase() }
                 listOf("SIGNED IN" to signed, "POPULAR" to popular, "ALL PROVIDERS · ${rest.size}" to rest).filter { it.second.isNotEmpty() }
             }
+            val openrouter = providers.firstOrNull { it.id == "openrouter" }
             LazyColumn(Modifier.heightIn(max = 540.dp)) {
+                if (method == "oauth" && query.isBlank() && openrouter != null) item(key = "free") {
+                    Column {
+                        Section("RECOMMENDED", Ph.Amber)
+                        MethodRow(PhIcons.Sparkle, "Free with OpenRouter", "Make a free key in about a minute. Saturn uses free models only, so you're never charged.",
+                            tag = "free", highlight = true, done = openrouter.id in Control.signedIn) {
+                            Control.login.pickFree = true
+                            Control.startLogin(openrouter, "api_key")
+                        }
+                        if (groups.firstOrNull()?.first == null) Section("SUBSCRIPTIONS")
+                    }
+                }
                 groups.forEach { (label, list) ->
                     if (label != null) item(key = "h-$label") { Section(label, if (label == "SIGNED IN") Ph.Green else Ph.Muted) }
                     items(list, key = { (label ?: "") + it.id }) { p -> ProviderRow(p, logoutMode, method ?: "any") }
@@ -259,6 +254,7 @@ private fun Monogram(p: Control.Provider, size: Int = 38, signedIn: Boolean = fa
 private fun ProviderRow(p: Control.Provider, logoutMode: Boolean, method: String) {
     val signedIn = p.id in Control.signedIn
     Row(Modifier.fillMaxWidth().clickable {
+        Control.login.pickFree = false
         when {
             logoutMode -> Control.logout(p)
             method == "oauth" -> Control.startLogin(p, "oauth")
@@ -295,6 +291,9 @@ private fun LoginFlow(p: Control.Provider, onBack: () -> Unit) {
     val copy = copier()
     var openedUrl by remember { mutableStateOf<String?>(null) }
     // Open the sign-in page automatically; pi's local callback server finishes the login.
+    LaunchedEffect(login.done) {
+        if (login.done && login.pickFree && p.id == "openrouter") { UiStore.setModel(null, "openrouter", Onboarding.FREE_MODEL); login.pickFree = false }
+    }
     LaunchedEffect(login.authUrl) { login.authUrl?.let { if (openedUrl != it) { openedUrl = it; runCatching { uri.openUri(it) } } } }
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -378,6 +377,9 @@ private fun DialogStep(d: Control.Dialog) {
     var value by remember(d.requestId) { mutableStateOf("") }
     Card {
         StepHead(if (Control.login.authUrl != null || Control.login.deviceCode != null) "2" else "1", d.title)
+        val uri = LocalUriHandler.current
+        if (Control.login.pickFree && Control.login.provider?.id == "openrouter" && d.kind == "secret")
+            Btn("Get a free key at openrouter.ai", wide = true) { runCatching { uri.openUri("https://openrouter.ai/keys") } }
         if (d.method == "select") d.options.forEach { o ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)
                 .border(1.dp, Ph.LineStrong, RoundedCornerShape(12.dp)).clickable { Control.answer(o) }.padding(horizontal = 14.dp, vertical = 13.dp),

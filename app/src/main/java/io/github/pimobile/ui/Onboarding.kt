@@ -117,43 +117,12 @@ object Onboarding {
 
     @Composable
     private fun Connect(onSheet: (String) -> Unit, next: () -> Unit) {
-        val uri = LocalUriHandler.current
-        var key by remember { mutableStateOf("") }
-        var open by remember { mutableStateOf(true) }
-        Text("Pick an AI to power it", style = Ph.heading.copy(fontSize = 26.sp))
-        Text("Saturn works with most AI providers. You can change this any time.", style = Ph.body)
-
-        Card(highlight = true, onClick = { open = !open }) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Free, with OpenRouter", style = Ph.title.copy(fontSize = 16.sp), modifier = Modifier.weight(1f))
-                Text("recommended", style = Ph.monoSmall.copy(color = Ph.Amber))
-            }
-            Text("Make a free account and key (about a minute), paste it here, and Saturn uses free models only.",
-                style = Ph.body.copy(fontSize = 13.sp))
-            if (open) {
-                Ghost("1 · Get a free key at openrouter.ai") { runCatching { uri.openUri("https://openrouter.ai/keys") } }
-                BasicTextField(key, { key = it.trim() }, singleLine = true, textStyle = Ph.mono.copy(fontSize = 14.sp, color = Ph.Text),
-                    cursorBrush = SolidColor(Ph.Amber), visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)
-                        .border(1.dp, Ph.LineStrong, RoundedCornerShape(12.dp)).padding(14.dp),
-                    decorationBox = { inner -> if (key.isEmpty()) Text("2 · Paste it here (sk-or-…)", style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Muted)); inner() })
-                Primary("Save and continue", enabled = key.length > 10) {
-                    UiStore.saveApiKey("openrouter", key)
-                    // pi's OpenRouter catalog id for the free router is literally "openrouter/free".
-                    UiStore.setModel(null, "openrouter", FREE_MODEL)
-                    next()
-                }
-                Text("Stored encrypted on this phone. Free models can be slower; pick any model later in /model.", style = Ph.monoSmall)
-            }
-        }
-        Card(onClick = { onSheet("login") }) {
-            Text("Use a subscription you already have", style = Ph.title.copy(fontSize = 16.sp))
-            Text("ChatGPT Plus/Pro, Claude, GitHub Copilot and more. Signs in through your browser.", style = Ph.body.copy(fontSize = 13.sp))
-        }
-        Card(onClick = { onSheet("login") }) {
-            Text("I have an API key", style = Ph.title.copy(fontSize = 16.sp))
-            Text("Anthropic, OpenAI, Gemini, DeepSeek, Groq, xAI, Mistral…", style = Ph.body.copy(fontSize = 13.sp))
-        }
+        Text("Connect an AI", style = Ph.heading.copy(fontSize = 26.sp))
+        Text("Saturn needs an AI to think with. Use an API key, a subscription you already have, or a free OpenRouter account.",
+            style = Ph.body.copy(fontSize = 15.sp, lineHeight = 23.sp))
+        Spacer(Modifier.height(10.dp))
+        Primary("Log in") { onSheet("login") }
+        Text("Not sure? Pick Subscription → Free with OpenRouter. It costs nothing.", style = Ph.monoSmall)
     }
 
     @Composable

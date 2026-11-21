@@ -51,6 +51,8 @@ object Control {
         var dialog by mutableStateOf<Dialog?>(null)
         val lines = mutableStateListOf<String>()
         internal var pendingKind = "text"
+        /** Picked "Free with OpenRouter": switch to the free model once the key is saved. */
+        var pickFree = false
         fun reset() {
             running = false; done = false; error = null; authUrl = null; authInstructions = null
             deviceCode = null; dialog = null; lines.clear(); pendingKind = "text"

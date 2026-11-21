@@ -154,17 +154,27 @@ fun Composer(
     var boxW by remember { mutableStateOf(1f) }
     var inputFocused by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val charge by androidx.compose.animation.core.animateFloatAsState(if (charging || active) 1f else 0f,
+    // Pressed in while charging; at the ting it springs back out and wobbles like jelly.
+    val charge by androidx.compose.animation.core.animateFloatAsState(if (charging) 1f else 0f,
         if (charging) androidx.compose.animation.core.tween(holdMs.toInt(), easing = androidx.compose.animation.core.LinearEasing)
-        else androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 500f), label = "charge")
+        else androidx.compose.animation.core.spring(dampingRatio = 0.28f, stiffness = 420f), label = "charge")
+    // The top edge stretches toward your finger (taffy), and snaps back with a jiggle.
+    var stretchTarget by remember { mutableStateOf(0f) }
+    var stretchXTarget by remember { mutableStateOf(0f) }
+    val stretch by androidx.compose.animation.core.animateFloatAsState(stretchTarget,
+        if (active) androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 520f)
+        else androidx.compose.animation.core.spring(dampingRatio = 0.3f, stiffness = 380f), label = "stretch")
+    val stretchX by androidx.compose.animation.core.animateFloatAsState(stretchXTarget,
+        androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 420f), label = "stretchX")
+    val stretchMax = with(density) { 64.dp.toPx() }
     val barIn by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else 0f,
         androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 700f), label = "barIn")
     // The wave: starts with the "ting", swells when your finger is on an option.
     val wave by androidx.compose.animation.core.animateFloatAsState(when { active && hoverIdx >= 0 -> 1f; active -> 0.6f; else -> 0f },
         androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f), label = "wave")
     var clock by remember { mutableStateOf(0f) }
-    androidx.compose.runtime.LaunchedEffect(wave > 0.001f) {
-        if (wave <= 0.001f) return@LaunchedEffect
+    androidx.compose.runtime.LaunchedEffect(wave > 0.001f || kotlin.math.abs(stretch) > 0.5f) {
+        if (wave <= 0.001f && kotlin.math.abs(stretch) <= 0.5f) return@LaunchedEffect
         val start = androidx.compose.runtime.withFrameNanos { it }
         while (true) androidx.compose.runtime.withFrameNanos { clock = (it - start) / 1e9f }
     }
@@ -279,6 +289,7 @@ fun Composer(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                         pressAt = down.position
+                        stretchXTarget = down.position.x
                         val slop = viewConfiguration.touchSlop
                         var moved = androidx.compose.ui.geometry.Offset.Zero
                         charging = true
@@ -308,6 +319,9 @@ fun Composer(
                                 ch.consume()
                                 if (!ch.pressed) break
                                 pressAt = ch.position
+                                val up = (-ch.position.y).coerceAtLeast(0f)
+                                stretchTarget = stretchMax * (1f - kotlin.math.exp(-up * 0.6f / stretchMax))
+                                stretchXTarget = ch.position.x.coerceIn(0f, boxW)
                                 val slack = with(density) { 22.dp.toPx() }
                                 val hit = pulls.indices.firstOrNull { i ->
                                     val r = optionRect(i)
@@ -321,17 +335,18 @@ fun Composer(
                             }
                             if (hoverIdx >= 0) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); pulls[hoverIdx].onRelease() }
                         } finally {
-                            ticks.cancel(); charging = false; active = false; hoverIdx = -1
+                            ticks.cancel(); charging = false; active = false; hoverIdx = -1; stretchTarget = 0f
                         }
                     }
                 })
                 // Charging: the box sinks a touch, as if pressed in.
-                .graphicsLayer { val k = 1f - 0.018f * charge; scaleX = k; scaleY = k }
-                .shadow(28.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black, spotColor = Color.Black)
+                .graphicsLayer { scaleX = 1f - 0.016f * charge; scaleY = 1f - 0.04f * charge
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) }
+                .shadow(28.dp, RoundedCornerShape(22.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
                 .drawWithContent {
                     val r = 22.dp.toPx()
                     val amp = 2.6.dp.toPx() * wave
-                    val outline = wavyRoundRect(size, r, amp, clock, pressAt.x)
+                    val outline = wavyRoundRect(size, r, amp, clock, pressAt.x, stretch, stretchX)
                     clipPath(outline) {
                         drawRect(Ph.Raised)
                         // How full the context is: a faint wash filling the box from the left.
@@ -718,11 +733,12 @@ class PullAction(val icon: androidx.compose.ui.graphics.vector.ImageVector, val 
  * A rounded rectangle whose edge ripples: each point is pushed along its normal
  * by a travelling sine, strongest near [focusX] (where your finger is).
  */
-private fun wavyRoundRect(size: androidx.compose.ui.geometry.Size, r: Float, amp: Float, t: Float, focusX: Float): androidx.compose.ui.graphics.Path {
+private fun wavyRoundRect(size: androidx.compose.ui.geometry.Size, r: Float, amp: Float, t: Float, focusX: Float,
+                          stretch: Float = 0f, stretchX: Float = 0f): androidx.compose.ui.graphics.Path {
     val base = androidx.compose.ui.graphics.Path().apply {
         addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, size.width, size.height, androidx.compose.ui.geometry.CornerRadius(r)))
     }
-    if (amp < 0.2f) return base
+    if (amp < 0.2f && kotlin.math.abs(stretch) < 0.5f) return base
     val pm = androidx.compose.ui.graphics.PathMeasure().apply { setPath(base, true) }
     val len = pm.length
     val n = 180
@@ -736,8 +752,16 @@ private fun wavyRoundRect(size: androidx.compose.ui.geometry.Size, r: Float, amp
         // Outward normal, whichever way the path runs; inset by amp so the crest stays inside the box.
         var nx = tan.y; var ny = -tan.x
         if (nx * (p.x - size.width / 2f) + ny * (p.y - size.height / 2f) < 0f) { nx = -nx; ny = -ny }
-        val x = p.x + nx * (o - amp)
-        val y = p.y + ny * (o - amp)
+        var x = p.x + nx * (o - amp)
+        var y = p.y + ny * (o - amp)
+        // Taffy: the top edge pulled up toward the finger, narrowing into a soft tongue.
+        if (stretch != 0f) {
+            val wTop = kotlin.math.exp(-(p.y / (r * 1.3f)).let { it * it })
+            val wX = kotlin.math.exp(-((p.x - stretchX) / (size.width * 0.2f)).let { it * it })
+            val k = wTop * wX
+            y -= stretch * k
+            x += (stretchX - p.x) * 0.18f * k * (stretch / (size.height * 0.6f)).coerceIn(-1f, 1f)
+        }
         if (i == 0) out.moveTo(x, y) else out.lineTo(x, y)
     }
     out.close()

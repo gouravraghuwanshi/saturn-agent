@@ -803,6 +803,7 @@ object UiStore : TaskManager.Listener {
                     r.optString("message"), opts, r.optString("placeholder"))
                 ui.items.add(d)
                 ui.pendingDialog = d
+                if (!watching(ui.task.id)) io.github.pimobile.runtime.Notifier.ask(app, ui, d)
             }
             "notify" -> {
                 val msg = r.optString("message")

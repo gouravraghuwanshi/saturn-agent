@@ -37,12 +37,14 @@ object Scheduler {
         var paused: Boolean = false, var cap: Double? = null, var quiet: Boolean = false, var overnight: Boolean = false,
         /** Recent runs, newest last (at most [KEEP]). */
         val runs: MutableList<Run> = mutableListOf(),
+        /** "When a page changes": the page to watch (the cron says how often to look). */
+        val watch: String? = null,
     ) {
         fun json() = JSONObject().put("id", id).put("name", name).put("command", command).put("prompt", prompt)
             .put("cwd", cwd).put("artifacts", artifacts).put("cron", cron).put("next", next)
             .put("lastRun", lastRun).put("lastResult", lastResult)
             .put("paused", paused).put("cap", cap).put("quiet", quiet).put("overnight", overnight)
-            .put("runs", JSONArray(runs.map { it.json() }))
+            .put("runs", JSONArray(runs.map { it.json() })).put("watch", watch)
         companion object {
             fun from(o: JSONObject) = Job(o.getString("id"), o.optString("name"),
                 o.optString("command").takeIf { o.has("command") && it.isNotEmpty() },
@@ -52,7 +54,8 @@ object Scheduler {
                 o.optLong("lastRun"), o.optString("lastResult").takeIf { o.has("lastResult") && it.isNotEmpty() },
                 o.optBoolean("paused"), o.optDouble("cap").takeIf { o.has("cap") && !it.isNaN() }, o.optBoolean("quiet"),
                 o.optBoolean("overnight"),
-                o.optJSONArray("runs")?.let { a -> (0 until a.length()).map { Run.from(a.getJSONObject(it)) }.toMutableList() } ?: mutableListOf())
+                o.optJSONArray("runs")?.let { a -> (0 until a.length()).map { Run.from(a.getJSONObject(it)) }.toMutableList() } ?: mutableListOf(),
+                o.optString("watch").takeIf { o.has("watch") && it.isNotEmpty() })
         }
     }
 
@@ -132,6 +135,7 @@ object Scheduler {
         val job = l.firstOrNull { it.id == id || it.name == id } ?: return false
         cancel(job)
         save(l - job)
+        PageWatch.forget(app, job.id)
         return true
     }
 
@@ -149,6 +153,7 @@ object Scheduler {
     fun update(job: Job) {
         val old = job(job.id)
         if (old != null) { job.runs.clear(); job.runs.addAll(old.runs); job.lastRun = old.lastRun }
+        if (old?.watch != job.watch) PageWatch.forget(app, job.id)
         add(job)
     }
 
@@ -190,12 +195,41 @@ object Scheduler {
             job.lastRun = System.currentTimeMillis()
             save(l + job); arm(job)
         } else save(l)
-        if (job.prompt != null) {
+        if (job.prompt != null && job.watch != null) Thread({
+            // Look at the page first; only a real change costs a model run.
+            val change = runCatching { PageWatch.check(app, job.id, job.watch) }
+            val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+            change.onFailure { e ->
+                record(job.id) { it.lastResult = "couldn't read the page at $clock: ${e.message ?: e.javaClass.simpleName}".take(140) }
+                if (manual) notify(job, "${job.name}: couldn't read the page", e.message ?: e.toString())
+                finished()
+            }.onSuccess { c ->
+                if (c == null) {
+                    record(job.id) { it.lastResult = if (it.runs.isEmpty() && it.lastResult == null) "watching · first look saved $clock" else "no change · checked $clock" }
+                    finished()
+                } else start(job, PageWatch.describe(job.watch, c), finished)
+            }
+        }, "watch-${job.id}").start()
+        else if (job.prompt != null) start(job, "", finished)
+        else Thread({
+            val result = runCatching { runCommand(job) }.getOrElse { "error: ${it.message}" }
+            log(job, result)
+            // A job that failed shouldn't fail silently: tell the user (the log has the details).
+            if (result.contains("\n[exit ") || result.startsWith("error:") || result.contains("[stopped after"))
+                notify(job, "Scheduled job didn't work: ${job.name}", result.lines().lastOrNull { it.isNotBlank() && !it.startsWith("[") }?.take(200) ?: "See saturn-schedule log ${job.id}")
+            if (cron != null) { job.lastResult = result.takeLast(200); save(current().map { if (it.id == job.id) job else it }) }
+            finished()
+        }, "job-${job.id}").start()
+    }
+
+
+    /** Start the routine's Saturn task ([extra]: what a page watch saw). */
+    private fun start(job: Job, extra: String, finished: () -> Unit) {
             main.post {
                 runCatching {
                     val ui = io.github.pimobile.ui.state.UiStore
                     ui.init(app)
-                    val t = ui.newTask(job.prompt + if (job.quiet) QUIET_NOTE else "", File(job.cwd).takeIf { it.isDirectory } ?: PiRuntime.get(app).projects)
+                    val t = ui.newTask(job.prompt + extra + if (job.quiet) QUIET_NOTE else "", File(job.cwd).takeIf { it.isDirectory } ?: PiRuntime.get(app).projects)
                     t.routineId = job.id
                     ui.rename(t, job.name)
                     record(job.id) { it.runs += Run(System.currentTimeMillis(), t.task.id, "running"); it.lastRun = System.currentTimeMillis() }
@@ -214,15 +248,6 @@ object Scheduler {
                 }.onFailure { notify(job, "Scheduled task couldn't start", it.message ?: it.toString()) }
                 finished()
             }
-        } else Thread({
-            val result = runCatching { runCommand(job) }.getOrElse { "error: ${it.message}" }
-            log(job, result)
-            // A job that failed shouldn't fail silently: tell the user (the log has the details).
-            if (result.contains("\n[exit ") || result.startsWith("error:") || result.contains("[stopped after"))
-                notify(job, "Scheduled job didn't work: ${job.name}", result.lines().lastOrNull { it.isNotBlank() && !it.startsWith("[") }?.take(200) ?: "See saturn-schedule log ${job.id}")
-            if (cron != null) { job.lastResult = result.takeLast(200); save(current().map { if (it.id == job.id) job else it }) }
-            finished()
-        }, "job-${job.id}").start()
     }
 
     private fun runCommand(job: Job): String {
@@ -265,6 +290,8 @@ object Scheduler {
   saturn-schedule at <HH:MM|YYYY-MM-DD HH:MM> [--name n] -- <command…>
   saturn-schedule cron "<min hour day month weekday>" [--name n] -- <command…>
   …or --prompt "<text>" instead of "-- <command>" to start a new Saturn task then
+  saturn-schedule watch <url> [--every 1h|2h|4h|6h|12h] [--name n] --prompt "<what to do when it changes>"
+    (checks the page's text for free; starts the task only when it changed, with what was added/removed)
   saturn-schedule list
   saturn-schedule rm <id|name|all>
   saturn-schedule log <id|name>
@@ -286,6 +313,7 @@ object Scheduler {
             }
             "log" -> { val j = find(args.getOrNull(1) ?: return USAGE); return File(logs, "${j.id}.log").takeIf { it.exists() }?.readText()?.takeLast(8000) ?: "No runs yet." }
             "run" -> { val j = find(args.getOrNull(1) ?: return USAGE); fire(j.id, manual = true); return "Started ${j.name}." }
+            "watch" -> return watchCli(cwd, artifacts, args.drop(1))
             "in", "at", "cron" -> {}
             "-h", "--help", "help" -> return USAGE
             else -> throw IllegalArgumentException("unknown action \"$verb\"\n$USAGE")
@@ -320,9 +348,32 @@ object Scheduler {
             if (!exact) "\nNote: exact alarms are off, so it may run a few minutes late. The user can allow them: tap the Saturn logo → Scheduled → Allow exact timing." else ""
     }
 
+    private fun watchCli(cwd: String, artifacts: String?, args: List<String>): String {
+        val url = args.firstOrNull()?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?: throw IllegalArgumentException("watch needs a http(s) URL\n$USAGE")
+        var every = 2; var name: String? = null; var prompt: String? = null
+        var i = 1
+        while (i < args.size) {
+            when (args[i]) {
+                "--every" -> { every = args.getOrNull(i + 1)?.removeSuffix("h")?.toIntOrNull()?.takeIf { it in listOf(1, 2, 3, 4, 6, 8, 12) }
+                    ?: throw IllegalArgumentException("--every takes 1h, 2h, 3h, 4h, 6h, 8h or 12h"); i++ }
+                "--name" -> { name = args.getOrNull(i + 1); i++ }
+                "--prompt" -> { prompt = args.getOrNull(i + 1); i++ }
+            }
+            i++
+        }
+        val now = System.currentTimeMillis()
+        val cron = "0 */$every * * *"
+        val host = runCatching { java.net.URI(url).host?.removePrefix("www.") }.getOrNull() ?: url
+        val job = add(Job("w" + java.lang.Long.toString(now % 1_000_000_000L, 36), name ?: "Watch $host", null,
+            prompt?.takeIf { it.isNotBlank() } ?: "Tell me what changed on the page, in 3 lines at most.", cwd, artifacts, cron,
+            now + 5_000, quiet = true, cap = 0.25, watch = url))
+        return "Watching $url every ${every}h (first look in a few seconds). ${describe(job)}"
+    }
+
     fun describe(j: Job): String {
         val fmt = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault())
-        val what = j.prompt?.let { "task: \"$it\"" } ?: "run: ${j.command}"
+        val what = (j.watch?.let { "when $it changes, " } ?: "") + (j.prompt?.let { "task: \"$it\"" } ?: "run: ${j.command}")
         return "${j.id}  ${fmt.format(java.util.Date(j.next))}${j.cron?.let { "  (cron $it)" } ?: ""}  $what"
     }
 

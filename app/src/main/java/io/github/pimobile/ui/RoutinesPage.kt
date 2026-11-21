@@ -64,11 +64,14 @@ private val starters = listOf(
     Starter("PR + CI check", "Check my open pull requests and the latest CI runs with gh. Tell me only what needs me, in 3 lines.", Kind.EVERY, every = 2),
     Starter("Overnight tidy", "Tidy this project: delete build leftovers and temp files, list anything large or unused, and summarise what you removed.",
         Kind.OVERNIGHT, minutes = 60),
+    Starter("Page watch", "Tell me what changed, in 3 lines at most. Ignore ads, dates and visitor counters; if only those changed, it's nothing new.",
+        Kind.WATCH, every = 2),
 )
 
 enum class Kind(val label: String, val sub: String) {
     DAILY("Every day", "at a time"), WEEKDAYS("Weekdays", "Mon–Fri"),
     EVERY("Every few hours", "9:00–21:00"), OVERNIGHT("Overnight", "charging + Wi-Fi"),
+    WATCH("When a page changes", "looks for free · AI only on a change"),
 }
 
 /** The Routines page of home (swipe Saturn): its rows go into home's list, under Saturn. */
@@ -216,6 +219,7 @@ private fun hm(minutes: Int) = String.format(Locale.US, "%d:%02d", minutes / 60,
 private fun parse(j: Scheduler.Job): Triple<Kind, Int, Int>? {
     val p = j.cron?.trim()?.split(Regex("\\s+")) ?: return null
     if (p.size != 5) return null
+    Regex("\\*/(\\d+)").matchEntire(p[1])?.let { if (p[0] == "0" && (j.watch != null || j.id.isEmpty())) return Triple(Kind.WATCH, 0, it.groupValues[1].toInt()) }
     val min = p[0].toIntOrNull()
     if (min != null && p[1].toIntOrNull() != null && p[2] == "*" && p[3] == "*") {
         val m = p[1].toInt() * 60 + min
@@ -233,9 +237,12 @@ private fun trigger(j: Scheduler.Job): String {
         k.first == Kind.DAILY -> "daily ${hm(k.second)}"
         k.first == Kind.WEEKDAYS -> "weekdays ${hm(k.second)}"
         k.first == Kind.EVERY -> "every ${k.third}h, 9–21"
+        k.first == Kind.WATCH -> "watches ${hostOf(j.watch.orEmpty())} · every ${k.third}h"
         else -> "overnight from ${hm(k.second)}"
     }
 }
+
+private fun hostOf(url: String) = runCatching { java.net.URI(url.trim()).host?.removePrefix("www.") }.getOrNull() ?: url
 
 private fun projectOf(j: Scheduler.Job): String? {
     if (j.cwd.isBlank()) return null
@@ -247,7 +254,11 @@ private fun nextLabel(j: Scheduler.Job): String {
     val s = ((j.next - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
     val rel = when { s < 60 -> "in under a minute"; s < 3600 -> "in ${s / 60}m"; s < 86_400 -> "in ${s / 3600}h ${s % 3600 / 60}m"; else -> "in ${s / 86_400}d" }
     val clock = java.text.SimpleDateFormat(if (s < 86_400) "HH:mm" else "EEE HH:mm", Locale.getDefault()).format(java.util.Date(j.next))
-    return if (j.overnight) "next: tonight after $clock, once charging on Wi-Fi" else "next $rel · $clock"
+    return when {
+        j.overnight -> "next: tonight after $clock, once charging on Wi-Fi"
+        j.watch != null -> "next look $rel · $clock"
+        else -> "next $rel · $clock"
+    }
 }
 
 private fun starterJob(s: Starter) = Scheduler.Job("", s.name, null, s.prompt, UiStore.currentProject.path, null,
@@ -257,6 +268,7 @@ private fun cronOf(kind: Kind, minutes: Int, every: Int) = when (kind) {
     Kind.DAILY, Kind.OVERNIGHT -> "${minutes % 60} ${minutes / 60} * * *"
     Kind.WEEKDAYS -> "${minutes % 60} ${minutes / 60} * * 1-5"
     Kind.EVERY -> "0 9-21/$every * * *"
+    Kind.WATCH -> "0 */$every * * *"
 }
 
 /** Every Saturn project, General first. */
@@ -281,14 +293,21 @@ fun RoutineSheet(job: Scheduler.Job?, onDismiss: () -> Unit) {
     var cwd by remember { mutableStateOf(job?.cwd?.takeIf { it.isNotBlank() } ?: UiStore.currentProject.path) }
     var cap by remember { mutableStateOf(job?.cap ?: 0.25) }
     var quiet by remember { mutableStateOf(job?.quiet ?: true) }
+    var url by remember { mutableStateOf(job?.watch.orEmpty()) }
+    val urlOk = url.trim().let { (it.startsWith("https://") || it.startsWith("http://")) && it.length > 10 && ' ' !in it }
     val editing = job != null && job.id.isNotEmpty()
     // Overnight defaults to 1:00, the others to 8:00, when you switch.
-    fun pick(k: Kind) { if ((k == Kind.OVERNIGHT) != (kind == Kind.OVERNIGHT)) minutes = if (k == Kind.OVERNIGHT) 60 else 8 * 60; kind = k }
+    fun pick(k: Kind) {
+        if ((k == Kind.OVERNIGHT) != (kind == Kind.OVERNIGHT)) minutes = if (k == Kind.OVERNIGHT) 60 else 8 * 60
+        if (k == Kind.WATCH && every !in listOf(1, 2, 4, 6, 12)) every = 2
+        kind = k
+    }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
     val cron = cronOf(kind, minutes, every)
     val next = runCatching { Scheduler.Cron(cron).next(now) }.getOrNull()
-    val ready = prompt.isNotBlank()
+    val watchPrompt = "Tell me what changed, in 3 lines at most."
+    val ready = if (kind == Kind.WATCH) urlOk else prompt.isNotBlank()
 
     PhSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -304,8 +323,12 @@ fun RoutineSheet(job: Scheduler.Job?, onDismiss: () -> Unit) {
                         }.padding(horizontal = 10.dp, vertical = 7.dp))
                 }
             }
-            Field("WHAT SHOULD SATURN DO", prompt, "e.g. Check my open PRs and CI, tell me what needs me in 3 lines", 3) { prompt = it }
-            Field("NAME", name, prompt.split(' ').take(4).joinToString(" ").ifBlank { "Morning brief" }, 1) { name = it }
+            if (kind == Kind.WATCH) {
+                Field("PAGE TO WATCH", url, "https://…  a price, a changelog, a notice board", 1) { url = it.trim() }
+                Field("WHEN IT CHANGES, SATURN SHOULD", prompt, watchPrompt, 3) { prompt = it }
+            } else Field("WHAT SHOULD SATURN DO", prompt, "e.g. Check my open PRs and CI, tell me what needs me in 3 lines", 3) { prompt = it }
+            val autoName = if (kind == Kind.WATCH) "Watch " + (hostOf(url).takeIf { urlOk } ?: "a page") else prompt.split(' ').take(4).joinToString(" ").ifBlank { "Morning brief" }
+            Field("NAME", name, autoName, 1) { name = it }
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("WHEN", style = Ph.label)
@@ -324,9 +347,9 @@ fun RoutineSheet(job: Scheduler.Job?, onDismiss: () -> Unit) {
                 }
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Ph.Ground).border(1.dp, Ph.Line, RoundedCornerShape(14.dp))
                     .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (kind == Kind.EVERY) {
-                        Text("Every", style = Ph.body.copy(fontSize = 14.sp, color = Ph.TextSoft), modifier = Modifier.weight(1f))
-                        listOf(1, 2, 3, 4, 6).forEach { h ->
+                    if (kind == Kind.EVERY || kind == Kind.WATCH) {
+                        Text(if (kind == Kind.WATCH) "Look every" else "Every", style = Ph.body.copy(fontSize = 14.sp, color = Ph.TextSoft), modifier = Modifier.weight(1f))
+                        (if (kind == Kind.WATCH) listOf(1, 2, 4, 6, 12) else listOf(1, 2, 3, 4, 6)).forEach { h ->
                             Text("${h}h", style = Ph.mono.copy(color = if (h == every) Ph.AmberInk else Ph.TextSoft), modifier = Modifier
                                 .padding(start = 4.dp).clip(RoundedCornerShape(9.dp)).background(if (h == every) Ph.Amber else Color.Transparent)
                                 .clickable { every = h }.padding(horizontal = 9.dp, vertical = 8.dp))
@@ -365,6 +388,7 @@ fun RoutineSheet(job: Scheduler.Job?, onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(when {
                     kind == Kind.OVERNIGHT -> "Runs tonight after ${hm(minutes)}, once the phone is charging on Wi-Fi."
+                    kind == Kind.WATCH -> "First look right away, then every ${every}h. Saturn only runs when the page's text changes."
                     next != null -> "Next run " + java.text.SimpleDateFormat("EEE d MMM · HH:mm", Locale.getDefault()).format(java.util.Date(next))
                     else -> ""
                 }, style = Ph.monoSmall.copy(color = Ph.TextSoft), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -372,9 +396,11 @@ fun RoutineSheet(job: Scheduler.Job?, onDismiss: () -> Unit) {
                     .clickable(enabled = ready) {
                         val nowMs = System.currentTimeMillis()
                         val id = job?.id?.takeIf { it.isNotEmpty() } ?: ("r" + java.lang.Long.toString(nowMs % 1_000_000_000L, 36))
-                        val j = Scheduler.Job(id, name.ifBlank { prompt.split(' ').take(4).joinToString(" ") }, null, prompt.trim(), cwd, null,
-                            cron, Scheduler.Cron(cron).next(nowMs), paused = job?.paused == true && editing, cap = cap, quiet = quiet,
-                            overnight = kind == Kind.OVERNIGHT)
+                        val watching = kind == Kind.WATCH
+                        val fresh = watching && (!editing || job?.watch != url.trim())
+                        val j = Scheduler.Job(id, name.ifBlank { autoName }, null, prompt.trim().ifBlank { if (watching) watchPrompt else "" }, cwd, null,
+                            cron, if (fresh) nowMs + 3_000 else Scheduler.Cron(cron).next(nowMs), paused = job?.paused == true && editing, cap = cap, quiet = quiet,
+                            overnight = kind == Kind.OVERNIGHT, watch = url.trim().takeIf { watching })
                         if (editing) Scheduler.update(j) else Scheduler.add(j)
                         onDismiss()
                     }, contentAlignment = Alignment.Center) {

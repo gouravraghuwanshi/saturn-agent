@@ -267,7 +267,7 @@ fun ToolRow(t: Item.Tool, divider: Boolean) {
 @Composable
 fun ToolPanel(tools: List<Item.Tool>) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF111318))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Ph.Deep)
             .border(1.dp, Ph.Line, RoundedCornerShape(14.dp))
     ) { tools.forEachIndexed { i, t -> ToolRow(t, divider = i < tools.lastIndex) } }
 }
@@ -278,7 +278,7 @@ fun BrokenPackageBanner(modifier: androidx.compose.ui.Modifier = androidx.compos
     val spec = io.github.pimobile.ui.state.UiStore.brokenPackage ?: return
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
     androidx.compose.foundation.layout.Column(
-        modifier.fillMaxWidth().clip(shape).background(Ph.RedWash).border(1.dp, androidx.compose.ui.graphics.Color(0xFF3A2A28), shape).padding(14.dp),
+        modifier.fillMaxWidth().clip(shape).background(Ph.RedWash).border(1.dp, Ph.RedLine, shape).padding(14.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
     ) {
         Text("pi can't start", style = Ph.title.copy(fontSize = 14.sp, color = Ph.Red))

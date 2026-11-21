@@ -89,7 +89,7 @@ fun SlashPalette(query: String, commands: List<SlashCommand>, onPick: (SlashComm
     val shown = remember(q, commands) { commands.filter { it.name.lowercase().contains(q) } }
     Column(
         Modifier.padding(horizontal = 12.dp).fillMaxWidth()
-            .shadow(24.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black, spotColor = Color.Black)
+            .shadow(24.dp, RoundedCornerShape(22.dp), ambientColor = Ph.Shadow, spotColor = Ph.Shadow)
             .clip(RoundedCornerShape(22.dp)).background(Ph.Surface)
             .border(1.dp, Ph.LineStrong, RoundedCornerShape(22.dp))
     ) {
@@ -360,7 +360,7 @@ fun Composer(
                 // Charging: the box sinks a touch, as if pressed in.
                 .graphicsLayer { scaleX = 1f - 0.016f * charge + 0.006f * nudge.value; scaleY = 1f - 0.04f * charge - 0.02f * nudge.value
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) }
-                .shadow(28.dp, RoundedCornerShape(22.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+                .shadow(28.dp, RoundedCornerShape(22.dp), clip = false, ambientColor = Ph.Shadow, spotColor = Ph.Shadow)
                 .drawWithContent {
                     val r = 22.dp.toPx()
                     val amp = 2.6.dp.toPx() * wave

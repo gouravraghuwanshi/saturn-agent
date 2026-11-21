@@ -52,6 +52,9 @@ object Ph {
     val Green get() = pick(0xFF7CC79A, 0xFF3B8657)
     val Red get() = pick(0xFFF0857A, 0xFFB2463A)
     val RedWash get() = pick(0xFF1E1615, 0xFFF4DCD4)
+    val RedLine get() = pick(0xFF3A2A28, 0xFFDDB2A6)
+    /** Soft drop shadows: black on the dark themes, a faint brown on paper. */
+    val Shadow get() = if (paper) Color(0xFF6B4A22).copy(alpha = 0.35f) else Color.Black
 
     private fun weights(res: Int, vararg w: Int) = w.map {
         Font(res, FontWeight(it), variationSettings = FontVariation.Settings(FontVariation.weight(it)))

@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.offset
@@ -344,8 +345,13 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             1f to Color(0xFF2B1B0A).copy(alpha = 0.42f * sh),
                             center = c, radius = r))
                     }
+                    // Paper grain: a faint fibre texture, so the page reads as paper, not a flat colour.
+                    if (Ph.paper) drawRect(androidx.compose.ui.graphics.ShaderBrush(androidx.compose.ui.graphics.ImageShader(
+                        paperGrain, androidx.compose.ui.graphics.TileMode.Repeated, androidx.compose.ui.graphics.TileMode.Repeated)),
+                        alpha = 0.55f + 0.3f * Ph.paperShade)
+                    // Amber glow is for the dark screen; on paper only a breath of it.
                     if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
-                        saturnGlow(glowAt - rootAt, glow * (1f - collapse), breathe, red = failedNow)
+                        saturnGlow(glowAt - rootAt, glow * (1f - collapse) * (if (Ph.paper) 0.35f else 1f), breathe, red = failedNow)
                 }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -585,7 +591,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         extra = {
                             if (running) Row(
                                 Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.RedWash)
-                                    .border(1.dp, Color(0xFF3A2A28), RoundedCornerShape(14.dp))
+                                    .border(1.dp, Ph.RedLine, RoundedCornerShape(14.dp))
                                     .clickable(enabled = !t.stopping, onClickLabel = "Stop task") { UiStore.stop(t) }
                                     .padding(horizontal = if (t.stopping) 12.dp else 15.dp),
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -930,7 +936,7 @@ private fun TerminalBusy(onStop: () -> Unit) {
             style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
         Text("Stop the run", style = Ph.title.copy(fontSize = 14.sp, color = Ph.Red),
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, Color(0xFF3A2A28), RoundedCornerShape(12.dp))
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, Ph.RedLine, RoundedCornerShape(12.dp))
                 .clickable { onStop() }.padding(horizontal = 18.dp, vertical = 11.dp))
     }
 }
@@ -1365,4 +1371,30 @@ private fun LampSlider(onTouch: () -> Unit) {
             }
         }
     }
+}
+
+/** A tile of paper fibre: sparse light and dark specks plus a few short fibres, almost invisible on their own. */
+private val paperGrain: androidx.compose.ui.graphics.ImageBitmap by lazy {
+    val n = 192
+    val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+    val rnd = java.util.Random(7)
+    val px = IntArray(n * n)
+    for (i in px.indices) {
+        val v = rnd.nextGaussian()
+        px[i] = when {
+            v > 1.6 -> android.graphics.Color.argb(14, 255, 250, 235)
+            v < -1.5 -> android.graphics.Color.argb(16, 90, 60, 25)
+            else -> 0
+        }
+    }
+    bmp.setPixels(px, 0, n, 0, 0, n, n)
+    val c = android.graphics.Canvas(bmp)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 0.8f; strokeCap = android.graphics.Paint.Cap.ROUND }
+    repeat(70) {
+        val x = rnd.nextFloat() * n; val y = rnd.nextFloat() * n
+        val a = rnd.nextFloat() * Math.PI.toFloat(); val l = 3f + rnd.nextFloat() * 7f
+        paint.color = android.graphics.Color.argb(10 + rnd.nextInt(8), 110, 80, 40)
+        c.drawLine(x, y, x + kotlin.math.cos(a) * l, y + kotlin.math.sin(a) * l, paint)
+    }
+    bmp.asImageBitmap()
 }

@@ -991,8 +991,10 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Message actions") { open = !open }
             .padding(vertical = 2.dp, horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("›", style = Ph.mono.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, color = Ph.Amber))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Same size and line height as your text, sitting on its first line's baseline.
+            Text("›", style = Ph.mono.copy(fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = Ph.Amber),
+                modifier = Modifier.alignByBaseline())
+            Column(Modifier.weight(1f).alignByBaseline(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (text.isNotEmpty()) Text(text, style = Ph.body.copy(fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium,
                     color = Color(0xFFF3E6D0)))
                 if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }

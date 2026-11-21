@@ -88,6 +88,7 @@ import io.github.pimobile.ui.state.Item
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.widthIn
@@ -437,9 +438,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         val prev = blocks.getOrNull(i - 1)
                         val isUser = b is Block.Single && b.item is Item.User
                         val turnStart = !isUser && (prev == null || (prev is Block.Single && prev.item is Item.User))
-                        Column(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null).padding(top = if (isUser && i > 0) 8.dp else 0.dp),
+                        Column(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null).padding(top = if (isUser && i > 0) 6.dp else 0.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (turnStart) SaturnLabel()
                             when (b) {
                                 // Live while it's the last thing, or only a short note is being written after it
                                 // (the real answer folds it; a "Now let me…" between steps shouldn't).
@@ -775,11 +775,10 @@ private fun StepDots(tools: List<Item.Tool>) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         val d = 6.dp; val g = 4.dp
         val fit = ((maxWidth + g) / (d + g)).toInt().coerceAtLeast(1)
-        val overflow = tools.size > fit
-        val room = if (overflow) (fit - 4).coerceAtLeast(1) else fit
-        val shown = tools.takeLast(room)
+        // Not enough room for all of them: show none (the header already says how many).
+        if (tools.size > fit) return@BoxWithConstraints
+        val shown = tools
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (overflow) Text("+${tools.size - shown.size}", style = Ph.monoSmall.copy(fontSize = 10.sp))
             androidx.compose.foundation.Canvas(Modifier.size(width = d * shown.size + g * (shown.size - 1), height = d)) {
                 val dp = d.toPx(); val gp = g.toPx()
                 shown.forEachIndexed { i, tl ->
@@ -816,7 +815,7 @@ private fun StepRow(tool: Item.Tool, compact: Boolean = false) {
     var open by rememberSaveable(tool.key) { mutableStateOf(false) }
     val st = tool.state
     Column {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = if (compact) 3.dp else 5.dp),
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = if (compact) 1.dp else 2.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(when (st) { io.github.pimobile.ui.state.ToolState.RUNNING -> "◌"; io.github.pimobile.ui.state.ToolState.ERROR -> "✗"; else -> "✓" },
                 style = Ph.mono.copy(color = when (st) { io.github.pimobile.ui.state.ToolState.RUNNING -> Ph.Amber; io.github.pimobile.ui.state.ToolState.ERROR -> Ph.Red; else -> Ph.Green }))
@@ -831,7 +830,7 @@ private fun StepRow(tool: Item.Tool, compact: Boolean = false) {
 @Composable
 private fun ThinkRow(key: String, thinking: String) {
     var open by rememberSaveable(key) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = 5.dp)) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = 2.dp)) {
         Text("┊ " + if (open) "thinking" else thinking.lines().lastOrNull { it.isNotBlank() }.orEmpty().trim(),
             style = Ph.mono.copy(color = Ph.Muted.copy(alpha = 0.8f)), maxLines = 1, overflow = TextOverflow.Ellipsis)
         AnimatedVisibility(open) {
@@ -910,10 +909,18 @@ private fun Working(t: TaskUi) {
 private fun Row1(t: TaskUi, item: Item, hideThinking: Boolean = false, latest: Boolean = false, onSheet: (String) -> Unit = {}) {
     when (item) {
         is Item.User -> UserMessage(t, item)
-        is Item.Assistant -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (item.thinking.isNotBlank() && !hideThinking) Thinking(item)
-            if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text) }
-            if (item.text.isNotBlank() && !item.streaming && endOfTurn(t, item)) ReplyActions(t, item)
+        is Item.Assistant -> {
+            // Copy / speak / flag sit under the latest reply only; tap an older one to bring them up.
+            val isLatest = t.items.lastOrNull { it is Item.Assistant && it.text.isNotBlank() } === item
+            var showActions by remember(item.key) { mutableStateOf(false) }
+            val canAct = item.text.isNotBlank() && !item.streaming && endOfTurn(t, item)
+            Column(Modifier.then(if (canAct && !isLatest) Modifier.pointerInput(item.key) {
+                detectTapGestures { showActions = !showActions } } else Modifier),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (item.thinking.isNotBlank() && !hideThinking) Thinking(item)
+                if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text) }
+                AnimatedVisibility(canAct && (isLatest || showActions)) { ReplyActions(t, item) }
+            }
         }
         is Item.Notice -> if (item.error) ErrorCard(t, item.text, actionable = latest && !t.status.let { it == Status.RUNNING || it == Status.STARTING }, onSheet)
             else if (item.text.startsWith("Retrying (")) RetryLine(item.text)
@@ -983,10 +990,10 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
     // No box; wrapped lines stay aligned after the ›.
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Message actions") { open = !open }
-            .padding(vertical = 6.dp, horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            .padding(vertical = 2.dp, horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("›", style = Ph.mono.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, color = Ph.Amber))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (text.isNotEmpty()) Text(text, style = Ph.body.copy(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium,
+                if (text.isNotEmpty()) Text(text, style = Ph.body.copy(fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium,
                     color = Color(0xFFF3E6D0)))
                 if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }
                 files.forEach { path ->

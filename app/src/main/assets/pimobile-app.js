@@ -12,7 +12,7 @@ const runtimeOf = (ctx) => ctx.modelRegistry.runtime ?? ctx.modelRegistry;
 // Sign in with ChatGPT identifies the installation by a stable UUID. pi's own
 // /login passes settingsManager.getOrCreateDeviceId(); extensions can't reach
 // the settings manager, so read/create the same `deviceId` field ourselves.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,6 +33,54 @@ const parse = (args) => { try { return JSON.parse(args || "{}"); } catch { retur
 
 export default function (pi) {
   if (!process.env.PIMOBILE_TASK_ID && !process.env.PIMOBILE_CONTROL) return; // not inside the Saturn app
+
+  // ---- Android paths for the core tools (read, write, edit, bash, and grep/find/ls).
+  // Models assume a desktop Linux: /tmp, /home/user, /usr/bin/env, sudo. None of
+  // those exist (or are writable) here, so calls are quietly pointed at the real places.
+  const HOME = process.env.HOME ?? "";
+  const TMP = process.env.TMPDIR ?? (HOME ? HOME + "/.tmp" : "");
+  const PREFIX = process.env.PREFIX ?? "";
+  const exists = (p) => { try { statSync(p); return true; } catch { return false; } };
+  const fixPath = (p) => {
+    if (typeof p !== "string" || !p) return p;
+    if (TMP && /^\/(var\/)?tmp(\/|$)/.test(p)) return TMP + p.replace(/^\/(var\/)?tmp/, "");
+    if (HOME && p === "~") return HOME;
+    if (HOME && p.startsWith("~/")) return HOME + p.slice(1);
+    if (HOME && !exists(p)) {
+      const m = p.match(/^\/(?:home\/[^/]+|root)(\/.*)?$/);
+      if (m) return HOME + (m[1] ?? "");
+    }
+    if (PREFIX && /^\/usr\//.test(p) && !exists(p) && exists(PREFIX + p.slice(4))) return PREFIX + p.slice(4);
+    return p;
+  };
+  const fixCommand = (c) => {
+    if (typeof c !== "string") return c;
+    let out = c;
+    // /tmp → the real temp folder (a literal path, so it works inside quotes too).
+    if (TMP) out = out.replace(/(^|[\s'"=:>(<|;&,])\/(?:var\/)?tmp(?=\/|[\s'";|&)]|$)/g, (_m, pre) => pre + TMP);
+    // Absolute paths to standard binaries: let PATH find them.
+    out = out.replace(/(^|[\s;&|(`]|\$\()(?:\/usr)?\/bin\/(env|bash|sh|node|npm|npx|git|curl|python3?|cat|ls|rm|mkdir|cp|mv|grep|sed|awk|find|chmod|echo|tar|gzip|unzip|wget|which)\b/g,
+      (_m, pre, name) => pre + name);
+    // No root on a phone, and everything here is already yours.
+    out = out.replace(/(^|[;&|]\s*|\n\s*)sudo\s+(-\S+\s+)*/g, (_m, pre) => pre);
+    return out;
+  };
+  pi.on("tool_call", async (event) => {
+    const input = event.input;
+    if (!input || typeof input !== "object") return;
+    for (const k of ["path", "file_path", "filePath", "cwd", "dir", "directory"]) if (typeof input[k] === "string") input[k] = fixPath(input[k]);
+    if (event.toolName === "bash" && typeof input.command === "string") input.command = fixCommand(input.command);
+  });
+  // When a system path still fails, say where to go instead, so the next try works.
+  pi.on("tool_result", async (event) => {
+    if (!event.isError) return;
+    const text = (event.content ?? []).map((c) => c?.text ?? "").join("\n");
+    if (!/read-only file system|permission denied|no such file or directory|EROFS|EACCES|ENOENT/i.test(text)) return;
+    const hint = `\n\n[Saturn: this is Android, not a desktop Linux. Writable places: the project folder, ` +
+      `$HOME (${HOME}), $TMPDIR (${TMP}) for temporary files. System folders like /, /etc, /usr, /bin are read-only; ` +
+      `tools from $PREFIX (${PREFIX}) are on PATH.]`;
+    return { content: [...(event.content ?? []), { type: "text", text: hint }] };
+  });
 
   let loginAbort = null;
 

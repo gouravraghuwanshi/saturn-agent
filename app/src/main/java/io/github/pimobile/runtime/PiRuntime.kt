@@ -253,6 +253,9 @@ class PiRuntime private constructor(private val ctx: Context) {
             |## Environment
             |A Linux-like userland on Android: bash, node, npm/npx, git, curl, ripgrep. There is no apt/pkg,
             |no sudo and no python unless installed via npm packages. `npm i -g <pkg>` installs CLIs on PATH.
+            |Paths: there is no /tmp (use ${'$'}TMPDIR), no /home/user (use ${'$'}HOME or ~), and /, /etc, /usr, /bin are
+            |read-only (Saturn's userland is in ${'$'}PREFIX, already on PATH). Write files in the task's folder,
+            |${'$'}HOME or ${'$'}TMPDIR. Call tools by name (node, bash, git), not by /usr/bin/… paths.
             |
             |## Attachments
             |Files the user attaches are saved in ~/uploads; their message ends with lines like

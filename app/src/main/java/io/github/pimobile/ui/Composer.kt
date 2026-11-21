@@ -477,17 +477,15 @@ private fun shortLevel(l: String?) = when (l) { null -> "think"; "minimal" -> "m
 @Composable
 private fun ThinkingChip(level: String?, onClick: () -> Unit) {
     val idx = THINKING_LEVELS.indexOf(level).let { if (it < 0 && level == "xhigh") 5 else it }
-    val on = idx > 0
-    Row(Modifier.height(38.dp).clip(RoundedCornerShape(19.dp))
-        .border(1.dp, if (on) Ph.AmberLine else Ph.Line, RoundedCornerShape(19.dp))
-        .background(if (on) Ph.AmberWash else Color.Transparent)
+    // Quiet like the / and + buttons: thin outline, no fill, no amber.
+    Row(Modifier.height(38.dp).clip(RoundedCornerShape(19.dp)).border(1.dp, Ph.Line, RoundedCornerShape(19.dp))
         .clickable(onClickLabel = "Thinking level") { onClick() }.padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            for (i in 1..4) Box(Modifier.size(width = 3.dp, height = (4 + i * 3).dp).clip(RoundedCornerShape(1.dp))
-                .background(if (idx >= i) Ph.Amber else Ph.LineStrong))
+            for (i in 1..4) Box(Modifier.size(width = 2.dp, height = (3 + i * 2.5f).dp).clip(RoundedCornerShape(1.dp))
+                .background(if (idx >= i) Ph.TextSoft else Ph.LineStrong))
         }
-        Text(shortLevel(level), style = Ph.mono.copy(fontSize = 12.sp, color = if (on) Ph.Amber else Ph.TextSoft))
+        Text(shortLevel(level), style = Ph.mono.copy(fontSize = 12.sp, color = Ph.TextSoft))
     }
 }
 

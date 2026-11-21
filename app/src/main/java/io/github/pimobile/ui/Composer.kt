@@ -369,8 +369,13 @@ fun Composer(
                         drawRect(Ph.Raised)
                         // How full the context is: a faint wash filling the box from the left.
                         val f = (contextFill ?: 0f).coerceIn(0f, 1f)
-                        if (f > 0.003f) drawRect(Ph.Text.copy(alpha = if (f >= 0.9f) 0.085f else 0.05f),
-                            size = androidx.compose.ui.geometry.Size(size.width * f, size.height))
+                        if (f > 0.003f) {
+                            val c = Ph.Text.copy(alpha = if (f >= 0.9f) 0.085f else 0.05f)
+                            val end = size.width * f
+                            val soft = 28.dp.toPx().coerceAtMost(end)
+                            drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(0f to c, ((end - soft) / end).coerceIn(0f, 1f) to c, 1f to Color.Transparent,
+                                startX = 0f, endX = end), size = androidx.compose.ui.geometry.Size(end, size.height))
+                        }
                         // Rings spreading from your finger, like a drop in water.
                         if (wave > 0.01f) for (k in 0 until 3) {
                             val ph = ((clock * 0.62f) + k / 3f) % 1f

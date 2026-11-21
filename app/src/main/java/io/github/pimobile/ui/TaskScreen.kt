@@ -88,20 +88,39 @@ import io.github.pimobile.ui.state.Item
 import io.github.pimobile.ui.state.TaskUi
 import io.github.pimobile.ui.state.UiStore
 import io.github.pimobile.ui.theme.Ph
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.widthIn
 import java.util.Locale
 
-/** Transcript rows, with consecutive tool calls merged into one panel. */
+/**
+ * Transcript rows. Everything Saturn does between your message and its answer
+ * (thinking, tool calls, notes on the way) folds into one Work block; the
+ * answer itself stays a normal row underneath.
+ */
 private sealed class Block(val key: String) {
-    class Single(val item: Item) : Block(item.key)
-    class Tools(val tools: List<Item.Tool>) : Block("tools-" + tools.first().key)
+    class Single(val item: Item, val hideThinking: Boolean = false) : Block(item.key)
+    class Work(val items: List<Item>, val finalThinking: Item.Assistant?) : Block("work-" + items.first().key)
 }
 
 private fun blocks(items: List<Item>): List<Block> {
     val out = mutableListOf<Block>()
-    var run = mutableListOf<Item.Tool>()
-    fun flush() { if (run.isNotEmpty()) { out += Block.Tools(run); run = mutableListOf() } }
-    for (i in items) if (i is Item.Tool) run += i else { flush(); out += Block.Single(i) }
-    flush()
+    var i = 0
+    while (i < items.size) {
+        if (items[i] !is Item.Tool && items[i] !is Item.Assistant) { out += Block.Single(items[i]); i++; continue }
+        var j = i
+        while (j < items.size && (items[j] is Item.Tool || items[j] is Item.Assistant)) j++
+        val run = items.subList(i, j)
+        if (run.none { it is Item.Tool }) run.forEach { out += Block.Single(it) }
+        else {
+            val last = run.last()
+            if (last is Item.Assistant && last.text.isNotBlank()) {
+                out += Block.Work(run.dropLast(1), last.takeIf { it.thinking.isNotBlank() })
+                out += Block.Single(last, hideThinking = true)
+            } else out += Block.Work(run.toList(), null)
+        }
+        i = j
+    }
     return out
 }
 
@@ -416,12 +435,12 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (turnStart) SaturnLabel()
                             when (b) {
-                                is Block.Tools -> ToolsBlock(b.tools)
-                                is Block.Single -> Row1(t, b.item)
+                                is Block.Work -> WorkBlock(b, live = running && i == blocks.lastIndex, startedAt = t.runStartedAt)
+                                is Block.Single -> Row1(t, b.item, b.hideThinking, latest = b.item === t.items.lastOrNull()) { sheet = it }
                             }
                         }
                     }
-                    if (running) item(key = "working") { Working(t) }
+                    if (running && blocks.lastOrNull() !is Block.Work) item(key = "working") { Working(t) }
                 }
                 // Behind the chat as it slides sideways: full height, home on the left, terminal on the right.
                 val shownX = kotlin.math.abs(liftX)
@@ -581,7 +600,7 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (tab == "chat") "Back to tasks" else "Back to chat") { onBack() },
                 contentAlignment = Alignment.Center) { PhIcon(PhIcons.Back, Ph.TextSoft, 22.dp, "Back") }
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text(t.title, style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(displayTitle(t.title), style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // Folded: the status moves up here, one line.
                 if (collapse > 0.5f) Row(Modifier.padding(top = 2.dp).graphicsLayer { alpha = (collapse - 0.5f) * 2f },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -661,57 +680,132 @@ private fun SaturnLabel() {
     }
 }
 
-/** A run of tool calls folded into one line ("Ran 2 commands, edited 1 file"); tap for the details. Open while running. */
+/**
+ * Saturn's work for one answer. Running: a still card where only the current
+ * step's line rolls up (terminal-style), a spinner and a growing strip of dots.
+ * Done: "Worked · 59 steps", the dots, a summary. Tap for one line per step.
+ */
 @Composable
-private fun ToolsBlock(tools: List<Item.Tool>) {
-    val running = tools.any { it.state == io.github.pimobile.ui.state.ToolState.RUNNING }
+private fun WorkBlock(b: Block.Work, live: Boolean, startedAt: Long?) {
+    val tools = b.items.filterIsInstance<Item.Tool>()
     val failed = tools.count { it.state == io.github.pimobile.ui.state.ToolState.ERROR }
-    // Live output shows while it runs unless you hide it; afterwards it's folded unless you open it.
-    var choice by rememberSaveable(tools.first().key) { mutableStateOf<Boolean?>(null) }
-    val open = choice ?: running
-    val toggle = Modifier.clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { choice = !open }
-    val last = tools.last()
-    val target = "${last.name}  ${io.github.pimobile.ui.components.toolTarget(last.name, last.args)}".trim()
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        androidx.compose.animation.AnimatedContent(running, label = "tools",
-            transitionSpec = { fadeIn(androidx.compose.animation.core.tween(300)) togetherWith fadeOut(androidx.compose.animation.core.tween(200)) using
-                androidx.compose.animation.SizeTransform(clip = false) }) { live ->
-            if (live) {
-                // Same as the task's card on home: light round the edge, liquid along the foot.
-                LiquidFrame(Modifier.clip(RoundedCornerShape(22.dp)).then(toggle), wave = 40.dp, footer = {
-                    Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
-                        Text(toolSummary(tools, false), style = Ph.monoSmall.copy(color = Ph.Text), maxLines = 1,
-                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text("step ${tools.size}", style = Ph.monoSmall.copy(color = Ph.Text))
-                    }
-                }) {
-                    Row(Modifier.padding(start = 16.dp, end = 14.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PulseDot(Ph.Amber, 7)
-                        Text("Working", style = Ph.title.copy(fontSize = 15.sp), modifier = Modifier.weight(1f))
-                        PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
-                    }
-                    StepLine(target, Ph.TextSoft, Modifier.padding(start = 33.dp, end = 16.dp, top = 8.dp))
-                }
+    val active = live || tools.any { it.state == io.github.pimobile.ui.state.ToolState.RUNNING }
+    var open by rememberSaveable(b.key) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface)
+        .border(1.dp, if (active) Ph.AmberLine else Ph.Line, shape)
+        .clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { open = !open }
+        .padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        // Header
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (active) {
+                var frame by remember { mutableStateOf(0) }
+                LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(90); frame++ } }
+                Text("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[frame % 10].toString(), style = Ph.mono.copy(fontSize = 14.sp, color = Ph.Amber))
+                Text("Working", style = Ph.title.copy(fontSize = 14.5.sp))
+                Text("· step ${tools.size}", style = Ph.mono.copy(color = Ph.Muted), modifier = Modifier.weight(1f))
+                if (startedAt != null) Text(elapsed(startedAt).let { _ -> frame; elapsed(startedAt) }, style = Ph.monoSmall)
             } else {
-                // Done: home's quiet card. A dot, what it did, the last thing it touched.
-                val shape = RoundedCornerShape(18.dp)
-                Column(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape).then(toggle)
-                    .padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(if (failed > 0) Ph.Red else Ph.Green))
-                        Text(toolSummary(tools, false), style = Ph.title.copy(fontSize = 14.5.sp, color = Ph.TextSoft), maxLines = 1,
-                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text(if (failed > 0) "$failed failed" else "${tools.size} ${if (tools.size == 1) "step" else "steps"}",
-                            style = Ph.monoSmall.copy(color = if (failed > 0) Ph.Red else Ph.Muted))
-                        PhIcon(PhIcons.Chevron, Ph.Muted, 13.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
-                    }
-                    Text(target, style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.Muted), maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 19.dp))
-                }
+                Text("Worked", style = Ph.title.copy(fontSize = 14.5.sp, color = Ph.TextSoft))
+                Text("· ${tools.size} ${if (tools.size == 1) "step" else "steps"}" + if (failed > 0) "" else "",
+                    style = Ph.mono.copy(color = Ph.Muted))
+                if (failed > 0) Text("· $failed failed", style = Ph.mono.copy(color = Ph.Red))
+                Box(Modifier.weight(1f))
+            }
+            PhIcon(PhIcons.Chevron, Ph.Muted, 13.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
+        }
+        // Running: the current step's line, rolling up as each new one lands.
+        if (active && !open) {
+            val lastItem = b.items.lastOrNull()
+            val current = when {
+                lastItem is Item.Tool -> lastItem.key to "${lastItem.name}  ${io.github.pimobile.ui.components.toolTarget(lastItem.name, lastItem.args)}"
+                lastItem is Item.Assistant && lastItem.thinking.isNotBlank() -> lastItem.key to "thinking…"
+                else -> "idle" to "thinking…"
+            }
+            androidx.compose.animation.AnimatedContent(current, label = "step", contentKey = { it.first },
+                transitionSpec = {
+                    (slideInVertically(androidx.compose.animation.core.tween(220)) { it } + fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
+                        (slideOutVertically(androidx.compose.animation.core.tween(180)) { -it } + fadeOut(androidx.compose.animation.core.tween(150))) using
+                        androidx.compose.animation.SizeTransform(clip = true)
+                }) { (_, line) ->
+                Text(line.trim(), style = Ph.mono.copy(fontSize = 12.sp, color = Ph.TextSoft), maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(start = 2.dp))
             }
         }
-        AnimatedVisibility(open, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { ToolPanel(tools) }
+        StepDots(tools)
+        if (!active && !open) Text(toolSummary(tools, false), style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Open: one line per step.
+        AnimatedVisibility(open, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                b.items.forEach { item ->
+                    when (item) {
+                        is Item.Tool -> StepRow(item)
+                        is Item.Assistant -> {
+                            if (item.thinking.isNotBlank()) ThinkRow(item.key, item.thinking)
+                            if (item.text.isNotBlank()) Text(item.text.trim(), style = Ph.body.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Ph.TextBody),
+                                modifier = Modifier.padding(vertical = 4.dp))
+                        }
+                        else -> {}
+                    }
+                }
+                b.finalThinking?.let { ThinkRow(it.key + "-f", it.thinking) }
+            }
+        }
+    }
+}
+
+/** One dot per step: green done, red failed, amber running. Wraps to at most three rows (newest kept). */
+@Composable
+private fun StepDots(tools: List<Item.Tool>) {
+    if (tools.isEmpty()) return
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val d = 6.dp; val g = 4.dp
+        val perRow = ((maxWidth + g) / (d + g)).toInt().coerceAtLeast(1)
+        val shown = tools.takeLast(perRow * 3)
+        val rows = (shown.size + perRow - 1) / perRow
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(d * rows + g * (rows - 1))) {
+            val dp = d.toPx(); val gp = g.toPx()
+            shown.forEachIndexed { i, tl ->
+                val c = when (tl.state) {
+                    io.github.pimobile.ui.state.ToolState.RUNNING -> Ph.Amber
+                    io.github.pimobile.ui.state.ToolState.ERROR -> Ph.Red
+                    else -> Ph.Green.copy(alpha = 0.7f)
+                }
+                val x = (i % perRow) * (dp + gp) + dp / 2; val y = (i / perRow) * (dp + gp) + dp / 2
+                drawCircle(c, dp / 2, androidx.compose.ui.geometry.Offset(x, y))
+            }
+        }
+    }
+}
+
+/** A step as one mono line: ✓/✗ name target. Tap for its full command and output. */
+@Composable
+private fun StepRow(tool: Item.Tool) {
+    var open by rememberSaveable(tool.key) { mutableStateOf(false) }
+    val st = tool.state
+    Column {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(when (st) { io.github.pimobile.ui.state.ToolState.RUNNING -> "◌"; io.github.pimobile.ui.state.ToolState.ERROR -> "✗"; else -> "✓" },
+                style = Ph.mono.copy(color = when (st) { io.github.pimobile.ui.state.ToolState.RUNNING -> Ph.Amber; io.github.pimobile.ui.state.ToolState.ERROR -> Ph.Red; else -> Ph.Green }))
+            Text(tool.name, style = Ph.mono.copy(color = Ph.Text), modifier = Modifier.widthIn(min = 44.dp))
+            Text(io.github.pimobile.ui.components.toolTarget(tool.name, tool.args), style = Ph.mono.copy(color = Ph.Muted),
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        }
+        AnimatedVisibility(open) { Box(Modifier.padding(bottom = 6.dp)) { ToolPanel(listOf(tool)) } }
+    }
+}
+
+@Composable
+private fun ThinkRow(key: String, thinking: String) {
+    var open by rememberSaveable(key) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }.padding(vertical = 5.dp)) {
+        Text("┊ " + if (open) "thinking" else thinking.lines().lastOrNull { it.isNotBlank() }.orEmpty().trim(),
+            style = Ph.mono.copy(color = Ph.Muted.copy(alpha = 0.8f)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        AnimatedVisibility(open) {
+            Text(thinking.trim(), style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp, lineHeight = 20.sp),
+                modifier = Modifier.padding(top = 4.dp, start = 12.dp))
+        }
     }
 }
 
@@ -781,18 +875,16 @@ private fun Working(t: TaskUi) {
 }
 
 @Composable
-private fun Row1(t: TaskUi, item: Item) {
+private fun Row1(t: TaskUi, item: Item, hideThinking: Boolean = false, latest: Boolean = false, onSheet: (String) -> Unit = {}) {
     when (item) {
         is Item.User -> UserMessage(t, item)
         is Item.Assistant -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (item.thinking.isNotBlank()) Thinking(item)
+            if (item.thinking.isNotBlank() && !hideThinking) Thinking(item)
             if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text) }
             if (item.text.isNotBlank() && !item.streaming && endOfTurn(t, item)) ReplyActions(t, item)
         }
-        is Item.Notice -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (item.error) PhIcon(PhIcons.Warning, Ph.Red, 16.dp)
-            Text(item.text, style = Ph.mono.copy(color = if (item.error) Ph.Red else Ph.Muted))
-        }
+        is Item.Notice -> if (item.error) ErrorCard(t, item.text, actionable = latest && !t.status.let { it == Status.RUNNING || it == Status.STARTING }, onSheet)
+            else Text(item.text, style = Ph.mono.copy(color = Ph.Muted))
         is Item.Dialog -> DialogCard(t, item)
         is Item.Tool -> ToolPanel(listOf(item))
     }
@@ -972,3 +1064,85 @@ private fun shareMarkdown(ctx: android.content.Context, t: TaskUi) {
         .putExtra(android.content.Intent.EXTRA_SUBJECT, t.title)
         .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share chat"))
 }
+
+
+/** A provider/run error in plain words: what happened, what to do, the raw text behind "details". */
+private data class ErrorKind(val title: String, val hint: String, val actions: List<String>)
+
+private fun classifyError(raw: String): ErrorKind {
+    val e = raw.lowercase()
+    fun has(vararg k: String) = k.any { it in e }
+    return when {
+        e.startsWith("extension error") -> ErrorKind("An extension failed", "One of pi's extensions hit an error. The task itself may be fine.", listOf("retry"))
+        has("429", "rate limit", "rate_limit", "too many requests", "ratelimit") ->
+            ErrorKind("Rate limited", "The AI is getting too many requests right now. Wait a moment, or switch to another model.", listOf("retry", "model"))
+        has("402", "insufficient", "credit", "quota", "billing", "payment") ->
+            ErrorKind("Out of credits", "This provider says your account has run out of credit or quota.", listOf("model", "login"))
+        has("401", "403", "unauthorized", "forbidden", "invalid api key", "invalid_api_key", "authentication", "no api key", "not logged in", "api key") ->
+            ErrorKind("Not signed in", "The provider didn't accept your sign-in or key. Log in again, or pick another model.", listOf("login", "model"))
+        has("context length", "context_length", "maximum context", "too long", "too many tokens", "413", "prompt is too long", "context window") ->
+            ErrorKind("Too much to send", "This chat is longer than the model can take in one go. Compact it, or use a bigger model.", listOf("compact", "model"))
+        has("model not found", "no endpoints", "not a valid model", "model_not_found", "does not exist", "404", "unsupported model") ->
+            ErrorKind("Model unavailable", "That model isn't available right now. Pick another one.", listOf("model", "retry"))
+        has("timeout", "timed out", "econn", "network", "fetch failed", "socket", "enotfound", "eai_again", "offline") ->
+            ErrorKind("Connection dropped", "Saturn couldn't reach the AI. Check your internet and try again.", listOf("retry"))
+        has("500", "502", "503", "529", "overloaded", "server error", "internal error", "bad gateway", "unavailable") ->
+            ErrorKind("Provider is having trouble", "The AI service is overloaded or down for a moment. Try again, or switch models.", listOf("retry", "model"))
+        else -> ErrorKind("Something went wrong", "The last step didn't finish. You can try it again.", listOf("retry"))
+    }
+}
+
+@Composable
+private fun ErrorCard(t: TaskUi, raw: String, actionable: Boolean, onSheet: (String) -> Unit) {
+    val k = remember(raw) { classifyError(raw) }
+    var details by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape)
+        .drawBehind { drawRect(Ph.Red, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+        .padding(start = 18.dp, end = 14.dp, top = 13.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            PhIcon(PhIcons.Warning, Ph.Red, 15.dp)
+            Text(k.title, style = Ph.title.copy(fontSize = 14.5.sp), modifier = Modifier.weight(1f))
+            Text(if (details) "hide" else "details", style = Ph.monoSmall,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { details = !details }.padding(horizontal = 6.dp, vertical = 3.dp))
+        }
+        Text(k.hint, style = Ph.body.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Ph.TextBody))
+        AnimatedVisibility(details) {
+            SelectionContainer {
+                Text(raw.trim(), style = Ph.mono.copy(fontSize = 11.5.sp, color = Ph.Muted), modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp)).background(Ph.Ground).padding(10.dp))
+            }
+        }
+        if (actionable) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp)) {
+            k.actions.forEachIndexed { i, a ->
+                val (label, icon) = when (a) {
+                    "retry" -> "Retry" to PhIcons.Retry
+                    "model" -> "Switch model" to PhIcons.Cube
+                    "login" -> "Log in" to PhIcons.Key
+                    else -> "Compact" to PhIcons.Compact
+                }
+                val primary = i == 0
+                Row(Modifier.clip(RoundedCornerShape(10.dp)).background(if (primary) Ph.AmberWash else Color.Transparent)
+                    .border(1.dp, if (primary) Ph.AmberLine else Ph.LineStrong, RoundedCornerShape(10.dp))
+                    .clickable {
+                        when (a) {
+                            "retry" -> UiStore.retry(t)
+                            "model" -> onSheet("model")
+                            "login" -> onSheet("login")
+                            else -> UiStore.rpc(t, "compact")
+                        }
+                    }.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    PhIcon(icon, if (primary) Ph.Amber else Ph.TextSoft, 14.dp)
+                    Text(label, style = Ph.mono.copy(color = if (primary) Ph.Amber else Ph.TextSoft))
+                }
+            }
+        }
+    }
+}
+
+/** A URL as a title reads badly: show its host instead. */
+internal fun displayTitle(title: String): String =
+    if (title.startsWith("http://") || title.startsWith("https://"))
+        runCatching { java.net.URI(title.trim().substringBefore(' ')).host?.removePrefix("www.") }.getOrNull() ?: title
+    else title

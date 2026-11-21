@@ -173,7 +173,9 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
             modifier = Modifier.padding(20.dp))
         providers == null -> Loading("Loading providers from pi…")
         else -> {
+            val freeCard = method == "oauth" && query.isBlank() && providers.any { it.id == "openrouter" }
             val shown = providers.filter {
+                !(freeCard && it.id == "openrouter") &&
                 (when (method) { "oauth" -> it.oauth && it.id != "radius"; "api_key" -> it.apiKey; else -> true }) &&
                     (!logoutMode || it.id in Control.signedIn) &&
                     (query.isBlank() || it.name.contains(query, true) || it.id.contains(query, true))
@@ -196,10 +198,10 @@ private fun ProviderList(logoutMode: Boolean, query: String, onQuery: (String) -
                 if (method == "oauth" && query.isBlank() && openrouter != null) item(key = "free") {
                     Column {
                         Section("RECOMMENDED", Ph.Amber)
-                        MethodRow(PhIcons.Sparkle, "Free with OpenRouter", "Make a free key in about a minute. Saturn uses free models only, so you're never charged.",
+                        MethodRow(PhIcons.Sparkle, "Free with OpenRouter", "Sign in with OpenRouter. Saturn uses its free models only, so you're never charged.",
                             tag = "free", highlight = true, done = openrouter.id in Control.signedIn) {
                             Control.login.pickFree = true
-                            Control.startLogin(openrouter, "api_key")
+                            Control.startLogin(openrouter, if (openrouter.oauth) "oauth" else "api_key")
                         }
                         if (groups.firstOrNull()?.first == null) Section("SUBSCRIPTIONS")
                     }
@@ -310,7 +312,11 @@ private fun LoginFlow(p: Control.Provider, onBack: () -> Unit) {
             Monogram(p, 44, signedIn = login.done)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text(p.name, style = Ph.heading.copy(fontSize = 20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (login.authType == "oauth") "signing in with ${p.oauthLabel ?: "your account"}" else "connecting with an API key", style = Ph.monoSmall)
+                Text(when {
+                    login.done -> "connected"
+                    login.authType == "oauth" -> "browser sign-in"
+                    else -> "API key"
+                }, style = Ph.monoSmall.copy(color = if (login.done) Ph.Green else Ph.Muted))
             }
         }
         login.authUrl?.takeIf { !login.done }?.let { url ->
@@ -384,7 +390,7 @@ private fun DialogStep(d: Control.Dialog) {
     Card {
         StepHead(if (Control.login.authUrl != null || Control.login.deviceCode != null) "2" else "1", d.title)
         val uri = LocalUriHandler.current
-        if (Control.login.pickFree && Control.login.provider?.id == "openrouter" && d.kind == "secret")
+        if (Control.login.pickFree && Control.login.provider?.id == "openrouter" && d.kind == "secret" && Control.login.authType == "api_key")
             Btn("Get a free key at openrouter.ai", wide = true) { runCatching { uri.openUri("https://openrouter.ai/keys") } }
         if (d.method == "select") d.options.forEach { o ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ph.Ground)

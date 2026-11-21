@@ -492,7 +492,12 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         }
                     }
                     val pick = rememberAttachPicker { attachments.addAll(it) }
+                    // What this model can think at; asked again whenever the model changes.
+                    LaunchedEffect(UiStore.model) { UiStore.rpc(t, "get_available_thinking_levels") }
+                    val thinkLevels = t.responses["get_available_thinking_levels"]?.optJSONArray("levels")
+                        ?.let { a -> (0 until a.length()).map { a.getString(it) } }
                     Composer(
+                        thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l -> UiStore.setThinking(t, l) } },
                         value = input, onValue = { input = it },
                         placeholder = "Ask Saturn · task #${t.task.number}…",
                         commands = commands,

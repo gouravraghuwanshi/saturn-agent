@@ -390,6 +390,7 @@ fun HomeScreen(
                 value = input, onValue = { input = it },
                 attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
                 focus = homeFocus, acceptVoiceRequest = true,
+                thinking = ThinkingControl(UiStore.thinkingDefault, THINKING_LEVELS) { UiStore.setThinking(null, it) },
                 placeholder = "Ask Saturn to do something…",
                 commands = commands,
                 onSend = { text ->

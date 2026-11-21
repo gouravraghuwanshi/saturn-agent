@@ -1,6 +1,11 @@
 package io.github.pimobile.ui
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 
 import androidx.compose.animation.AnimatedVisibility
@@ -125,7 +130,9 @@ fun Composer(
     attach: AttachPicker? = null,
     onRemoveAttachment: (UiStore.Attachment) -> Unit = {},
     acceptVoiceRequest: Boolean = false,
+    thinking: ThinkingControl? = null,
 ) {
+    var thinkOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val text = value.text
@@ -223,12 +230,14 @@ fun Composer(
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (dictation.listening) VoiceWave(dictation, Modifier.weight(1f).padding(end = 6.dp))
+                else if (thinkOpen && thinking != null) ThinkingSlider(thinking, Modifier.weight(1f)) { thinkOpen = false }
                 else {
                     IconGhost(description = "Commands", onClick = {
                         onValue(TextFieldValue("/", selection = androidx.compose.ui.text.TextRange(1)))
                         focus.requestFocus()
                     }) { Text("/", style = Ph.mono.copy(fontSize = 17.sp, color = Ph.TextSoft)) }
                     if (attach != null) AttachButton(attach)
+                    if (thinking != null && thinking.levels.size > 1) ThinkingChip(thinking.level) { thinkOpen = true }
                     leading()
                     Box(Modifier.weight(1f))
                     extra()
@@ -452,5 +461,93 @@ private fun VoiceWave(d: Dictation, modifier: Modifier) {
             Box(Modifier.width(3.dp).height((4 + h.coerceIn(0f, 1f) * 32).dp).clip(RoundedCornerShape(2.dp))
                 .background(Ph.TextSoft.copy(alpha = 0.25f + 0.65f * (i + 1) / bars)))
         }
+    }
+}
+
+
+/** What the composer's thinking chip controls: the current level, the levels the model offers, and how to set one. */
+class ThinkingControl(val level: String?, val levels: List<String>, val onSet: (String) -> Unit)
+
+/** pi's levels, used where no task can tell us what the model supports. */
+val THINKING_LEVELS = listOf("off", "minimal", "low", "medium", "high")
+
+private fun shortLevel(l: String?) = when (l) { null -> "think"; "minimal" -> "min"; "medium" -> "med"; else -> l }
+
+/** A little meter + level ("▮▮▯ med"): tap to drag a new level. */
+@Composable
+private fun ThinkingChip(level: String?, onClick: () -> Unit) {
+    val idx = THINKING_LEVELS.indexOf(level).let { if (it < 0 && level == "xhigh") 5 else it }
+    val on = idx > 0
+    Row(Modifier.height(38.dp).clip(RoundedCornerShape(19.dp))
+        .border(1.dp, if (on) Ph.AmberLine else Ph.Line, RoundedCornerShape(19.dp))
+        .background(if (on) Ph.AmberWash else Color.Transparent)
+        .clickable(onClickLabel = "Thinking level") { onClick() }.padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (i in 1..4) Box(Modifier.size(width = 3.dp, height = (4 + i * 3).dp).clip(RoundedCornerShape(1.dp))
+                .background(if (idx >= i) Ph.Amber else Ph.LineStrong))
+        }
+        Text(shortLevel(level), style = Ph.mono.copy(fontSize = 12.sp, color = if (on) Ph.Amber else Ph.TextSoft))
+    }
+}
+
+/**
+ * The chip opened into a track across the tools row: drag (or tap) along it,
+ * it snaps to each level with a tick, and letting go sets it and folds back.
+ */
+@Composable
+private fun ThinkingSlider(c: ThinkingControl, modifier: Modifier, onDone: () -> Unit) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val levels = c.levels
+    var pick by remember { mutableStateOf(levels.indexOf(c.level).coerceAtLeast(0)) }
+    val pos by androidx.compose.animation.core.animateFloatAsState(pick.toFloat(),
+        androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 600f), label = "thumb")
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var widthPx by remember { mutableStateOf(1f) }
+    fun at(x: Float) = ((x / widthPx) * (levels.size - 1) + 0.5f).toInt().coerceIn(0, levels.size - 1)
+    fun move(i: Int) { if (i != pick) { pick = i; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) } }
+    fun commit() {
+        view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        c.onSet(levels[pick])
+        scope.launch { kotlinx.coroutines.delay(350); onDone() }
+    }
+    Row(modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 12.dp)
+            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerInput(levels) {
+                detectTapGestures { o -> move(at(o.x)); commit() }
+            }
+            .pointerInput(levels) {
+                detectHorizontalDragGestures(onDragEnd = { commit() }) { ch, _ -> ch.consume(); move(at(ch.position.x)) }
+            }) {
+            val frac = if (levels.size > 1) pos / (levels.size - 1) else 0f
+            // track + amber fill up to the thumb
+            Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Ph.Chip))
+            Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(frac.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Ph.Amber))
+            // notches with labels above them
+            levels.forEachIndexed { i, l ->
+                val f = if (levels.size > 1) i.toFloat() / (levels.size - 1) else 0f
+                Box(Modifier.fillMaxSize().layout { m, cons ->
+                    val p = m.measure(cons.copy(minWidth = 0, minHeight = 0))
+                    layout(cons.maxWidth, cons.maxHeight) { p.place((cons.maxWidth * f - p.width / 2f).toInt(), (cons.maxHeight - p.height) / 2) }
+                }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(shortLevel(l), style = Ph.monoSmall.copy(fontSize = 9.5.sp, color = if (i == pick) Ph.Amber else Ph.Muted))
+                        Box(Modifier.padding(top = 3.dp, bottom = 16.dp).size(6.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(if (i <= pos + 0.01f) Ph.Amber else Ph.LineStrong))
+                    }
+                }
+            }
+            // the thumb
+            Box(Modifier.fillMaxSize().layout { m, cons ->
+                val p = m.measure(cons.copy(minWidth = 0, minHeight = 0))
+                layout(cons.maxWidth, cons.maxHeight) { p.place((cons.maxWidth * frac - p.width / 2f).toInt(), (cons.maxHeight - p.height) / 2) }
+            }) {
+                Box(Modifier.size(18.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ph.Amber)
+                    .border(3.dp, Ph.AmberInk, androidx.compose.foundation.shape.CircleShape))
+            }
+        }
+        Box(Modifier.size(32.dp).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClickLabel = "Close") { onDone() },
+            contentAlignment = Alignment.Center) { PhIcon(PhIcons.Close, Ph.Muted, 15.dp) }
     }
 }

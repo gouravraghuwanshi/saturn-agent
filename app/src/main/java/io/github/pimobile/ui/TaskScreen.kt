@@ -441,7 +441,11 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (turnStart) SaturnLabel()
                             when (b) {
-                                is Block.Work -> WorkBlock(b, live = running && i == blocks.lastIndex, startedAt = t.runStartedAt)
+                                // Live while it's the last thing, or only a short note is being written after it
+                                // (the real answer folds it; a "Now let me…" between steps shouldn't).
+                                is Block.Work -> WorkBlock(b, live = running && (i == blocks.lastIndex ||
+                                    (i == blocks.lastIndex - 1 && ((blocks.last() as? Block.Single)?.item as? Item.Assistant)
+                                        ?.let { a -> a.streaming && a.text.length < 160 } == true)), startedAt = t.runStartedAt)
                                 is Block.Single -> Row1(t, b.item, b.hideThinking, latest = b.item === t.items.lastOrNull()) { sheet = it }
                             }
                         }
@@ -696,11 +700,13 @@ private fun WorkBlock(b: Block.Work, live: Boolean, startedAt: Long?) {
     val tools = b.items.filterIsInstance<Item.Tool>()
     val failed = tools.count { it.state == io.github.pimobile.ui.state.ToolState.ERROR }
     val active = live || tools.any { it.state == io.github.pimobile.ui.state.ToolState.RUNNING }
-    var open by rememberSaveable(b.key) { mutableStateOf(false) }
+    // Open while Saturn works (you see every step land), folded once the answer starts; a tap overrides.
+    var choice by rememberSaveable(b.key) { mutableStateOf<Boolean?>(null) }
+    val open = choice ?: active
     val shape = RoundedCornerShape(18.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface)
         .border(1.dp, if (active) Ph.AmberLine else Ph.Line, shape)
-        .clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { open = !open }
+        .clickable(onClickLabel = if (open) "Hide steps" else "Show steps") { choice = !open }
         .padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         val few = tools.size <= 3
         // Header: what it's doing / did, and (for longer runs) the dots on the right.

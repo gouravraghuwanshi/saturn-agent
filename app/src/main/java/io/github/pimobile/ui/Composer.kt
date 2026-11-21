@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -131,6 +132,8 @@ fun Composer(
     onRemoveAttachment: (UiStore.Attachment) -> Unit = {},
     acceptVoiceRequest: Boolean = false,
     thinking: ThinkingControl? = null,
+    /** How full the model's context is (0..1), drawn as a ring round the mic/send button; null hides it. */
+    contextFill: Float? = null,
 ) {
     var thinkOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
@@ -243,9 +246,11 @@ fun Composer(
                     extra()
                 }
                 // One round button: the mic while the box is empty, Send once there's something to send.
-                if (dictation.listening || (text.isBlank() && attachments.isEmpty())) MicButton(dictation) {
-                    if (dictation.listening) dictation.stop() else startDictation()
-                } else SendButton(enabled = true, color = accent) { send() }
+                ContextRing(if (dictation.listening) null else contextFill) {
+                    if (dictation.listening || (text.isBlank() && attachments.isEmpty())) MicButton(dictation) {
+                        if (dictation.listening) dictation.stop() else startDictation()
+                    } else SendButton(enabled = true, color = accent) { send() }
+                }
             }
         }
     }
@@ -548,4 +553,26 @@ private fun ThinkingSlider(c: ThinkingControl, modifier: Modifier, onDone: () ->
         Box(Modifier.size(32.dp).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClickLabel = "Close") { onDone() },
             contentAlignment = Alignment.Center) { PhIcon(PhIcons.Close, Ph.Muted, 15.dp) }
     }
+}
+
+
+/**
+ * A hairline arc round the round button showing how much of the model's
+ * context this chat uses: quiet grey, amber past 70%, red past 90%.
+ */
+@Composable
+private fun ContextRing(fill: Float?, content: @Composable () -> Unit) {
+    val f by androidx.compose.animation.core.animateFloatAsState((fill ?: 0f).coerceIn(0f, 1f),
+        androidx.compose.animation.core.tween(600), label = "ctx")
+    val color = when { f >= 0.9f -> Ph.Red; f >= 0.7f -> Ph.Amber; else -> Ph.TextSoft.copy(alpha = 0.55f) }
+    Box(Modifier.size(52.dp).semantics { if (fill != null) contentDescription = "Context ${(f * 100).toInt()}% full" }
+        .drawBehind {
+            if (fill == null) return@drawBehind
+            val w = 2.dp.toPx(); val inset = w / 2f
+            val arc = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
+            val tl = androidx.compose.ui.geometry.Offset(inset, inset)
+            drawArc(Ph.Line, 0f, 360f, false, tl, arc, style = androidx.compose.ui.graphics.drawscope.Stroke(w))
+            if (f > 0.005f) drawArc(color, -90f, 360f * f, false, tl, arc,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        }, contentAlignment = Alignment.Center) { content() }
 }

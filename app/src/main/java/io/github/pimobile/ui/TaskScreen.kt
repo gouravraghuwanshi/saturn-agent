@@ -497,6 +497,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     val thinkLevels = t.responses["get_available_thinking_levels"]?.optJSONArray("levels")
                         ?.let { a -> (0 until a.length()).map { a.getString(it) } }
                     Composer(
+                        contextFill = t.contextWindow.takeIf { it > 0 && t.contextTokens > 0 }?.let { t.contextTokens / it.toFloat() },
                         thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l -> UiStore.setThinking(t, l) } },
                         value = input, onValue = { input = it },
                         placeholder = "Ask Saturn · task #${t.task.number}…",

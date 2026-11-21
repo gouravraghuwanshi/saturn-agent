@@ -52,6 +52,8 @@ class TaskUi(val task: TaskManager.Task) {
     var hidden by mutableStateOf(false)
     var cost by mutableStateOf(0.0)
     var contextTokens by mutableStateOf(0)
+    /** The model's context window (tokens), from pi's state; 0 until known. */
+    var contextWindow by mutableStateOf(0)
     var runStartedAt by mutableStateOf<Long?>(null)
     var lastError by mutableStateOf<String?>(null)
     /** Saturn's last reply read from the session file, for the home card before the chat is loaded. */
@@ -713,7 +715,10 @@ object UiStore : TaskManager.Listener {
         when (r.optString("command")) {
             // Extension commands consumed by pi never echo a user message.
             "prompt" -> if (data?.optString("disposition") == "handled" && !r.optString("id").startsWith("app-")) ui.echoes.removeLastOrNull()
+            // set_model answers with the model itself.
+            "set_model" -> data?.optInt("contextWindow", 0)?.takeIf { it > 0 }?.let { ui.contextWindow = it }
             "get_state" -> {
+                data?.optJSONObject("model")?.optInt("contextWindow", 0)?.takeIf { it > 0 }?.let { ui.contextWindow = it }
                 data?.optString("thinkingLevel")?.takeIf { it.isNotBlank() }?.let { ui.thinkingLevel = it }
                 data?.optString("sessionId")?.let { TaskManager.setSessionId(ui.task, it) }
                 // The header shows the app-wide default; tasks follow it rather than redefining it.

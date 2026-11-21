@@ -93,6 +93,10 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Toggle(PhIcons.Sparkle, "Pure black", "True black, saves battery", Ph.amoled) { UiStore.setAmoled(it) }
             }
 
+            Group("Your data") {
+                Item(PhIcons.Archive, "Backup & restore", "Chats, routines and settings in one file") { open = "backup" }
+            }
+
             Group("Advanced") {
                 var runScripts by remember { mutableStateOf(UiStore.runtime.runScripts) }
                 Toggle(PhIcons.Terminal, "Run scripts directly", "For scripts and npx tools", runScripts) {
@@ -118,6 +122,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
         "computers" -> ComputersSheet { open = null }
         "permissions" -> PermissionsSheet { open = null }
         "diagnostics" -> DiagnosticsSheet { open = null }
+        "backup" -> BackupSheet { open = null }
         "privacy" -> PhSheet({ open = null }) {
             Column(Modifier.verticalScroll(rememberScrollState())) { SheetTitle("Privacy"); Privacy(); Box(Modifier.size(12.dp)) }
         }

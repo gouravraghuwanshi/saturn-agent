@@ -114,7 +114,8 @@ fun LoginSheet(logoutMode: Boolean = false, initialQuery: String = "", onDismiss
         AnimatedContent(p != null && (login.running || login.done || login.error != null), label = "login",
             transitionSpec = { (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { if (targetState) it / 6 else -it / 6 }) togetherWith fadeOut(tween(140)) }) { flow ->
             Column(Modifier.fillMaxWidth()) {
-                if (flow && p != null) LoginFlow(p, onBack = { login.reset(); login.provider = null })
+                if (flow && p != null) LoginFlow(p, onBack = { login.reset(); login.provider = null },
+                    onClose = { login.reset(); login.provider = null; onDismiss() })
                 else ProviderList(logoutMode, query, { query = it })
             }
         }
@@ -293,7 +294,7 @@ private fun Badge(text: String, color: Color) = Text(text, style = Ph.monoSmall.
     modifier = Modifier.border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
 
 @Composable
-private fun LoginFlow(p: Control.Provider, onBack: () -> Unit) {
+private fun LoginFlow(p: Control.Provider, onBack: () -> Unit, onClose: () -> Unit) {
     val login = Control.login
     val uri = LocalUriHandler.current
     val copy = copier()
@@ -351,7 +352,7 @@ private fun LoginFlow(p: Control.Provider, onBack: () -> Unit) {
                 Text("Connected to ${p.name}", style = Ph.heading.copy(fontSize = 19.sp))
                 Text("Its models are in /model now. Running tasks switch on their next message.",
                     style = Ph.body.copy(fontSize = 13.sp, color = Ph.Muted, textAlign = TextAlign.Center))
-                Box(Modifier.padding(top = 6.dp).fillMaxWidth()) { Btn("Done", primary = true, wide = true) { onBack() } }
+                Box(Modifier.padding(top = 6.dp).fillMaxWidth()) { Btn("Done", primary = true, wide = true) { onClose() } }
             }
             login.error != null -> Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
                 .background(Ph.RedWash).border(1.dp, Ph.Red.copy(alpha = 0.35f), RoundedCornerShape(14.dp)).padding(14.dp),

@@ -72,6 +72,10 @@ object Onboarding {
         var sheet by remember { mutableStateOf<String?>(null) }
         // Signing in through a sheet moves on by itself.
         LaunchedEffect(connected, sheet) { if (connected && step == 1) step = 2 }
+        // Signed in: show the green check for a moment, then close the sheet on "You're set".
+        LaunchedEffect(Control.login.done) {
+            if (Control.login.done && sheet == "login") { kotlinx.coroutines.delay(1400); Control.login.reset(); Control.login.provider = null; sheet = null }
+        }
 
         Column(Modifier.fillMaxSize().background(Ph.Ground).statusBarsPadding().navigationBarsPadding().imePadding()
             .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),

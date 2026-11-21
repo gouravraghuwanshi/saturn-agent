@@ -140,6 +140,19 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf("chat") }
+    // Reading mode: paper colours while this chat is on screen; dark again the moment you leave
+    // (so home never flashes cream during the way back), and dark status-bar icons on the page.
+    val leaving = visibility.transition.targetState == androidx.compose.animation.EnterExitState.PostExit
+    val paperOn = UiStore.reading && tab == "chat" && !leaving
+    val rootView = androidx.compose.ui.platform.LocalView.current
+    fun barsFor(light: Boolean) {
+        val w = (rootView.context as? android.app.Activity)?.window ?: return
+        androidx.core.view.WindowCompat.getInsetsController(w, rootView).apply {
+            isAppearanceLightStatusBars = light; isAppearanceLightNavigationBars = light
+        }
+    }
+    LaunchedEffect(paperOn) { Ph.paper = paperOn; barsFor(paperOn) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Ph.paper = false; barsFor(false) } }
     var holdBrowser by rememberSaveable { mutableStateOf(false) } // user took over
     // Once the agent opened a page it stays until the user closes it: runs often end with
     // "now you finish this in the browser" (sign in, pay, solve a captcha…).
@@ -621,6 +634,7 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             }
             if (browser) HeaderIcon(PhIcons.Globe, tab == "browser", if (tab == "browser") "Back to chat" else "Show browser", dot = true) {
                 onTab(if (tab == "browser") "chat" else "browser") }
+            if (tab == "chat") HeaderIcon(PhIcons.Book, UiStore.reading, if (UiStore.reading) "Dark mode" else "Reading mode") { UiStore.toggleReading() }
             HeaderIcon(PhIcons.Terminal, tab == "terminal", if (tab == "terminal") "Back to chat" else "Open terminal") {
                 onTab(if (tab == "terminal") "chat" else "terminal") }
             HeaderIcon(PhIcons.More, false, "Task options") { onMenu() }
@@ -996,7 +1010,7 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
                 modifier = Modifier.alignByBaseline())
             Column(Modifier.weight(1f).alignByBaseline(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (text.isNotEmpty()) Text(text, style = Ph.body.copy(fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium,
-                    color = Color(0xFFF3E6D0)))
+                    color = if (Ph.paper) Ph.Text else Color(0xFFF3E6D0)))
                 if (images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { images.forEach { Thumb(it, 92) } }
                 files.forEach { path ->
                     FileChip(java.io.File(path).name, onClick = {

@@ -490,9 +490,10 @@ object UiStore : TaskManager.Listener {
     val saturnKnown: Boolean get() = prefs.getBoolean("saturn_tapped", false)
     fun markSaturnTapped() { prefs.edit().putBoolean("saturn_tapped", true).apply() }
     /** Chat screen in paper (book) colours. */
-    var reading by mutableStateOf(prefs.getBoolean("reading", false))
-        private set
-    fun toggleReading() { reading = !reading; prefs.edit().putBoolean("reading", reading).apply() }
+    // Loaded on first use: prefs need the app context, which isn't set yet when this object is created.
+    private var readingState by mutableStateOf<Boolean?>(null)
+    val reading: Boolean get() = readingState ?: prefs.getBoolean("reading", false).also { readingState = it }
+    fun toggleReading() { val v = !reading; readingState = v; prefs.edit().putBoolean("reading", v).apply() }
     /** Times the chat box's hold actions were used; the hint stops after a few. */
     var holdUses: Int
         get() = prefs.getInt("hold_uses", 0)

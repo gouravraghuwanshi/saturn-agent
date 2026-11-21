@@ -137,16 +137,20 @@ fun Composer(
     /** How full the model's context is (0..1), drawn as a ring round the mic/send button; null hides it. */
     contextFill: Float? = null,
     /** Hold the box and pull it up to do this (e.g. compact), like the other pull actions. */
-    pull: PullAction? = null,
+    pulls: List<PullAction> = emptyList(),
 ) {
     val view = androidx.compose.ui.platform.LocalView.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val pullMax = with(density) { 220.dp.toPx() }
-    val pullArm = with(density) { 170.dp.toPx() }
-    val liftAtArm = pullMax * (1f - kotlin.math.exp(-pullArm / pullMax))
-    var lift by remember { mutableStateOf(0f) }
-    var armed by remember { mutableStateOf(false) }
+    val targetY = with(density) { -118.dp.toPx() }      // target centres, above the box's top edge
+    val hitR = with(density) { 58.dp.toPx() }
+    val revealPx = with(density) { 56.dp.toPx() }
+    var dragX by remember { mutableStateOf(0f) }        // finger travel since the pull locked
+    var dragY by remember { mutableStateOf(0f) }
+    var pulling by remember { mutableStateOf(false) }
+    var armedIdx by remember { mutableStateOf(-1) }
+    var boxW by remember { mutableStateOf(1f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun targetX(i: Int) = boxW * (if (pulls.size == 1) 0.5f else 0.27f + 0.46f * i / (pulls.size - 1).coerceAtLeast(1))
     var thinkOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -212,42 +216,38 @@ fun Composer(
             }
         }
         Box {
-        // Revealed under the box as it rises: the same panel as the chat's pull-up.
-        val shown = -lift
-        if (pull != null && shown > 1f) {
-            val progress = (shown / liftAtArm).coerceIn(0f, 1f)
-            val shape = RoundedCornerShape(22.dp)
-            Box(Modifier.matchParentSize().layout { m, c ->
-                val h = shown.toInt().coerceAtLeast(1)
-                val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(c.maxWidth, h))
-                layout(c.maxWidth, c.maxHeight) { p.place(0, c.maxHeight - h) }
-            }) {
-                Box(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = 2.dp).clip(shape)
-                    .background(if (armed) Ph.AmberWash else Ph.Surface).border(1.dp, if (armed) Ph.AmberLine else Ph.Line, shape)) {
-                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(progress)
-                        .background(Ph.Amber.copy(alpha = if (armed) 0.16f else 0.08f)))
-                    val pop by androidx.compose.animation.core.animateFloatAsState(if (armed) 1.2f else 1f,
-                        androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "pullPop")
-                    Column(Modifier.align(Alignment.Center).graphicsLayer { alpha = (progress * 2.5f).coerceAtMost(1f) },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(44.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(RoundedCornerShape(22.dp))
-                            .background(if (armed) Ph.Amber else Ph.Chip), contentAlignment = Alignment.Center) {
-                            PhIcon(pull.icon, if (armed) Ph.AmberInk else Ph.Amber, 20.dp)
-                        }
-                        Text(if (armed) pull.ready else pull.hint, style = Ph.mono.copy(color = if (armed) Ph.Amber else Ph.TextSoft))
-                        pull.note?.let { Text(it, style = Ph.monoSmall) }
-                    }
+        // Drop targets that fade in above the box while it's pulled up.
+        val reveal = if (pulling) ((-dragY) / revealPx).coerceIn(0f, 1f) else 0f
+        val shownReveal by androidx.compose.animation.core.animateFloatAsState(reveal, androidx.compose.animation.core.tween(90), label = "reveal")
+        if (pulls.isNotEmpty() && shownReveal > 0.01f) Box(Modifier.matchParentSize().padding(horizontal = 16.dp).layout { m, c ->
+            val p = m.measure(c)
+            layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
+        }) {
+            pulls.forEachIndexed { i, a ->
+                val on = i == armedIdx
+                val pop by androidx.compose.animation.core.animateFloatAsState(if (on) 1.22f else 1f,
+                    androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 500f), label = "pop$i")
+                Column(Modifier.layout { m, c ->
+                    val p = m.measure(androidx.compose.ui.unit.Constraints())
+                    layout(0, 0) { p.place((targetX(i) - p.width / 2f).toInt(), (targetY - with(density) { 28.dp.toPx() }).toInt()) }
+                }.graphicsLayer { alpha = shownReveal; translationY = (1f - shownReveal) * 24f },
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(56.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (on) Ph.Amber else Ph.Surface)
+                        .border(1.dp, if (on) Ph.Amber else Ph.LineStrong, androidx.compose.foundation.shape.CircleShape),
+                        contentAlignment = Alignment.Center) { PhIcon(a.icon, if (on) Ph.AmberInk else Ph.Amber, 22.dp) }
+                    Text(if (on) a.ready else a.label, style = Ph.mono.copy(fontSize = 12.sp, color = if (on) Ph.Amber else Ph.TextSoft))
+                    a.note?.let { Text(it, style = Ph.monoSmall.copy(fontSize = 10.sp)) }
                 }
             }
         }
         Column(
             Modifier.padding(horizontal = 16.dp).fillMaxWidth()
-                .graphicsLayer { translationY = lift }
-                .then(if (pull == null) Modifier else Modifier.pointerInput(pull) {
-                    // Pull the box up (vertical, upward): it lifts with weight; past the line it arms.
+                .onSizeChanged { boxW = it.width.toFloat() }
+                .then(if (pulls.isEmpty()) Modifier else Modifier.pointerInput(pulls.size) {
+                    // Pull the box up and it follows your finger; drop it on a target to do that.
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false,
-                            pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                         var dx = 0f; var dy = 0f; var locked = false
                         val slop = viewConfiguration.touchSlop
                         while (true) {
@@ -259,29 +259,37 @@ fun Composer(
                             if (!locked) {
                                 if (kotlin.math.abs(dx) > slop * 1.5f && kotlin.math.abs(dx) > kotlin.math.abs(dy)) return@awaitEachGesture
                                 if (dy < -slop && kotlin.math.abs(dy) > 1.5f * kotlin.math.abs(dx)) {
-                                    locked = true; dy = 0f
+                                    locked = true; pulling = true
                                     view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
                                 } else continue
                             }
                             ch.consume()
-                            val pulled = (-dy).coerceAtLeast(0f)
-                            lift = -pullMax * (1f - kotlin.math.exp(-pulled / pullMax))
-                            val now = pulled >= pullArm
-                            if (now != armed) {
-                                armed = now
-                                view.performHapticFeedback(if (now) (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                            dragX = dx; dragY = dy
+                            // Where the finger is, in the box's own (unmoved) coordinates.
+                            val fx = ch.position.x; val fy = ch.position.y
+                            val hit = pulls.indices.minByOrNull { i -> kotlin.math.hypot(fx - targetX(i), fy - targetY) }
+                                ?.takeIf { i -> kotlin.math.hypot(fx - targetX(i), fy - targetY) < hitR } ?: -1
+                            if (hit != armedIdx) {
+                                armedIdx = hit
+                                view.performHapticFeedback(if (hit >= 0) (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                                     else (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE else android.view.HapticFeedbackConstants.CLOCK_TICK))
                             }
                         }
                         if (locked) {
-                            if (armed) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); pull.onRelease() }
-                            armed = false
-                            val from = lift
-                            scope.launch { androidx.compose.animation.core.animate(from, 0f,
-                                animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 380f)) { v, _ -> lift = v } }
+                            val chosen = armedIdx
+                            if (chosen >= 0) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); pulls[chosen].onRelease() }
+                            armedIdx = -1
+                            val fx = dragX; val fy = dragY
+                            scope.launch {
+                                androidx.compose.animation.core.animate(1f, 0f,
+                                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.72f, stiffness = 380f)) { v, _ -> dragX = fx * v; dragY = fy * v }
+                                pulling = false
+                            }
                         }
                     }
                 })
+                // The box trails the finger: most of the way up, a little sideways.
+                .graphicsLayer { translationY = dragY.coerceAtMost(0f) * 0.8f; translationX = dragX * 0.45f }
                 .shadow(28.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black, spotColor = Color.Black)
                 .clip(RoundedCornerShape(22.dp)).background(Ph.Raised)
                 .drawBehind {
@@ -641,6 +649,6 @@ private fun ThinkingSlider(c: ThinkingControl, modifier: Modifier, onDone: () ->
     }
 }
 
-/** A pull-up action on the composer: what it does, and what the panel says before and at the line. */
-class PullAction(val icon: androidx.compose.ui.graphics.vector.ImageVector, val hint: String, val ready: String,
+/** A drop target shown above the composer while it's pulled up: its icon, label, label while hovered, and what it does. */
+class PullAction(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String, val ready: String,
                  val note: String? = null, val onRelease: () -> Unit)

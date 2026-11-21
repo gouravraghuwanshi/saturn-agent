@@ -498,10 +498,11 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         ?.let { a -> (0 until a.length()).map { a.getString(it) } }
                     Composer(
                         contextFill = t.contextWindow.takeIf { it > 0 && t.contextTokens > 0 }?.let { t.contextTokens / it.toFloat() },
-                        pull = if (!running && t.contextTokens > 0) PullAction(PhIcons.Compact, "Keep pulling to compact", "Release to compact",
-                            note = t.contextWindow.takeIf { it > 0 }?.let { w -> "context ${(t.contextTokens * 100L / w)}% full" }) {
-                            UiStore.rpc(t, "compact")
-                        } else null,
+                        pulls = buildList {
+                            if (!running && t.contextTokens > 0) add(PullAction(PhIcons.Compact, "Compact", "drop to compact",
+                                note = t.contextWindow.takeIf { it > 0 }?.let { w -> "${(t.contextTokens * 100L / w)}% full" }) { UiStore.rpc(t, "compact") })
+                            if (t.items.isNotEmpty()) add(PullAction(PhIcons.Share, "Share", "drop to share", note = "markdown") { shareMarkdown(ctx, t) })
+                        },
                         thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l -> UiStore.setThinking(t, l) } },
                         value = input, onValue = { input = it },
                         placeholder = "Ask Saturn · task #${t.task.number}…",
@@ -942,4 +943,32 @@ private fun ActIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = label) { onClick() }, contentAlignment = Alignment.Center) {
         PhIcon(icon, tint, 16.dp, label)
     }
+}
+
+
+/** The chat as Markdown (you, Saturn, and a line per tool step), shared as a .md file. */
+private fun shareMarkdown(ctx: android.content.Context, t: TaskUi) {
+    val md = buildString {
+        append("# ").append(t.title.ifBlank { "Task #${t.task.number}" }).append("\n\n")
+        append("_Saturn · task #${t.task.number} · ${t.task.cwd.name}_\n\n")
+        t.items.forEach { item ->
+            when (item) {
+                is Item.User -> append("**You**\n\n").append(item.text.trim()).append("\n\n")
+                is Item.Assistant -> if (item.text.isNotBlank()) append("**Saturn**\n\n").append(item.text.trim()).append("\n\n")
+                is Item.Tool -> {
+                    val arg = item.args.keys().asSequence().firstOrNull()?.let { item.args.optString(it) }?.lines()?.firstOrNull()?.take(120).orEmpty()
+                    append("> `").append(item.name).append("`").append(if (arg.isNotBlank()) " $arg" else "")
+                        .append(if (item.state == io.github.pimobile.ui.state.ToolState.ERROR) " (failed)" else "").append("\n\n")
+                }
+                is Item.Notice -> if (item.error) append("> ⚠ ").append(item.text.trim()).append("\n\n")
+                else -> {}
+            }
+        }
+    }
+    val f = java.io.File(ctx.cacheDir, "exports/task-${t.task.number}.md").apply { parentFile?.mkdirs(); writeText(md) }
+    val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+    ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND)
+        .setType("text/markdown").putExtra(android.content.Intent.EXTRA_STREAM, uri)
+        .putExtra(android.content.Intent.EXTRA_SUBJECT, t.title)
+        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share chat"))
 }

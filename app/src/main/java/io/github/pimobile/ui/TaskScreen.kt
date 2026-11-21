@@ -354,9 +354,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     onTab = { tab = it; if (it != "browser") holdBrowser = false },
                     onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" },
                     lampOpen = lampOpen, onLamp = { lampOpen = it; lampTouch = System.currentTimeMillis() })
-                AnimatedVisibility(lampOpen && tab == "chat", enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                    LampSlider(onTouch = { lampTouch = System.currentTimeMillis() })
-                }
+
                 io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 if (tab == "browser") {
                     BrowserPane(t, onClose = {
@@ -669,7 +667,12 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             HeaderIcon(PhIcons.More, false, "Task options") { onMenu() }
         }
         // Open: a small Saturn in text, turning while it works, and where things stand.
-        Box(Modifier.fillMaxWidth().clipToBounds().foldAway(collapse)) {
+        // Long-press the book icon and this band becomes the reading lamp for a moment.
+        val bandFold by androidx.compose.animation.core.animateFloatAsState(if (lampOpen) 0f else collapse, label = "band")
+        Box(Modifier.fillMaxWidth().clipToBounds().foldAway(bandFold)) {
+          androidx.compose.animation.Crossfade(lampOpen, label = "lamp") { lamp ->
+            if (lamp) LampSlider(onTouch = { onLamp(true) })
+            else
             Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp).graphicsLayer { alpha = 1f - collapse },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT,
@@ -703,6 +706,7 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
                     }
                 }
             }
+          }
         }
         Box(Modifier.fillMaxWidth().size(1.dp).background(Ph.Line.copy(alpha = 0.4f + 0.6f * collapse)))
     }
@@ -1285,15 +1289,16 @@ private fun ReadingIcon(lampOpen: Boolean, onLamp: (Boolean) -> Unit) {
 }
 
 /**
- * Like the phone's torch control, sideways: a big rounded pill that fills with warm lamp light
- * from the left. Slide (or tap) to set how strongly the lamp shades the page; a tick every 10%.
+ * The reading lamp, in place of the Saturn band: a pill that fills with warm light from a little
+ * lamp on the left. The beam's edge blooms past the fill, the lamp's halo grows with the level,
+ * ten ticks light up along the foot. Slide or tap; a tick every 10%.
  */
 @Composable
 private fun LampSlider(onTouch: () -> Unit) {
     val view = androidx.compose.ui.platform.LocalView.current
     val v = UiStore.shade
-    val shown by androidx.compose.animation.core.animateFloatAsState(v,
-        androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 900f), label = "lamp")
+    val f by androidx.compose.animation.core.animateFloatAsState(v,
+        androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 1100f), label = "lamp")
     var step by remember { mutableStateOf((v * 10).toInt()) }
     fun set(x: Float, w: Float) {
         val nv = (x / w).coerceIn(0f, 1f)
@@ -1301,26 +1306,63 @@ private fun LampSlider(onTouch: () -> Unit) {
         val now = (nv * 10).toInt()
         if (now != step) { step = now; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) }
     }
-    val shape = RoundedCornerShape(30.dp)
-    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp).height(60.dp)
-        .shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
-        .clip(shape).background(Ph.Chip)
-        .pointerInput(Unit) {
-            detectTapGestures { o -> set(o.x, size.width.toFloat()); UiStore.saveShade() }
-        }
+    val warm = Color(0xFFFFC46B); val pale = Color(0xFFFFF0CC); val ink = Color(0xFF3B2608)
+    val shape = RoundedCornerShape(26.dp)
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp).height(78.dp)
+        .shadow(14.dp, shape, ambientColor = Color(0xFF3B2608), spotColor = Color(0xFF3B2608))
+        .clip(shape)
+        .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF2A2219), Color(0xFF1C1712))))
+        .pointerInput(Unit) { detectTapGestures { o -> set(o.x, size.width.toFloat()); UiStore.saveShade() } }
         .pointerInput(Unit) {
             detectHorizontalDragGestures(onDragEnd = { UiStore.saveShade() }) { c, _ -> c.consume(); set(c.position.x, size.width.toFloat()) }
+        }
+        .drawBehind {
+            val edge = size.width * f
+            // The beam: deep amber at the lamp, paling toward its edge.
+            if (edge > 1f) drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                0f to Color(0xFFB9701C), 0.55f to warm, 1f to pale, startX = 0f, endX = edge),
+                size = androidx.compose.ui.geometry.Size(edge, size.height))
+            // Bloom: light spilling just past the edge.
+            if (f > 0.01f) drawCircle(androidx.compose.ui.graphics.Brush.radialGradient(
+                listOf(pale.copy(alpha = 0.55f * f.coerceAtLeast(0.3f)), Color.Transparent),
+                center = androidx.compose.ui.geometry.Offset(edge, size.height / 2f), radius = size.height * 0.9f),
+                radius = size.height * 0.9f, center = androidx.compose.ui.geometry.Offset(edge, size.height / 2f))
+            // A soft sheen along the top, like glass.
+            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.07f), Color.Transparent),
+                endY = size.height * 0.45f))
+            // Ten ticks along the foot; lit ones glow.
+            val y = size.height - 10.dp.toPx()
+            for (i in 1..9) {
+                val x = size.width * i / 10f
+                val lit = x <= edge
+                drawLine(if (lit) ink.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.16f),
+                    androidx.compose.ui.geometry.Offset(x, y - 4.dp.toPx()), androidx.compose.ui.geometry.Offset(x, y),
+                    strokeWidth = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            }
         }) {
-        // The light: a warm glow filling from the left, brightest at its leading edge.
-        Box(Modifier.fillMaxHeight().fillMaxWidth(shown.coerceIn(0f, 1f)).background(
-            androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFFE9A54B), Color(0xFFFFD58E), Color(0xFFFFF1CF)))))
-        Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            val lit = shown > 0.12f
-            PhIcon(PhIcons.Lamp, if (lit) Color(0xFF3A2507) else Ph.TextSoft, 22.dp)
-            Text("Lamp", style = Ph.title.copy(fontSize = 15.sp, color = if (lit) Color(0xFF3A2507) else Ph.Text),
-                modifier = Modifier.padding(start = 12.dp).weight(1f))
-            Text("${(shown * 100).toInt()}%", style = Ph.mono.copy(fontSize = 13.sp,
-                color = if (shown > 0.85f) Color(0xFF3A2507) else Ph.TextSoft))
+        Row(Modifier.fillMaxSize().padding(start = 14.dp, end = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The lamp: a little round button whose halo grows with the light.
+            Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(46.dp).graphicsLayer { scaleX = 0.7f + 0.5f * f; scaleY = scaleX; alpha = 0.25f + 0.6f * f }
+                    .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(pale.copy(alpha = 0.9f), Color.Transparent)),
+                        androidx.compose.foundation.shape.CircleShape))
+                Box(Modifier.size(34.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(if (f > 0.05f) pale else Color(0xFF3A3026)), contentAlignment = Alignment.Center) {
+                    PhIcon(PhIcons.Lamp, if (f > 0.05f) ink else Color(0xFFD9C7A8), 18.dp)
+                }
+            }
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                val dark = f > 0.3f
+                Text("Reading lamp", style = Ph.title.copy(fontSize = 14.5.sp, color = if (dark) ink else Color(0xFFF3E6CC)))
+                Text(when { f < 0.05f -> "off · fresh paper"; f < 0.35f -> "soft"; f < 0.7f -> "evening"; else -> "lamp-lit" },
+                    style = Ph.monoSmall.copy(color = if (dark) ink.copy(alpha = 0.7f) else Color(0xFFBFAF95)))
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("${(f * 100).toInt()}", style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                    fontSize = 30.sp, color = if (f > 0.82f) ink else Color(0xFFF3E6CC)))
+                Text("%", style = Ph.monoSmall.copy(color = if (f > 0.85f) ink.copy(alpha = 0.7f) else Color(0xFFBFAF95)),
+                    modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
+            }
         }
     }
 }

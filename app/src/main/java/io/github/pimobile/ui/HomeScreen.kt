@@ -173,7 +173,8 @@ fun HomeScreen(
     val heroPx = with(density) { 200.dp.toPx() }
     val heroSize by remember { androidx.compose.runtime.derivedStateOf {
         list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "hero" }?.size?.toFloat()?.takeIf { it > 0f } ?: heroPx } }
-    val collapse by remember { androidx.compose.runtime.derivedStateOf {
+    // Keyed on showList: the first task arriving must bring Saturn in without leaving the screen.
+    val collapse by remember(showList) { androidx.compose.runtime.derivedStateOf {
         if (!showList || list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / heroSize).coerceIn(0f, 1f)
     } }
     // A short list can't scroll, so Saturn could never tuck away: pad the end so it always can.

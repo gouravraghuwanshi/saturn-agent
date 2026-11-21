@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -207,6 +209,53 @@ fun HomeScreen(
         }
     }
 
+    // Pull down past the top (a long pull) to search every chat; home blurs behind the search.
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var pull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var pullJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val pullAt = with(density) { 110.dp.toPx() }
+    val pullMax = with(density) { 190.dp.toPx() }
+    val pullConn = remember(pullAt, pullMax) { object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+        var armed = false
+        fun crossed() {
+            val now = pull >= pullAt
+            if (now == armed) return
+            armed = now
+            hostView.performHapticFeedback(when {
+                android.os.Build.VERSION.SDK_INT >= 34 -> if (now) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+                    else android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
+                else -> android.view.HapticFeedbackConstants.CLOCK_TICK
+            })
+        }
+        override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            if (pull > 0f && available.y < 0f) {
+                val d = maxOf(available.y, -pull); pull += d; crossed()
+                return androidx.compose.ui.geometry.Offset(0f, d)
+            }
+            return androidx.compose.ui.geometry.Offset.Zero
+        }
+        override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset,
+                                  source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            if (available.y > 0f && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+                pullJob?.cancel()
+                // Heavier the further it goes.
+                pull = (pull + available.y * 0.55f * (1f - pull / pullMax).coerceAtLeast(0.06f)).coerceAtMost(pullMax); crossed()
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+            return androidx.compose.ui.geometry.Offset.Zero
+        }
+        override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            if (pull <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+            if (pull >= pullAt) { searchOpen = true; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM) }
+            armed = false
+            pullJob = scope.launch { androidx.compose.animation.core.animate(pull, 0f,
+                animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.78f, stiffness = 380f)) { v, _ -> pull = v } }
+            return available
+        }
+    } }
+    val blurR by androidx.compose.animation.core.animateDpAsState(if (searchOpen) 18.dp else 0.dp,
+        androidx.compose.animation.core.tween(260), label = "blur")
+
     var loginArg by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
     val builtins = listOf(
@@ -230,7 +279,7 @@ fun HomeScreen(
         val c = heroCenter
         if (c != null && showList) saturnGlow(c, 1f - collapse, breathe)
     }) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.fillMaxSize().blur(blurR).statusBarsPadding()) {
             // ---- header (a selection bar while tasks are selected)
             if (selecting) Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -291,8 +340,10 @@ fun HomeScreen(
             if (!showList) ProjectRow(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp))
             if (!showList) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
                 project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() }) { sheet = "login" }
-            else LazyColumn(
-                Modifier.weight(1f), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
+            else Box(Modifier.weight(1f)) {
+            PullToSearchHint(pull / pullAt, Modifier.align(Alignment.TopCenter).padding(top = 6.dp))
+            LazyColumn(
+                Modifier.fillMaxSize().nestedScroll(pullConn).graphicsLayer { translationY = pull }, state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val visible = projectTasks.filterNot { it.hidden }
@@ -373,11 +424,12 @@ fun HomeScreen(
                     first = active.isEmpty() && earlier.isEmpty(), onHeader = { showArchived = !showArchived }, collapsed = !showArchived)
                 item(key = "filler") { Spacer(Modifier.height(with(density) { fillerPx.toDp() })) }
             }
+            }
         }
 
         // ---- composer
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().blur(blurR)
                 .background(Brush.verticalGradient(0f to Ph.Ground.copy(alpha = 0f), 0.25f to Ph.Ground))
                 // Taps that miss the composer's controls must not reach the task card underneath.
                 .pointerInput(Unit) { detectTapGestures { } }
@@ -410,6 +462,10 @@ fun HomeScreen(
                 Text(if (selecting) "tap tasks to select · back to cancel" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)), textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
             }
+        }
+        androidx.compose.animation.AnimatedVisibility(searchOpen, enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(90)),
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180))) {
+            SearchOverlay(onOpen = { searchOpen = false; onOpen(it) }, onClose = { searchOpen = false })
         }
     }
 

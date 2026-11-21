@@ -582,11 +582,66 @@ object UiStore : TaskManager.Listener {
      * The messages on a session's current branch, read from its .jsonl: the last entry is the
      * leaf; follow parentId back to the root. Same shape as pi's get_messages.
      */
-    private fun readSessionMessages(sessionId: String, cwd: File): JSONArray? {
+    private fun sessionFile(sessionId: String, cwd: File): File? {
         val dir = File(runtime.home, ".pi/agent/sessions/" + io.github.pimobile.runtime.Usage.folderFor(cwd))
-        val file = dir.listFiles()?.firstOrNull { it.name.endsWith("_$sessionId.jsonl") }
+        return dir.listFiles()?.firstOrNull { it.name.endsWith("_$sessionId.jsonl") }
             ?: File(runtime.home, ".pi/agent/sessions").walkTopDown().maxDepth(2)
-                .firstOrNull { it.isFile && it.name.endsWith("_$sessionId.jsonl") } ?: return null
+                .firstOrNull { it.isFile && it.name.endsWith("_$sessionId.jsonl") }
+    }
+
+    // ----------------------------------------------------------------- search
+
+    /** One task that matches a search: where ([snippet], match at [at] for [len] chars) and how often. */
+    class Hit(val ui: TaskUi, val snippet: String, val at: Int, val len: Int, val count: Int, val inTitle: Boolean, val time: Long)
+
+    private class Indexed(val mtime: Long, val text: String)
+    private val index = java.util.concurrent.ConcurrentHashMap<String, Indexed>()
+
+    /** What a task said and was told, as plain text (cached until its session file changes). Call off the main thread. */
+    private fun textOf(t: TaskUi): Pair<String, Long> {
+        val f = sessionFile(t.task.sessionId, t.task.cwd) ?: return "" to 0L
+        val m = f.lastModified()
+        index[t.task.id]?.takeIf { it.mtime == m }?.let { return it.text to m }
+        val sb = StringBuilder()
+        readSessionMessages(t.task.sessionId, t.task.cwd)?.let { a ->
+            for (i in 0 until a.length()) {
+                val msg = a.optJSONObject(i) ?: continue
+                if (msg.optString("role") !in setOf("user", "assistant")) continue
+                when (val c = msg.opt("content")) {
+                    is String -> sb.append(c).append('\n')
+                    is JSONArray -> for (j in 0 until c.length()) c.optJSONObject(j)?.takeIf { it.optString("type") == "text" }
+                        ?.let { sb.append(it.optString("text")).append('\n') }
+                }
+            }
+        }
+        val text = sb.toString().replace(Regex("[*_`#>]+"), "").replace(Regex("\\s+"), " ")
+        index[t.task.id] = Indexed(m, text)
+        return text to m
+    }
+
+    /** Every task (all projects) whose title or chat contains [query]; titles first, then the most recent. Off the main thread. */
+    fun search(query: String): List<Hit> {
+        val q = query.trim()
+        val all = tasks.toList().filterNot { it.hidden }
+        if (q.isEmpty()) return all.map { val (_, m) = textOf(it); Hit(it, "", 0, 0, 0, false, m) }.sortedByDescending { it.time }.take(8)
+        return all.mapNotNull { t ->
+            val (text, m) = textOf(t)
+            val inTitle = t.title.contains(q, ignoreCase = true)
+            var count = 0; var first = -1; var from = 0
+            while (true) { val i = text.indexOf(q, from, ignoreCase = true); if (i < 0) break; if (first < 0) first = i; count++; from = i + q.length }
+            if (!inTitle && count == 0) return@mapNotNull null
+            if (first < 0) Hit(t, text.take(110), 0, 0, 0, true, m)
+            else {
+                val start = (first - 42).coerceAtLeast(0).let { s0 -> text.lastIndexOf(' ', s0).takeIf { it in (s0 - 12)..s0 }?.plus(1) ?: s0 }
+                val end = (first + q.length + 80).coerceAtMost(text.length)
+                val lead = if (start > 0) "…" else ""
+                Hit(t, lead + text.substring(start, end) + if (end < text.length) "…" else "", first - start + lead.length, q.length, count, inTitle, m)
+            }
+        }.sortedWith(compareByDescending<Hit> { it.inTitle }.thenByDescending { it.time })
+    }
+
+    private fun readSessionMessages(sessionId: String, cwd: File): JSONArray? {
+        val file = sessionFile(sessionId, cwd) ?: return null
         val parent = HashMap<String, String?>()
         val messages = HashMap<String, JSONObject>()
         var leaf: String? = null

@@ -74,6 +74,7 @@ object PhIcons {
     val Flag = stroke("M6 21V4M6 4h11l-2 4 2 4H6")
     val Retry = stroke("M20 12a8 8 0 1 1-2.3-5.7", "M20 4v5h-5")
     val Globe = stroke(circle(12f, 12f, 9f), "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18")
+    val Search = stroke(circle(11f, 11f, 6.5f), "M16 16l4.5 4.5")
     val Lock = stroke("M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3")
 }
 

@@ -110,7 +110,10 @@ private sealed class Block(val key: String) {
     class Work(val items: List<Item>, val finalThinking: Item.Assistant?) : Block("work-" + items.first().key)
 }
 
-private fun blocks(items: List<Item>): List<Block> {
+/** What counts as "the answer has started" while Saturn still works: a short note between steps isn't one. */
+private const val ANSWER_CHARS = 200
+
+private fun blocks(items: List<Item>, running: Boolean = false): List<Block> {
     val out = mutableListOf<Block>()
     var i = 0
     while (i < items.size) {
@@ -127,7 +130,10 @@ private fun blocks(items: List<Item>): List<Block> {
         if (run.none { it is Item.Tool }) run.forEach { out += Block.Single(it) }
         else {
             val last = run.last()
-            if (last is Item.Assistant && last.text.isNotBlank()) {
+            // While it works, a short note after a step stays in the Work card (otherwise every "Now let me…"
+            // between tool calls folded the card and the next step sprang it open again).
+            val isLast = j == items.size
+            if (last is Item.Assistant && last.text.isNotBlank() && (!running || !isLast || last.text.length >= ANSWER_CHARS)) {
                 out += Block.Work(run.dropLast(1), last.takeIf { it.thinking.isNotBlank() })
                 out += Block.Single(last, hideThinking = true)
             } else out += Block.Work(run.toList(), null)
@@ -174,7 +180,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     LaunchedEffect(tab) { focus.clearFocus(); keyboard?.hide() }
     val running = t.status == Status.RUNNING || t.status == Status.STARTING
     val list = rememberLazyListState()
-    val blocks by remember(t) { derivedStateOf { blocks(t.items.toList()) } }
+    val blocks by remember(t) { derivedStateOf { blocks(t.items.toList(), t.status == Status.RUNNING || t.status == Status.STARTING) } }
 
     LaunchedEffect(t) { UiStore.open(t) }
     // While this task is on screen: a tick for every tool call Saturn starts, a "no" when one fails.
@@ -500,9 +506,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             when (b) {
                                 // Live while it's the last thing, or only a short note is being written after it
                                 // (the real answer folds it; a "Now let me…" between steps shouldn't).
-                                is Block.Work -> WorkBlock(b, live = running && (i == blocks.lastIndex ||
-                                    (i == blocks.lastIndex - 1 && ((blocks.last() as? Block.Single)?.item as? Item.Assistant)
-                                        ?.let { a -> a.streaming && a.text.length < 160 } == true)), startedAt = t.runStartedAt)
+                                is Block.Work -> WorkBlock(b, live = running && i == blocks.lastIndex, startedAt = t.runStartedAt)
                                 is Block.Single -> Row1(t, b.item, b.hideThinking, latest = b.item === t.items.lastOrNull()) { sheet = it }
                             }
                         }

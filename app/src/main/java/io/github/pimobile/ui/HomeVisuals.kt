@@ -322,8 +322,10 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val steps = if (t.items.isNotEmpty()) t.tools.size else t.stepsDone
     val stamp = t.lastRunAt?.let { at -> remember(at) { stamp(ctx, at) } }
-    Column(modifier.fillMaxWidth().clip(shape).background(if (selected) Ph.AmberWash else Ph.Surface)
-        .border(1.dp, if (selected) Ph.AmberLine else Ph.Line, shape).padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberWash else Ph.Surface, tween(200), label = "bg")
+    val edge by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberLine else Ph.Line, tween(200), label = "edge")
+    Column(modifier.fillMaxWidth().clip(shape).background(bg)
+        .border(1.dp, edge, shape).padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             leading()

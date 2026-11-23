@@ -627,17 +627,36 @@ private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect
     val tap = Modifier.combinedClickable(onClick = onOpen, onClickLabel = if (selected != null) "Select task" else "Open task",
         onLongClick = { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onSelect() },
         onLongClickLabel = "Select task")
+    // The tick circle slides in when selecting starts (pushing the title over), fills with a little
+    // bounce when picked, and slides away again when selecting ends.
     val check: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-        if (selected != null) Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp))
-            .background(if (selected) Ph.Amber else androidx.compose.ui.graphics.Color.Transparent)
-            .border(1.5.dp, if (selected) Ph.Amber else Ph.LineStrong, RoundedCornerShape(11.dp)),
-            contentAlignment = Alignment.Center) { if (selected) PhIcon(PhIcons.Check, Ph.AmberInk, 14.dp) }
+        androidx.compose.animation.AnimatedVisibility(selected != null,
+            enter = androidx.compose.animation.expandHorizontally(androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 520f), expandFrom = Alignment.Start) +
+                androidx.compose.animation.scaleIn(androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 520f), initialScale = 0.3f) +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)),
+            exit = androidx.compose.animation.shrinkHorizontally(androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 700f), shrinkTowards = Alignment.Start) +
+                androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(140), targetScale = 0.3f) +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120))) {
+            val on = selected == true
+            val fill by androidx.compose.animation.animateColorAsState(if (on) Ph.Amber else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.animation.core.tween(160), label = "fill")
+            val ring by androidx.compose.animation.animateColorAsState(if (on) Ph.Amber else Ph.LineStrong, androidx.compose.animation.core.tween(160), label = "ring")
+            val tick by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 600f), label = "tick")
+            Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp)).background(fill).border(1.5.dp, ring, RoundedCornerShape(11.dp)),
+                contentAlignment = Alignment.Center) {
+                if (tick > 0.01f) PhIcon(PhIcons.Check, Ph.AmberInk, 14.dp, modifier = Modifier.graphicsLayer { scaleX = tick; scaleY = tick; alpha = tick.coerceIn(0f, 1f) })
+            }
+        }
     }
+    // A picked card sinks in a touch, on a spring.
+    val sink by androidx.compose.animation.core.animateFloatAsState(if (selected == true) 0.97f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 500f), label = "sink")
+    Box(Modifier.graphicsLayer { scaleX = sink; scaleY = sink }) {
     when {
         working -> LiquidCard(t, check, Modifier.clip(RoundedCornerShape(22.dp)).then(tap))
         needs -> {
             val shape = RoundedCornerShape(22.dp)
-            Column(Modifier.fillMaxWidth().clip(shape).background(if (selected == true) Ph.AmberWash else if (Ph.amoled) androidx.compose.ui.graphics.Color(0xFF0F0D09) else androidx.compose.ui.graphics.Color(0xFF15130F))
+            val needBg by androidx.compose.animation.animateColorAsState(if (selected == true) Ph.AmberWash else if (Ph.amoled) androidx.compose.ui.graphics.Color(0xFF0F0D09) else androidx.compose.ui.graphics.Color(0xFF15130F), androidx.compose.animation.core.tween(200), label = "bg")
+            Column(Modifier.fillMaxWidth().clip(shape).background(needBg)
                 .border(1.dp, Ph.AmberLine, shape).then(tap).animateContentSize()) {
                 Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -655,6 +674,7 @@ private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect
             val head = t.title.removeSuffix("…").take(40)
             QuietRow(t, check, last?.takeIf { it.isNotBlank() }?.let { plainPreview(it) }?.takeIf { it.isNotBlank() && !it.startsWith(head) }, selected == true, tap)
         }
+    }
     }
 }
 

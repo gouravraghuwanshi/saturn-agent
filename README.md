@@ -5,7 +5,8 @@
 <h1 align="center">Saturn</h1>
 
 <p align="center"><b>A real coding agent, in your pocket.</b><br>
-You tell it what you want. It goes off and does it, right there on your phone.</p>
+You tell it what you want. It goes off and does it, right there on your phone.<br><br>
+<a href="https://gouravraghuwanshi.github.io/saturn-agent/"><b>Website</b></a> · <a href="../../releases/latest"><b>Download</b></a> · <a href="https://pi.dev">Built on Pi</a></p>
 
 <p align="center">
   <img src="docs/media/saturn-demo.gif" width="300" alt="Saturn running a task: the moon card, the steps, the answer and the tip calculator it built">
@@ -91,7 +92,7 @@ Bug reports, ideas and pull requests are all welcome. If something broke, the mo
 
 ## Thanks
 
-Saturn stands on other people's great work: [Pi](https://pi.dev) by Earendil Works, [Node.js](https://nodejs.org), [npm](https://github.com/npm/cli), the [Termux](https://github.com/termux) packages and terminal view, and the Inter and JetBrains Mono fonts. See [THIRD_PARTY.md](THIRD_PARTY.md). Saturn isn't affiliated with Earendil Works or Termux.
+Saturn stands on other people's great work: [Pi](https://pi.dev) by Earendil Works, [Node.js](https://nodejs.org), [npm](https://github.com/npm/cli), the [Termux](https://github.com/termux) packages and terminal view, and the Inter and JetBrains Mono fonts. The god on the website is traced from Hendrick Goltzius's 1592 engraving of Saturn (National Gallery of Art, public domain). See [THIRD_PARTY.md](THIRD_PARTY.md). Saturn isn't affiliated with Earendil Works or Termux.
 
 ## License
 

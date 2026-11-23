@@ -92,7 +92,7 @@ Bug reports, ideas and pull requests are all welcome. If something broke, the mo
 
 ## Thanks
 
-Saturn stands on other people's great work: [Pi](https://pi.dev) by Earendil Works, [Node.js](https://nodejs.org), [npm](https://github.com/npm/cli), the [Termux](https://github.com/termux) packages and terminal view, and the Inter and JetBrains Mono fonts. The raven on the website is traced from a wood engraving by J. W. Whimper (Wellcome Collection, CC BY 4.0). See [THIRD_PARTY.md](THIRD_PARTY.md). Saturn isn't affiliated with Earendil Works or Termux.
+Saturn stands on other people's great work: [Pi](https://pi.dev) by Earendil Works, [Node.js](https://nodejs.org), [npm](https://github.com/npm/cli), the [Termux](https://github.com/termux) packages and terminal view, and the Inter and JetBrains Mono fonts. See [THIRD_PARTY.md](THIRD_PARTY.md). Saturn isn't affiliated with Earendil Works or Termux.
 
 ## License
 

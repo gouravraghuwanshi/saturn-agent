@@ -38,9 +38,7 @@ a{color:inherit}
 /* ---------- hero: the orbit ---------- */
 .hero{position:relative;min-height:max(640px,min(100svh,1000px));display:grid;align-items:end;overflow:hidden}
 #sky{position:absolute;inset:0;width:100%;height:100%;display:block}
-.raven{position:absolute;right:max(1vw,calc(50% - 780px));bottom:6%;height:80%;width:auto;max-width:none;opacity:.5;pointer-events:none}
 #sky{z-index:1}
-@media (max-width:860px){.raven{right:50%;transform:translateX(50%);height:auto;width:min(92vw,440px);top:48px;bottom:auto;opacity:.26}}
 .hero .wrap{position:relative;z-index:2;width:100%;padding-bottom:clamp(40px,9vh,96px);pointer-events:none}
 .hero h1{font-weight:300;font-size:clamp(44px,6.6vw,96px);line-height:.96;letter-spacing:-.035em;margin:0;max-width:7em;font-variation-settings:"opsz" 96}
 .hero h1 span{display:block;color:var(--muted)}
@@ -143,7 +141,6 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
 
 <main id="top">
   <section class="hero" style="padding:0">
-    <img class="raven" src="media/saturn-raven.png" alt="" aria-hidden="true">
     <canvas id="sky" aria-hidden="true"></canvas>
     <div class="wrap">
       <h1>Give it a job.<span>Put your phone away.</span></h1>
@@ -249,7 +246,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
 <footer>
   <div class="wrap">
     <span>Saturn is Apache-2.0. Built on <a href="https://pi.dev">Pi</a>, Node.js and Termux packages.</span>
-    <span>Raven traced from a wood engraving by J. W. Whimper (<a href="https://wellcomecollection.org/works?query=V0020519">Wellcome Collection</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>). Not affiliated with Earendil Works or Termux.</span>
+    <span>Not affiliated with Earendil Works or Termux.</span>
   </div>
 </footer>
 
@@ -257,86 +254,185 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
 (() => {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------------- the sky: a planet, its ring, and task moons ---------------- */
+  /* ---------------- the sky: Saturn drawn in characters (the app's own renderer), and task moons ---------------- */
   const sky = document.getElementById("sky"), g = sky.getContext("2d");
-  let W, H, dpr, cx, cy, R;
+  const COLS = 72, ROWS = 21, RC = 11.2, RAMP = " .,:;-=+*#%@";
+  const TILT = -0.26, E = 0.27;
+  const C = { planet: "#f2b35b", planetDim: "#c08a45", ring: "#e6d3b0", ringDim: "#a08a6a", spark: "#ffffff", moon: "#ffd89a" };
+  let W, H, dpr, cx, cy, R, cw, lh, fontPx;
   const stars = [];
+  const art = document.createElement("canvas"), ag = art.getContext("2d");
+  let artT = -1;
   function size() {
     dpr = Math.min(devicePixelRatio || 1, 2);
     W = sky.clientWidth; H = sky.clientHeight;
     sky.width = W * dpr; sky.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const wide = W > 860;
-    cx = wide ? W * .74 : W * .5; cy = wide ? H * .4 : H * .3;
-    R = Math.min(W, H) * (wide ? .13 : .14);
+    const artW = wide ? Math.min(W * 0.5, 980) : W * 0.98;
+    fontPx = artW / (COLS * 0.6); cw = fontPx * 0.6; lh = fontPx * 1.08;
+    R = RC * cw;
+    cx = wide ? W * .72 : W * .5; cy = wide ? H * .4 : H * .27;
+    art.width = Math.ceil((COLS * cw + 40) * dpr); art.height = Math.ceil((ROWS * lh + 40) * dpr);
+    artT = -1;
     stars.length = 0;
     for (let i = 0; i < Math.round(W * H / 5200); i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.1 + .2, p: Math.random() * 6.28 });
+  }
+  // One frame of the planet and rings as text, the same maths as AsciiSaturn.frame in the app.
+  function drawArt(t) {
+    const ct = Math.cos(TILT), st = Math.sin(TILT);
+    const ln = Math.hypot(.5, .62, .6), lx = -.5 / ln, ly = -.62 / ln, lz = .6 / ln;
+    const sparkAt = ((t * .6) % (2 * Math.PI)) - Math.PI;
+    ag.setTransform(dpr, 0, 0, dpr, 0, 0); ag.clearRect(0, 0, art.width, art.height);
+    ag.font = `700 ${fontPx}px "JetBrains Mono", ui-monospace, monospace`; ag.textBaseline = "middle"; ag.letterSpacing = "0.01px";
+    for (let j = 0; j < ROWS; j++) {
+      let run = "", runColor = null, runStart = 0;
+      const flush = (i) => {
+        if (run && runColor) {
+          ag.shadowColor = runColor; ag.shadowBlur = runColor === C.spark ? 10 : runColor === C.planet ? 7 : 4;
+          ag.fillStyle = runColor; ag.fillText(run, 20 + runStart * cw, 20 + (j + .5) * lh);
+        }
+        run = ""; runStart = i;
+      };
+      for (let i = 0; i < COLS; i++) {
+        const px = i - COLS / 2 + .5, py = (j - ROWS / 2 + .5) * 1.9;
+        const u = px * ct + py * st, v = -px * st + py * ct;
+        const rr = Math.hypot(u, v / E), ang = Math.atan2(v / E, u);
+        let ring = rr > RC * 1.22 && rr < RC * 2.3 && !(rr > RC * 1.9 && rr < RC * 2.0), spark = false;
+        if (rr > RC * 2.0 && rr < RC * 2.32) { const d = Math.atan2(Math.sin(ang - sparkAt), Math.cos(ang - sparkAt)); if (d <= 0 && d > -.5) { ring = true; spark = true; } }
+        const d2 = px * px + py * py;
+        let sphere = -1;
+        if (d2 < RC * RC) {
+          const z = Math.sqrt(RC * RC - d2), nz = z / RC, nv = v / RC;
+          let lit = Math.max(0, px / RC * lx + py / RC * ly + nz * lz);
+          lit = .1 + .9 * lit + .13 * Math.sin(nv * 13 + 1.2) + .06 * Math.sin(Math.atan2(u / RC, nz) * 4 + t * .4) * Math.cos(nv * 3);
+          if (v > 0 && v < RC * .22) lit *= .55;
+          sphere = Math.min(1, Math.max(0, lit));
+        }
+        let ch = " ", color = null;
+        if (sphere >= 0 && !(ring && v > 0)) { ch = RAMP[Math.round((.25 + sphere * .75) * (RAMP.length - 1))]; color = sphere > .45 ? C.planet : C.planetDim; }
+        else if (ring) { ch = spark ? "*" : rr < RC * 1.45 ? ":" : rr < RC * 1.9 ? "=" : "-"; color = spark ? C.spark : rr < RC * 1.45 ? C.ringDim : C.ring; }
+        if (color !== runColor) { flush(i); runColor = color; }
+        run += ch;
+      }
+      flush(COLS);
+    }
+    ag.shadowBlur = 0;
   }
   const jobs = ["fix the failing test", "summarise lease.pdf", "build a tip calculator", "back up my notes", "remind me at 6", "find cheap flights", "clean up Downloads"];
   const moons = jobs.map((t, i) => moon(t, i));
   function moon(text, i, fresh) {
-    return { text, a: (i / jobs.length) * Math.PI * 2 + Math.random() * .3, orbit: 1.85 + (i % 4) * .42 + Math.random() * .15,
-      speed: .00016 / (1 + (i % 4) * .45), size: 3 + Math.random() * 2.2, born: fresh ? performance.now() : -1e9,
-      done: fresh ? performance.now() + 9000 + Math.random() * 4000 : Infinity, tilt: -.32 };
+    return { text, a: (i / jobs.length) * Math.PI * 2 + Math.random() * .3, orbit: 2.45 + (i % 4) * .32 + Math.random() * .1,
+      speed: .00016 / (1 + (i % 4) * .45), born: fresh ? performance.now() : -1e9,
+      done: fresh ? performance.now() + 9000 + Math.random() * 4000 : Infinity };
   }
-  // where a moon is: an ellipse tilted with the ring; z says if it's in front of the planet
+  // Same ellipse and tilt as the rings; z > 0 is in front of the planet.
   function pos(m) {
-    const rx = R * m.orbit, ry = rx * .34, x0 = Math.cos(m.a) * rx, y0 = Math.sin(m.a) * ry;
-    const c = Math.cos(m.tilt), s = Math.sin(m.tilt);
+    const x0 = Math.cos(m.a) * R * m.orbit, y0 = Math.sin(m.a) * R * m.orbit * E * 1.08 / .6 / 1.9 * 1.9;
+    const c = Math.cos(TILT), s = Math.sin(TILT);
     return { x: cx + x0 * c - y0 * s, y: cy + x0 * s + y0 * c, z: Math.sin(m.a) };
   }
-  function ring(front) {
-    g.save(); g.translate(cx, cy); g.rotate(-.32);
-    g.beginPath();
-    for (let k = 0; k < 3; k++) {
-      const rx = R * (1.42 + k * .17), ry = rx * .3;
-      g.beginPath(); g.ellipse(0, 0, rx, ry, 0, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2);
-      g.strokeStyle = `rgba(242,179,91,${[.5, .32, .18][k]})`; g.lineWidth = [5, 3, 1.5][k] * (R / 90); g.stroke();
-    }
-    g.restore();
-  }
-  function planet(t) {
-    const grd = g.createRadialGradient(cx - R * .35, cy - R * .45, R * .1, cx, cy, R);
-    grd.addColorStop(0, "#f7d08f"); grd.addColorStop(.45, "#d48f3c"); grd.addColorStop(1, "#3a2410");
-    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fillStyle = grd; g.fill();
-    // soft bands
-    g.save(); g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.clip(); g.translate(cx, cy); g.rotate(-.32);
-    for (let b = -3; b <= 3; b++) { g.fillStyle = `rgba(60,30,8,${b % 2 ? .12 : .06})`; g.fillRect(-R, b * R * .26 + Math.sin(t / 4000 + b) * 2, R * 2, R * .1); }
-    g.restore();
-    const glow = g.createRadialGradient(cx, cy, R * .9, cx, cy, R * 3.2);
-    glow.addColorStop(0, "rgba(242,179,91,.16)"); glow.addColorStop(1, "rgba(242,179,91,0)");
-    g.fillStyle = glow; g.fillRect(0, 0, W, H);
-  }
   function drawMoon(m, t) {
-    const p = pos(m), age = Math.min(1, (t - m.born) / 900);
+    const p = pos(m);
+    if (p.z < 0 && Math.hypot(p.x - cx, (p.y - cy) * 1.0) < R * 1.05) return; // hidden behind the planet
     const finished = t > m.done, fade = finished ? Math.max(0, 1 - (t - m.done) / 2600) : 1;
     if (fade <= 0) return;
-    const sz = m.size * (R / 90) * (0.85 + (p.z + 1) * .15) * (m.born > 0 ? .4 + .6 * age : 1);
-    g.globalAlpha = fade * (.55 + (p.z + 1) * .22);
-    g.beginPath(); g.arc(p.x, p.y, sz, 0, Math.PI * 2);
-    g.fillStyle = finished ? "#7cc79a" : m.born > 0 ? "#f2b35b" : "#e9e6df"; g.fill();
-    if (W > 520 || m.born > 0) {
-      g.font = `400 ${m.born > 0 ? 13 : 12}px "JetBrains Mono", monospace`;
-      g.fillStyle = finished ? "#7cc79a" : m.born > 0 ? "#f2b35b" : "#8e949e";
-      g.shadowColor = "#0b0c0f"; g.shadowBlur = 6; const label = (finished ? "✓ " : "") + m.text, lw = g.measureText(label).width;
-      g.fillText(label, p.x + sz + 8 + lw > W - 12 ? p.x - sz - 8 - lw : p.x + sz + 8, p.y + 4);
+    const fresh = m.born > 0, grow = fresh ? Math.min(1, (t - m.born) / 900) : 1;
+    g.globalAlpha = fade * (.55 + (p.z + 1) * .22) * (.3 + .7 * grow);
+    const col = finished ? "#7cc79a" : fresh ? C.planet : C.moon;
+    g.font = `700 ${fontPx * 1.15}px "JetBrains Mono", ui-monospace, monospace`; g.textBaseline = "middle"; g.textAlign = "center";
+    g.shadowColor = col; g.shadowBlur = 10; g.fillStyle = col; g.fillText("@", p.x, p.y);
+    if (W > 520 || fresh) {
+      g.textAlign = "left"; g.font = `400 ${fresh ? 13 : 12}px "JetBrains Mono", monospace`;
+      g.shadowColor = "#0b0c0f"; g.shadowBlur = 6; g.fillStyle = finished ? "#7cc79a" : fresh ? C.planet : "#8e949e";
+      const label = (finished ? "✓ " : "") + m.text, lw = g.measureText(label).width, off = fontPx * .9 + 6;
+      g.fillText(label, p.x + off + lw > W - 12 ? p.x - off - lw : p.x + off, p.y);
     }
-    g.shadowBlur = 0; g.globalAlpha = 1;
+    g.shadowBlur = 0; g.globalAlpha = 1; g.textAlign = "left";
   }
+  /* ---------------- a raven, flying past Saturn: bold gold lines, flapping wings, short glides ---------------- */
+  const raven = { x: 0, y: 0, dir: -1, t0: -1, speed: 0, alt: 0, wait: 1200 };
+  function launch(t) {
+    raven.dir = Math.random() < .5 ? -1 : 1;
+    raven.t0 = t; raven.speed = W / (4.2 + Math.random() * 1.6); // across the screen in ~5 s
+    raven.alt = H * (.1 + Math.random() * .2);
+  }
+  // The bird in its own units (length ~1, facing +x). flap: -1 wings down … 1 wings up.
+  function bird(ctx, flap, far) {
+    const up = Math.sin(flap * 1.2), sg = up >= 0 ? 1 : -1;
+    const reach = far ? .84 : 1;
+    const S = [.16, -.07];                                        // shoulder
+    const wrist = [-.02, S[1] - .52 * up * reach];
+    const tip = [-.42 * reach, S[1] - .98 * up * reach];
+    ctx.beginPath();
+    ctx.moveTo(S[0] + .04, S[1] + .02);
+    ctx.quadraticCurveTo(.08, wrist[1] - .04 * sg, wrist[0], wrist[1]);   // leading edge, a strong arm
+    ctx.quadraticCurveTo(-.2, (wrist[1] + tip[1]) / 2 - .03 * sg, tip[0], tip[1]);
+    // five long, separated primaries: the raven's "fingers"
+    for (let k = 0; k < 5; k++) {
+      const f = (k + 1) / 5;
+      const bx = tip[0] + .06 + f * .2, by = tip[1] + (wrist[1] - tip[1]) * (f * .55) + .07 * up;
+      ctx.lineTo(bx - .1, by + .02 * sg);
+      ctx.lineTo(bx, by + .06 * up);
+    }
+    ctx.quadraticCurveTo(-.08, S[1] - .18 * up, -.24, -.01);             // broad secondaries back to the body
+    ctx.closePath();
+  }
+  function body(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(.64, -.02);                               // tip of the heavy beak
+    ctx.quadraticCurveTo(.58, -.1, .48, -.11);            // culmen
+    ctx.quadraticCurveTo(.4, -.17, .28, -.14);            // big head
+    ctx.quadraticCurveTo(.1, -.12, -.3, -.07);            // back
+    ctx.lineTo(-.62, -.14); ctx.lineTo(-.72, .0); ctx.lineTo(-.62, .13); // wedge tail
+    ctx.lineTo(-.3, .07);
+    ctx.quadraticCurveTo(.02, .17, .3, .09);              // deep belly
+    ctx.quadraticCurveTo(.42, .06, .5, .02);              // shaggy throat
+    ctx.quadraticCurveTo(.56, .0, .64, -.02);
+    ctx.closePath();
+  }
+  function drawRaven(t) {
+    if (raven.t0 < 0) { if (t > raven.wait) launch(t); else return; }
+    const s = (t - raven.t0) / 1000, len = R * 1.05;
+    const x = raven.dir < 0 ? W + len - s * raven.speed : -len + s * raven.speed;
+    if (x < -len * 1.5 || x > W + len * 1.5) { raven.t0 = -1; raven.wait = t + 2500 + Math.random() * 3000; return; }
+    // Flap fast, then glide for a beat every couple of seconds.
+    const cycle = s % 2.4, gliding = cycle > 1.7;
+    const flap = gliding ? .25 + .05 * Math.sin(s * 6) : Math.sin(s * Math.PI * 2 * 3.4);
+    const y = raven.alt + Math.sin(s * 2.1) * H * .025 - (gliding ? 0 : flap * len * .05);
+    g.save();
+    g.translate(x, y); g.scale(len * raven.dir, len);
+    g.rotate(gliding ? .02 : -.05);
+    g.lineJoin = "round"; g.lineCap = "round";
+    g.lineWidth = 2.6 / len; g.strokeStyle = "#f2b35b"; g.shadowColor = "rgba(242,179,91,.75)"; g.shadowBlur = 10;
+    g.fillStyle = "rgba(11,12,15,.88)";
+    g.globalAlpha = .55; bird(g, flap * .92 - .05, true); g.fill(); g.stroke();   // far wing
+    g.globalAlpha = 1; body(g); g.fill(); g.stroke();
+    g.beginPath(); g.arc(.4, -.1, .02, 0, Math.PI * 2); g.fillStyle = "#f2b35b"; g.fill(); // eye
+    g.beginPath(); g.moveTo(.63, -.025); g.lineTo(.5, -.045); g.stroke(); // the line of the beak
+    g.fillStyle = "rgba(11,12,15,.88)"; bird(g, flap, false); g.fill(); g.stroke();      // near wing
+    g.restore();
+  }
+
   function frame(t) {
     g.clearRect(0, 0, W, H);
     for (const s of stars) { g.globalAlpha = .25 + .25 * Math.sin(t / 1400 + s.p); g.fillStyle = "#e9e6df"; g.fillRect(s.x, s.y, s.r, s.r); }
     g.globalAlpha = 1;
+    const glow = g.createRadialGradient(cx, cy, R * .6, cx, cy, R * 3.4);
+    glow.addColorStop(0, "rgba(242,179,91,.18)"); glow.addColorStop(.4, "rgba(224,138,58,.07)"); glow.addColorStop(1, "rgba(192,104,42,0)");
+    g.fillStyle = glow; g.fillRect(0, 0, W, H);
     for (const m of moons) if (!still) m.a += m.speed * 16 * (m.born > 0 ? 2.2 : 1);
-    const back = moons.filter((m) => pos(m).z < 0), front = moons.filter((m) => pos(m).z >= 0);
-    for (const m of back) drawMoon(m, t);
-    ring(false); planet(t); ring(true);
-    for (const m of front) drawMoon(m, t);
-    // retire finished user moons
+    for (const m of moons) if (pos(m).z < 0) drawMoon(m, t);
+    // The text planet steps at ~15 frames a second, like the app.
+    const at = still ? 0 : Math.floor(t / 66) * .057;
+    if (at !== artT) { drawArt(at); artT = at; }
+    g.drawImage(art, cx - COLS * cw / 2 - 20, cy - ROWS * lh / 2 - 20, art.width / dpr, art.height / dpr);
+    for (const m of moons) if (pos(m).z >= 0) drawMoon(m, t);
+    if (!still) drawRaven(t);
     for (let i = moons.length - 1; i >= 0; i--) if (t - moons[i].done > 2700) moons.splice(i, 1);
     if (!still) requestAnimationFrame(frame);
   }
   size(); addEventListener("resize", () => { size(); if (still) frame(performance.now()); });
-  document.fonts?.ready.then(() => { if (still) frame(performance.now()); });
+  document.fonts?.ready.then(() => { artT = -1; if (still) frame(performance.now()); });
   requestAnimationFrame(frame);
 
   const hint = document.getElementById("hint");

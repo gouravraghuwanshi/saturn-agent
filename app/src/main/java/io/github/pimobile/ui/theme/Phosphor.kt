@@ -62,7 +62,7 @@ object Ph {
         Font(res, FontWeight(it), variationSettings = FontVariation.Settings(FontVariation.weight(it)))
     }
 
-    val Mono = FontFamily(weights(R.font.jetbrains_mono, 400, 500, 600))
+    val Mono = FontFamily(weights(R.font.jetbrains_mono, 300, 400, 500, 600))
     val Sans = FontFamily(weights(R.font.inter, 400, 500, 600))
 
     val mono get() = TextStyle(fontFamily = Mono, fontSize = 12.sp, lineHeight = 19.sp, color = TextBody)

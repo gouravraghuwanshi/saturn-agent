@@ -339,20 +339,18 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
     val stamp = t.lastRunAt?.let { at -> remember(at) { stamp(ctx, at) } }
     val bg by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberWash else Ph.Surface, tween(200), label = "bg")
     val edge by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberLine else Ph.Line, tween(200), label = "edge")
-    val tone = when { failed -> Ph.Red; stopped -> Ph.Muted; else -> Ph.Green }
-    val spine = 26.dp
+    val spine = 24.dp
 
     Box(modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape)) {
-        // The spine: how it ended, written sideways, on a faint tint of its colour.
+        // How it ended, in thin plain letters up the front edge.
         Box(Modifier.matchParentSize()) {
-            Box(Modifier.fillMaxHeight().width(spine).background(tone.copy(alpha = 0.07f)), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxHeight().width(spine), contentAlignment = Alignment.Center) {
                 Text(when { failed -> "FAILED"; stopped -> "STOPPED"; else -> "DONE" }, maxLines = 1, softWrap = false,
-                    style = Ph.monoSmall.copy(fontSize = 9.5.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.3.em, color = tone.copy(alpha = 0.9f)),
+                    style = Ph.monoSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Light, letterSpacing = 0.32.em, color = Ph.Muted),
                     modifier = Modifier.sideways())
             }
-            Box(Modifier.padding(start = spine).fillMaxHeight().width(1.dp).background(tone.copy(alpha = 0.16f)))
         }
-        Column(Modifier.fillMaxWidth().padding(start = spine + 14.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
+        Column(Modifier.fillMaxWidth().padding(start = spine + 6.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 leading()

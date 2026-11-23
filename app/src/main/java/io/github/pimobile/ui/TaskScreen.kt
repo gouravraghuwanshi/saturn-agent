@@ -48,6 +48,7 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.launch
@@ -192,6 +193,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var follow by remember { mutableStateOf(true) }
     // Saturn and the status show only when you pull the chat down; any push up (or the keyboard) hides them.
     var reveal by remember { mutableStateOf(false) }
+    val boxTop = remember { FloatArray(1) }
+    val flipAt = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.toPx() }
     // Pull up past the end and let go: start a new task. [pull] is how far the finger went past the end.
     var pull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var armed by remember { mutableStateOf(false) }
@@ -373,11 +376,15 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     else TerminalPane(t)
                     return@Column
                 }
-                Box(Modifier.weight(1f).clipToBounds().pointerInput(Unit) {
+                Box(Modifier.weight(1f).clipToBounds()
+                    .onGloballyPositioned { boxTop[0] = it.positionInRoot().y }
+                    .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         liftJob?.cancel()
-                        var lastY = down.position.y; var travel = 0f; var anchor: Float? = null; var ticked = false
+                        // Measured on the screen, not in this box: the header folding in or out moves the box under
+                        // the finger, and reading that as a drag made the header flicker while you held.
+                        var lastY = down.position.y + boxTop[0]; var run = 0f; var travel = 0f; var anchor: Float? = null; var ticked = false
                         var sumX = 0f; var sumY = 0f; var vLocked = false
                         var topPull = 0f; var edgeDrag = false
                         // Pulling down at the top first brings the header in; only once it's already
@@ -387,7 +394,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             val e = awaitPointerEvent(PointerEventPass.Initial)
                             val c = e.changes.firstOrNull { it.id == down.id } ?: break
                             if (!c.pressed) break
-                            val y = c.position.y
+                            val y = c.position.y + boxTop[0]
                             val dy = y - lastY; lastY = y; travel += kotlin.math.abs(dy)
                             sumX += c.position.x - c.previousPosition.x; sumY += dy
                             if (lock[0]) continue
@@ -395,7 +402,11 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             if (!vLocked && kotlin.math.abs(sumY) > slop && kotlin.math.abs(sumY) > 1.2f * kotlin.math.abs(sumX)) vLocked = true
                             // Once this drag is pulling the chat past an edge, it's only about that pull:
                             // dragging back to cancel mustn't bring the header in.
-                            if (travel > slop && !edgeDrag && kotlin.math.abs(sumY) > kotlin.math.abs(sumX)) { if (dy > 1.5f) reveal = true else if (dy < -1.5f) reveal = false }
+                            // The header follows a clear change of direction only (a deliberate stretch of travel), not every wiggle.
+                            run = if (dy == 0f || run == 0f || kotlin.math.sign(dy) == kotlin.math.sign(run)) run + dy else dy
+                            if (travel > slop && !edgeDrag && kotlin.math.abs(sumY) > kotlin.math.abs(sumX)) {
+                                if (run > flipAt && !reveal) reveal = true else if (run < -flipAt && reveal) reveal = false
+                            }
                             // At an edge the whole chat follows your finger (with weight). Measured from where
                             // it hit the edge, so dragging back cancels.
                             val atEnd = !list.canScrollForward; val atTop = !list.canScrollBackward

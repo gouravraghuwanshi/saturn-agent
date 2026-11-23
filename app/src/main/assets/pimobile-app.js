@@ -15,6 +15,37 @@ const runtimeOf = (ctx) => ctx.modelRegistry.runtime ?? ctx.modelRegistry;
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { createRequire, syncBuiltinESMExports } from "node:module";
+
+// ---- Child processes with a stripped environment (e.g. pi-subagents' sandboxed workflow runner, started
+// with `env: {}`). On a desktop that's fine; here node and the other binaries only start when they can find
+// their shared libraries (LD_LIBRARY_PATH) and OpenSSL's config, so a bare environment made the child die at
+// once and the parent's first write failed with EPIPE. Add back just those variables when they're missing;
+// everything else in the caller's environment is left exactly as it asked.
+const ESSENTIAL_ENV = ["LD_LIBRARY_PATH", "LD_PRELOAD", "OPENSSL_CONF", "SSL_CERT_FILE"];
+function patchChildEnv() {
+  const cp = createRequire(import.meta.url)("node:child_process");
+  if (cp.__saturnEnv) return;
+  const fill = (o) => {
+    if (!o || typeof o !== "object" || !o.env || typeof o.env !== "object") return o;
+    const add = {};
+    for (const k of ESSENTIAL_ENV) if (process.env[k] && o.env[k] === undefined) add[k] = process.env[k];
+    return Object.keys(add).length ? { ...o, env: { ...o.env, ...add } } : o;
+  };
+  for (const name of ["spawn", "fork", "execFile", "exec", "spawnSync", "execFileSync", "execSync"]) {
+    const orig = cp[name];
+    if (typeof orig !== "function") continue;
+    cp[name] = function (...args) {
+      // The options object is the first plain object after the command (and its args array).
+      const i = args.findIndex((a, n) => n > 0 && a && typeof a === "object" && !Array.isArray(a));
+      if (i > 0) args[i] = fill(args[i]);
+      return orig.apply(this, args);
+    };
+  }
+  cp.__saturnEnv = true;
+  // Modules that already did `import { fork } from "node:child_process"` see the patched functions too.
+  syncBuiltinESMExports();
+}
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function deviceId() {
   const dir = process.env.PI_CODING_AGENT_DIR ?? join(process.env.HOME ?? "", ".pi", "agent");
@@ -33,6 +64,7 @@ const parse = (args) => { try { return JSON.parse(args || "{}"); } catch { retur
 
 export default function (pi) {
   if (!process.env.PIMOBILE_TASK_ID && !process.env.PIMOBILE_CONTROL) return; // not inside the Saturn app
+  patchChildEnv();
 
   // ---- Android paths for the core tools (read, write, edit, bash, and grep/find/ls).
   // Models assume a desktop Linux: /tmp, /home/user, /usr/bin/env, sudo. None of

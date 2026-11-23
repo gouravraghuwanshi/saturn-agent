@@ -20,6 +20,19 @@ Saturn actually does the work. It runs the [Pi coding agent](https://pi.dev) on 
 
 No root. No Termux. No server of ours in the middle. Install it, pick a model, go.
 
+## Built on Pi, not wrapped around it
+
+[Pi](https://pi.dev) is the brain: the official, unmodified agent, which thinks, picks tools and edits files. Saturn is everything a brain needs to live on a phone, and almost none of that existed before:
+
+- **A Linux toolbox inside an app.** Android won't run programs from app storage, so Saturn ships node, bash, git, ripgrep, ssh and more as native libraries and builds a working `usr/` out of them at startup. No root, no Termux.
+- **Many agents at once.** Each task is its own Pi process, with its own session you can come back to, branch or export.
+- **A body.** Torch, camera, location, sensors, notifications and speech, through a local bridge with Termux:API-compatible commands. Small built-in stand-ins (jq, pdftotext and friends) cover the tools phones don't have.
+- **Time.** Routines and timers that start Pi on schedule, even when the app is closed.
+- **Hands outside the phone.** A browser the agent drives while you watch, GitHub sign-in, and SSH to your computer.
+- **An app built for agents.** Task cards that show the work as it happens, Artifacts for what it makes, notification replies, a widget, a share target, and AppFunctions so other assistants can hand Saturn work.
+
+When Pi gets better, Saturn gets better on the next update, and every Pi extension and slash command works as it does on a desktop.
+
 ## What it's like
 
 **Each request is a task.** Start a few at once. While Saturn works, a little moon circles the card. When it finishes, the card shows how long it took, how many steps it ran and what it made.

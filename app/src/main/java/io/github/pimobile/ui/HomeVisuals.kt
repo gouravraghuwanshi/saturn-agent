@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -180,8 +181,8 @@ private fun DrawScope.moon(at: Offset, t: TaskUi, ping: Float) {
 }
 
 /**
- * A running task: light travels round the card's edge, liquid flows along its
- * foot, and the current step fades in as it changes.
+ * A running task: a glass card with water flowing along its foot (bubbles rising,
+ * light glinting on the crest), and the current step fading in as it changes.
  */
 @Composable
 fun LiquidCard(t: TaskUi, leading: @Composable RowScope.() -> Unit, modifier: Modifier = Modifier) {
@@ -222,32 +223,91 @@ fun StepLine(step: String, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** Something in motion: light travelling round the edge and liquid along the foot. Home's running card and the chat's live steps. */
+/** Something in motion: a glass card with live water along the foot. Home's running card and the chat's live steps. */
 @Composable
 fun LiquidFrame(modifier: Modifier = Modifier, wave: androidx.compose.ui.unit.Dp = 54.dp,
                 footer: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
                 content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     val inf = rememberInfiniteTransition(label = "liquid")
-    val spin by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(3_600, easing = LinearEasing)), label = "spin")
     val flow by inf.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(6_000, easing = LinearEasing)), label = "flow")
     val outer = RoundedCornerShape(22.dp)
-    val inner = RoundedCornerShape(20.5.dp)
-    val sweep = Brush.sweepGradient(0f to Color.Transparent, 0.14f to Ph.Amber, 0.22f to AmberLight, 0.39f to Color.Transparent, 1f to Color.Transparent)
+    val inner = RoundedCornerShape(21.dp)
 
-    Box(modifier.fillMaxWidth().clip(outer).background(Ph.LineStrong)
-        .drawBehind { rotate(spin) { drawCircle(sweep, radius = size.maxDimension, center = center) } }
-        .padding(1.5.dp)) {
-        Column(Modifier.fillMaxWidth().clip(inner).background(if (Ph.amoled) Color(0xFF0A0A0B) else Color(0xFF121317))) {
+    // Bubbles and the glass's sheen keep their own, slower clocks.
+    val rise by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(8_000, easing = LinearEasing)), label = "rise")
+    val sheen by inf.animateFloat(-0.6f, 1.6f, infiniteRepeatable(tween(5_500, easing = LinearEasing)), label = "sheen")
+
+    // A still glass rim: light catches the top edge and fades down the sides.
+    Box(modifier.fillMaxWidth().clip(outer)
+        .background(Brush.verticalGradient(0f to AmberLight.copy(alpha = 0.38f), 0.35f to Ph.AmberLine, 1f to Ph.Line))
+        .padding(1.dp)) {
+        Column(Modifier.fillMaxWidth().clip(inner).background(if (Ph.amoled) Color(0xFF0A0A0B) else Color(0xFF121317))
+            .drawWithContent { drawContent(); glass(sheen) }) {
             content()
             Box(Modifier.fillMaxWidth().height(wave)) {
                 Canvas(Modifier.fillMaxSize()) {
                     drawPath(wave(size, size.height * 0.40f, 6.dp.toPx(), 97.dp.toPx(), -flow * 1.5f), Ph.Amber.copy(alpha = 0.10f))
                     drawPath(wave(size, size.height * 0.52f, 5.dp.toPx(), 130.dp.toPx(), flow), Ph.Amber.copy(alpha = 0.16f))
+                    water(flow, rise)
                 }
                 footer()
             }
         }
     }
+}
+
+/** Life in the water: light rippling under the surface, a glint gliding along the crest, bubbles rising and popping. */
+private fun DrawScope.water(flow: Float, rise: Float) {
+    val surface = size.height * 0.52f
+    val amp = 5.dp.toPx(); val len = 130.dp.toPx()
+    fun y(x: Float) = surface + amp * sin(2 * PI * x / len + flow).toFloat()
+    // Caustics: faint bright threads that wander under the surface.
+    for (k in 0 until 3) {
+        val depth = surface + (8 + k * 7).dp.toPx()
+        val p = Path(); var x = 0f
+        while (x <= size.width) {
+            val yy = depth + 2.dp.toPx() * sin(2 * PI * x / (60 + k * 23).dp.toPx() - flow * (2 - k * 0.5) + k).toFloat()
+            if (x == 0f) p.moveTo(x, yy) else p.lineTo(x, yy); x += 5f
+        }
+        drawPath(p, Brush.horizontalGradient(listOf(Color.Transparent, AmberLight.copy(alpha = 0.07f), Color.Transparent),
+            startX = size.width * ((flow / (2 * PI).toFloat() + k * 0.37f) % 1f) - size.width * 0.5f,
+            endX = size.width * ((flow / (2 * PI).toFloat() + k * 0.37f) % 1f) + size.width * 0.5f),
+            style = Stroke(1.dp.toPx()))
+    }
+    // The crest catches the light: a glint that slides along the surface.
+    val crest = Path(); var x = 0f
+    while (x <= size.width) { if (x == 0f) crest.moveTo(x, y(x)) else crest.lineTo(x, y(x)); x += 4f }
+    val g = size.width * (1.3f * ((flow / (2 * PI).toFloat()) % 1f) - 0.15f)
+    drawPath(crest, Brush.horizontalGradient(listOf(Color.Transparent, AmberLight.copy(alpha = 0.55f), Color.Transparent),
+        startX = g - 70.dp.toPx(), endX = g + 70.dp.toPx()), style = Stroke(1.2.dp.toPx()))
+    // Bubbles: each rises at its own pace with a little wobble, fades in, and pops at the surface.
+    val bubbles = floatArrayOf(0.08f, 0.21f, 0.34f, 0.47f, 0.61f, 0.73f, 0.86f, 0.95f)
+    bubbles.forEachIndexed { i, bx ->
+        val speed = if (i % 3 == 0) 2 else 1
+        val t = (rise * speed + i * 0.29f) % 1f
+        val cx0 = size.width * bx
+        val top = y(cx0)
+        val cy = size.height + 3.dp.toPx() - t * (size.height + 3.dp.toPx() - top)
+        val cx = cx0 + 2.5.dp.toPx() * sin(t * 9f + i).toFloat()
+        val r = (1.1f + (i % 3) * 0.6f).dp.toPx() * (0.7f + 0.3f * t)
+        val a = (t / 0.15f).coerceAtMost(1f) * (if (t > 0.93f) 0f else 1f)
+        if (t > 0.93f) { // pop: a tiny ring at the surface
+            val p = (t - 0.93f) / 0.07f
+            drawCircle(AmberLight.copy(alpha = 0.35f * (1f - p)), radius = r * (1f + 2.2f * p), center = Offset(cx, top), style = Stroke(0.7.dp.toPx()))
+        } else {
+            drawCircle(AmberLight.copy(alpha = 0.32f * a), radius = r, center = Offset(cx, cy), style = Stroke(0.8.dp.toPx()))
+            drawCircle(Color.White.copy(alpha = 0.35f * a), radius = r * 0.28f, center = Offset(cx - r * 0.35f, cy - r * 0.35f))
+        }
+    }
+}
+
+/** A little glass: a bright hairline along the top edge and a soft sheen that drifts across now and then. */
+private fun androidx.compose.ui.graphics.drawscope.ContentDrawScope.glass(sheen: Float) {
+    drawLine(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent)),
+        Offset(size.width * 0.08f, 0.6.dp.toPx()), Offset(size.width * 0.92f, 0.6.dp.toPx()), 1.dp.toPx())
+    val cx = size.width * sheen
+    drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.045f), Color.Transparent),
+        start = Offset(cx - size.height * 0.9f, 0f), end = Offset(cx + size.height * 0.3f, size.height)))
 }
 
 /** Card ⇄ task screen: the card grows into the chat and shrinks back, on a soft spring. */

@@ -44,8 +44,9 @@ class PiSession(
         val p = pb.start()
         proc = p
         stdin = p.outputStream
-        thread("pi-$sessionId-out") { readJsonl(p.inputStream) }
-        thread("pi-$sessionId-err") { p.errorStream.bufferedReader().forEachLine(listener::onLog) }
+        // Stopping pi closes these streams under the readers: that's the end of output, not a crash.
+        thread("pi-$sessionId-out") { try { readJsonl(p.inputStream) } catch (_: java.io.IOException) {} }
+        thread("pi-$sessionId-err") { try { p.errorStream.bufferedReader().forEachLine(listener::onLog) } catch (_: java.io.IOException) {} }
         thread("pi-$sessionId-wait") { listener.onExit(p.waitFor()) }
     }
 

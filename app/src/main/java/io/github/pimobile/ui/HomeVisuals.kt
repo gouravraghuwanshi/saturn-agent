@@ -54,6 +54,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.em
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.unit.sp
 import io.github.pimobile.runtime.TaskManager.Status
 import io.github.pimobile.ui.components.PhIcon
@@ -318,7 +322,11 @@ fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifi
     }
 }
 
-/** A task that's done (or paused, or failed): H2's quiet card: dot, title, one line of what happened. */
+/**
+ * A task that's done (or stopped, or failed). How it ended is written up its front edge, sideways:
+ * DONE, STOPPED or FAILED. Then the title and when it ran, its last reply, and one line of what
+ * happened: the steps, how long it took, and what it made in Artifacts (or else the files it changed).
+ */
 @Composable
 fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: String?, selected: Boolean, modifier: Modifier = Modifier) {
     val failed = t.lastError != null || t.status == Status.FAILED || t.ended == "failed"
@@ -331,46 +339,51 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
     val stamp = t.lastRunAt?.let { at -> remember(at) { stamp(ctx, at) } }
     val bg by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberWash else Ph.Surface, tween(200), label = "bg")
     val edge by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberLine else Ph.Line, tween(200), label = "edge")
-    Column(modifier.fillMaxWidth().clip(shape).background(bg)
-        .border(1.dp, edge, shape).padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            leading()
-            EndMark(failed, stopped)
-            Text(t.title, style = Ph.title.copy(fontSize = 15.sp, color = Ph.Text), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f))
-            stamp?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Muted)) }
+    val tone = when { failed -> Ph.Red; stopped -> Ph.Muted; else -> Ph.Green }
+    val spine = 26.dp
+
+    Box(modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape)) {
+        // The spine: how it ended, written sideways, on a faint tint of its colour.
+        Box(Modifier.matchParentSize()) {
+            Box(Modifier.fillMaxHeight().width(spine).background(tone.copy(alpha = 0.07f)), contentAlignment = Alignment.Center) {
+                Text(when { failed -> "FAILED"; stopped -> "STOPPED"; else -> "DONE" }, maxLines = 1, softWrap = false,
+                    style = Ph.monoSmall.copy(fontSize = 9.5.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.3.em, color = tone.copy(alpha = 0.9f)),
+                    modifier = Modifier.sideways())
+            }
+            Box(Modifier.padding(start = spine).fillMaxHeight().width(1.dp).background(tone.copy(alpha = 0.16f)))
         }
-        preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.TextSoft),
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 26.dp)) }
-        // The steps it went through (a little trail of dots), how long it took, and what it made in
-        // Artifacts — or, if nothing, the files it changed.
-        val took = t.workMs.takeIf { it >= 1000 }?.let { took(it) }
-        val made = outcome?.made.orEmpty(); val changed = outcome?.changed.orEmpty()
-        val facts = listOfNotNull(steps?.takeIf { it > 0 }?.let { if (it == 1) "1 step" else "$it steps" }, took, "failed".takeIf { failed })
-        Row(Modifier.padding(start = 26.dp, top = 1.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (steps != null && steps > 0) StepTrail(steps, failed)
-            Text(facts.ifEmpty { listOf("#${t.task.number}") }.joinToString(" · "), style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted), maxLines = 1)
-        }
-        if (made.isNotEmpty() || changed.isNotEmpty()) Row(Modifier.padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            val files = if (made.isNotEmpty()) made else changed
-            PhIcon(if (made.isNotEmpty()) PhIcons.Sparkle else PhIcons.Pencil, if (made.isNotEmpty()) Ph.Amber else Ph.Muted, 12.dp)
-            Text(files.take(2).joinToString(", ") + if (files.size > 2) " +${files.size - 2}" else "",
-                style = Ph.monoSmall.copy(color = if (made.isNotEmpty()) Ph.Amber else Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.fillMaxWidth().padding(start = spine + 14.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                leading()
+                Text(t.title, style = Ph.title.copy(fontSize = 15.sp, color = Ph.Text), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
+                stamp?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Muted)) }
+            }
+            preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.TextSoft),
+                maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            val made = outcome?.made.orEmpty(); val changed = outcome?.changed.orEmpty()
+            val files = (made.ifEmpty { changed }).let { f -> if (f.isEmpty()) null else f.take(2).joinToString(", ") + if (f.size > 2) " +${f.size - 2}" else "" }
+            val facts = listOfNotNull(steps?.takeIf { it > 0 }?.let { if (it == 1) "1 step" else "$it steps" }, t.workMs.takeIf { it >= 1000 }?.let { took(it) })
+            if (facts.isNotEmpty() || files != null) Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (steps != null && steps > 0) StepTrail(steps, failed)
+                Text(androidx.compose.ui.text.buildAnnotatedString {
+                    append(facts.joinToString(" · "))
+                    if (files != null) {
+                        if (facts.isNotEmpty()) append(" · ")
+                        withStyle(androidx.compose.ui.text.SpanStyle(color = if (made.isNotEmpty()) Ph.Amber else Ph.TextSoft)) { append(files) }
+                    }
+                }, style = Ph.monoSmall.copy(color = Ph.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
 
-/** How the last run ended: a tick when it finished, a square when you stopped it, a cross when it failed. */
-@Composable
-private fun EndMark(failed: Boolean, stopped: Boolean) {
-    val c = when { failed -> Ph.Red; stopped -> Ph.Muted; else -> Ph.Green }
-    Box(Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(alpha = 0.16f)).border(1.dp, c.copy(alpha = 0.55f), RoundedCornerShape(8.dp)),
-        contentAlignment = Alignment.Center) {
-        if (stopped) Box(Modifier.size(5.dp).clip(RoundedCornerShape(1.dp)).background(c))
-        else PhIcon(if (failed) PhIcons.Close else PhIcons.Check, c, 10.dp, description = if (failed) "Failed" else "Finished")
-    }
+/** Lays text out turned a quarter to the left, reading upwards. */
+private fun Modifier.sideways() = this.layout { m, _ ->
+    val p = m.measure(androidx.compose.ui.unit.Constraints())
+    layout(p.height, p.width) { p.placeWithLayer(-(p.width - p.height) / 2, (p.width - p.height) / 2) { rotationZ = -90f } }
 }
 
 /** "42s", "3m 12s", "1h 4m". */

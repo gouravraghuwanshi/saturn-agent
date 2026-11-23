@@ -271,7 +271,6 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     const artW = wide ? Math.min(W * 0.5, 980) : W * 0.98;
     fontPx = artW / (COLS * 0.6); cw = fontPx * 0.6; lh = fontPx * 1.08;
     R = RC * cw;
-    wingScale = wide ? .78 : .56;
     cx = wide ? W * .72 : W * .5; cy = wide ? H * .48 : H * .31;
     art.width = Math.ceil((COLS * cw + 40) * dpr); art.height = Math.ceil((ROWS * lh + 40) * dpr);
     artT = -1;
@@ -350,63 +349,67 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     }
     g.shadowBlur = 0; g.globalAlpha = 1; g.textAlign = "left";
   }
-  /* ---------------- a raven's wings, spread behind Saturn: layered pointed feathers, a slow beat ---------------- */
-  // One pointed feather from its base, along angle `a`, length `l`, width `w`; dark fill so the layers above cover it.
-  function feather(x, y, a, l, w) {
+  /* ---------------- one raven's wing, enormous, reaching in from the edge of the screen behind Saturn ---------------- */
+  // It fades into Saturn's glow near the planet and only shows clearly further out.
+  const wc = document.createElement("canvas"), wg = wc.getContext("2d");
+  function feather(c, x, y, a, l, w) {
     const ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
     const tx = x + ux * l, ty = y + uy * l;
-    g.beginPath();
-    g.moveTo(x + nx * w * .35, y + ny * w * .35);
-    g.quadraticCurveTo(x + ux * l * .55 + nx * w, y + uy * l * .55 + ny * w, tx, ty);          // one vane to the sharp tip
-    g.quadraticCurveTo(x + ux * l * .5 - nx * w * .8, y + uy * l * .5 - ny * w * .8, x - nx * w * .35, y - ny * w * .35);
-    g.closePath(); g.fill(); g.stroke();
-    g.save(); g.globalAlpha *= .45; g.beginPath(); g.moveTo(x, y); g.lineTo(x + ux * l * .92, y + uy * l * .92); g.stroke(); g.restore(); // the shaft
+    c.beginPath();
+    c.moveTo(x + nx * w * .35, y + ny * w * .35);
+    c.quadraticCurveTo(x + ux * l * .55 + nx * w, y + uy * l * .55 + ny * w, tx, ty);
+    c.quadraticCurveTo(x + ux * l * .5 - nx * w * .8, y + uy * l * .5 - ny * w * .8, x - nx * w * .35, y - ny * w * .35);
+    c.closePath(); c.fill(); c.stroke();
+    const ga = c.globalAlpha; c.globalAlpha = ga * .45;
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + ux * l * .92, y + uy * l * .92); c.stroke();
+    c.globalAlpha = ga;
   }
-  // The wing's bone: shoulder → elbow → wrist → hand, in units of R, for the right wing (mirrored for the left).
   function armAt(u) {
-    const P = [[.35, -.15], [1.3, -.8], [2.15, -1.25], [2.9, -1.6]];
+    const P = [[0, 0], [1.0, -.62], [1.95, -1.05], [2.8, -1.35]];
     const k = Math.min(2, Math.floor(u * 3)), f = u * 3 - k;
     return [P[k][0] + (P[k + 1][0] - P[k][0]) * f, P[k][1] + (P[k + 1][1] - P[k][1]) * f];
   }
-  function wing(side, beat) {
-    g.save();
-    g.translate(cx, cy);
-    g.scale(side, 1);
-    g.rotate(-beat);                                   // the whole wing lifts and settles
-    g.scale(R * wingScale, R * wingScale);
-    g.lineWidth = 1.3 / R / wingScale; g.lineJoin = "round";
-    g.strokeStyle = "#d9a055"; g.fillStyle = "#0d0d10";
-    // rows from back to front: primaries (long, at the hand), secondaries (along the arm), coverts (short, on top)
+  function wing(c, beat, scale) {
+    c.save();
+    // the shoulder sits just past the right edge; the wing reaches left, over and behind Saturn
+    c.translate(W + R * .15, cy + R * .55);
+    c.scale(-1, 1);
+    c.rotate(-beat);
+    c.scale(scale, scale);
+    c.lineWidth = 2 / scale; c.lineJoin = "round";
+    c.strokeStyle = "#000"; c.fillStyle = "#24221f";
     const rows = [
-      { n: 11, from: .62, to: 1, len: [1.5, 2.5], w: .16, ang: [.2, -.7], alpha: .85 },
-      { n: 13, from: .05, to: .7, len: [1.05, 1.5], w: .17, ang: [1.55, .5], alpha: .8 },
-      { n: 12, from: .05, to: .8, len: [.55, .8], w: .14, ang: [1.45, .35], alpha: .9 },
-      { n: 10, from: .08, to: .75, len: [.3, .42], w: .1, ang: [1.3, .3], alpha: 1 },
+      { n: 12, from: .6, to: 1, len: [1.4, 2.4], w: .15, ang: [.35, -.75] },
+      { n: 15, from: 0, to: .68, len: [1.0, 1.45], w: .16, ang: [1.6, .55] },
+      { n: 13, from: 0, to: .8, len: [.55, .78], w: .13, ang: [1.5, .4] },
+      { n: 11, from: .03, to: .78, len: [.28, .4], w: .09, ang: [1.35, .35] },
     ];
-    for (const r of rows) {
-      g.globalAlpha = r.alpha * wingAlpha;
-      for (let i = r.n - 1; i >= 0; i--) {
-        const f = i / (r.n - 1), u = r.from + (r.to - r.from) * f;
-        const [x, y] = armAt(u);
-        const a = r.ang[0] + (r.ang[1] - r.ang[0]) * f + Math.sin(beat * 4 + i * .7) * .015; // a ripple through the feathers
-        feather(x, y, a, r.len[0] + (r.len[1] - r.len[0]) * Math.pow(f, 1.3), r.w);
-      }
+    for (const r of rows) for (let i = r.n - 1; i >= 0; i--) {
+      const f = i / (r.n - 1), u = r.from + (r.to - r.from) * f, [x, y] = armAt(u);
+      const a = r.ang[0] + (r.ang[1] - r.ang[0]) * f + Math.sin(beat * 6 + i * .7) * .012;
+      feather(c, x, y, a, r.len[0] + (r.len[1] - r.len[0]) * Math.pow(f, 1.3), r.w);
     }
-    // the leading edge of the wing, a strong line over the coverts
-    g.globalAlpha = wingAlpha; g.lineWidth = 2.2 / R / wingScale; g.strokeStyle = "#f2b35b";
-    g.beginPath(); for (let k = 0; k <= 30; k++) { const [x, y] = armAt(k / 30); k ? g.lineTo(x, y - .05) : g.moveTo(x, y - .05); } g.stroke();
-    g.restore();
+    c.lineWidth = 3 / scale; c.strokeStyle = "#000";
+    c.beginPath(); for (let k = 0; k <= 30; k++) { const [x, y] = armAt(k / 30); k ? c.lineTo(x, y - .04) : c.moveTo(x, y - .04); } c.stroke();
+    c.restore();
   }
-  const wingAlpha = .78;
-  let wingScale = .78;
   function wings(t) {
-    const beat = still ? .05 : .06 + .07 * Math.sin(t / 1000 * 1.1);
+    if (wc.width !== sky.width || wc.height !== sky.height) { wc.width = sky.width; wc.height = sky.height; }
+    wg.setTransform(dpr, 0, 0, dpr, 0, 0); wg.clearRect(0, 0, W, H);
+    const beat = still ? 0 : .035 * Math.sin(t / 1000 * .7);
+    wg.globalAlpha = 1;
+    wing(wg, beat, R * (W > 860 ? 2.15 : 2.0));
+    wg.shadowBlur = 0;
+    // Lost in the glow close to Saturn, clearer further out.
+    wg.globalCompositeOperation = "destination-in";
+    const fade = wg.createRadialGradient(cx, cy, R * 1.1, cx, cy, R * 4.2);
+    fade.addColorStop(0, "rgba(0,0,0,.06)"); fade.addColorStop(.35, "rgba(0,0,0,.3)"); fade.addColorStop(1, "rgba(0,0,0,.95)");
+    wg.fillStyle = fade; wg.fillRect(0, 0, W, H);
+    wg.globalCompositeOperation = "source-over";
     g.save();
-    // The wings are behind Saturn: nothing of them shows through the globe or the rings.
     g.beginPath(); g.rect(0, 0, W, H); g.arc(cx, cy, R * 1.01, 0, Math.PI * 2); g.clip("evenodd");
     g.beginPath(); g.rect(0, 0, W, H); g.ellipse(cx, cy, R * 2.32, R * 2.32 * E * 1.02, TILT, 0, Math.PI * 2); g.clip("evenodd");
-    g.shadowColor = "rgba(242,179,91,.35)"; g.shadowBlur = 8;
-    wing(-1, beat); wing(1, beat);
+    g.drawImage(wc, 0, 0, W, H);
     g.restore();
   }
 

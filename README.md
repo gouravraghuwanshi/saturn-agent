@@ -8,10 +8,8 @@
 You tell it what you want. It goes off and does it, right there on your phone.</p>
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="24%">
+  <img src="docs/media/saturn-demo.gif" width="300" alt="Saturn running a task: the moon card, the steps, the answer and the tip calculator it built">
+  <br><sub>One ask, about a minute, real phone. <a href="docs/media/saturn-demo.mp4">Full-quality video</a></sub>
 </p>
 
 ---

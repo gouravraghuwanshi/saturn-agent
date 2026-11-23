@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Saturn coding agent</title>
+<meta name="description" content="Saturn runs a real coding agent on your Android phone. Give it a job, put the phone away, come back to a tick.">
+<meta name="theme-color" content="#0b0c0f">
+<link rel="icon" href="media/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#0b0c0f; --deep:#08090b; --raised:#16181e; --line:#22262e; --line2:#2e333d;
+  --text:#e9e6df; --body:#a9aeb7; --muted:#8e949e;
+  --amber:#f2b35b; --amber-wash:#2a2418; --amber-line:#4a3c22;
+  --cyan:#6fb7cc; --green:#7cc79a; --red:#f0857a;
+  --paper:#f4ecd8; --paper2:#ede3cb; --ink:#2a2017; --ink2:#4b4034; --sepia:#af6a14;
+  --display:"Bricolage Grotesque",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  --gutter:clamp(16px,5vw,64px);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--night);color:var(--text);font-family:var(--display);font-size:18px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:3px;border-radius:4px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--gutter)}
+
+/* ---------- top bar ---------- */
+.bar{position:absolute;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:22px var(--gutter)}
+.mark{font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:.32em;text-decoration:none;text-shadow:0 0 14px rgba(242,179,91,.55)}
+.bar nav{display:flex;gap:22px;font-size:15px;color:var(--body)}
+.bar nav a{text-decoration:none}
+.bar nav a:hover{color:var(--text)}
+
+/* ---------- hero: the orbit ---------- */
+.hero{position:relative;min-height:max(640px,min(100svh,1000px));display:grid;align-items:end;overflow:hidden}
+#sky{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero .wrap{position:relative;z-index:2;width:100%;padding-bottom:clamp(40px,9vh,96px);pointer-events:none}
+.hero h1{font-weight:300;font-size:clamp(44px,6.6vw,96px);line-height:.96;letter-spacing:-.035em;margin:0;max-width:7em;font-variation-settings:"opsz" 96}
+.hero h1 span{display:block;color:var(--muted)}
+.hero p{max-width:31em;color:var(--body);margin:26px 0 0;font-size:clamp(17px,1.6vw,20px)}
+.ask{pointer-events:auto;margin-top:30px;display:flex;gap:10px;max-width:560px;background:rgba(22,24,30,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line2);border-radius:18px;padding:7px 7px 7px 18px}
+.ask input{flex:1;min-width:0;background:none;border:0;color:var(--text);font:inherit;font-size:16px;outline:none}
+.ask input::placeholder{color:var(--muted)}
+.ask button{border:0;border-radius:12px;background:var(--amber);color:#14110b;font:600 15px var(--display);padding:11px 16px;cursor:pointer;white-space:nowrap}
+.ask button:active{transform:scale(.97)}
+.hint{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:12px;pointer-events:none}
+
+/* ---------- section basics ---------- */
+section{padding:clamp(80px,13vw,160px) 0}
+h2{font-weight:400;font-size:clamp(34px,5vw,64px);line-height:1.02;letter-spacing:-.03em;margin:0 0 22px;max-width:12em}
+.lede{color:var(--body);max-width:34em;margin:0}
+
+/* ---------- watch it work ---------- */
+.watch .grid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:clamp(40px,7vw,110px);align-items:center}
+.phone{width:min(330px,78vw);aspect-ratio:9/19.5;border-radius:44px;padding:11px;background:linear-gradient(160deg,#2a2d35,#121318 40%,#1b1d23);box-shadow:0 40px 90px -30px rgba(0,0,0,.9),0 0 0 1px #33363f inset,0 0 120px -40px rgba(242,179,91,.35)}
+.screen{position:relative;width:100%;height:100%;border-radius:34px;overflow:hidden;background:var(--night)}
+.screen video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.beats{list-style:none;margin:40px 0 0;padding:0;display:grid;gap:26px;max-width:30em}
+.beats li{display:grid;grid-template-columns:28px 1fr;gap:14px;color:var(--body)}
+.beats b{display:block;color:var(--text);font-weight:500}
+.beats svg{margin-top:5px}
+
+/* the mini home screen, drawn in HTML (shown until a video is there) */
+.mini{position:absolute;inset:0;padding:46px 14px 14px;display:flex;flex-direction:column;gap:10px;font-family:var(--mono)}
+.mini .top{display:flex;justify-content:space-between;align-items:center;padding:0 6px 8px}
+.mini .word{font-weight:600;letter-spacing:.32em;font-size:12px;text-shadow:0 0 12px rgba(242,179,91,.5)}
+.mini .cost{font-size:10px;color:var(--muted)}
+.card{border:1px solid var(--line);background:var(--raised);border-radius:14px;padding:12px 13px;font-size:10.5px;line-height:1.5;color:var(--body);position:relative}
+.card .t{font-family:var(--display);font-size:13.5px;color:var(--text);margin-bottom:4px;line-height:1.3}
+.card.run{border-color:var(--amber-line);background:var(--amber-wash);overflow:hidden;min-height:118px}
+.card.run canvas{position:absolute;inset:0;width:100%;height:100%}
+.card.run .t,.card.run .s{position:relative}
+.card .s{color:var(--amber)}
+.card .meta{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;color:var(--muted);font-size:9.5px}
+.trail{display:flex;gap:3px;margin-bottom:4px}
+.trail i{width:4px;height:4px;border-radius:50%;background:var(--muted);opacity:.7}
+.tick{color:var(--green);font-size:12px}
+.mini .composer{margin-top:auto;border:1px solid var(--line2);border-radius:16px;padding:11px 13px;font-family:var(--display);font-size:12.5px;color:var(--muted);background:var(--raised)}
+
+/* ---------- what it reaches ---------- */
+.reach h2{max-width:none}
+.rows{margin-top:56px;border-top:1px solid var(--line)}
+.row{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:24px;padding:22px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.row p{margin:0;font-size:clamp(19px,2.1vw,25px);letter-spacing:-.01em;line-height:1.3}
+.row code{font-family:var(--mono);font-size:13.5px;color:var(--muted);white-space:pre-wrap;word-break:break-word}
+.row code em{font-style:normal;color:var(--amber)}
+.row:hover code{color:var(--body)}
+
+/* ---------- day side ---------- */
+.day{background:var(--paper);color:var(--ink);position:relative}
+.day::before{content:"";position:absolute;left:0;right:0;top:-160px;height:160px;background:linear-gradient(to bottom,transparent,var(--paper));pointer-events:none}
+.day h2{font-weight:300;font-size:clamp(40px,6.4vw,88px);max-width:9em}
+.day .cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(24px,4vw,56px);margin-top:56px}
+.day .cols p{margin:0;color:var(--ink2);font-size:17px}
+.day .cols b{display:block;color:var(--ink);font-weight:500;font-size:20px;margin-bottom:6px}
+.day .fine{margin-top:56px;font-family:var(--mono);font-size:13px;color:var(--ink2);max-width:60em}
+.day a{color:var(--sepia)}
+
+/* ---------- how ---------- */
+.how{background:var(--deep)}
+.how svg.diagram{width:100%;height:auto;margin-top:56px;display:block}
+.how .lede code{font-family:var(--mono);font-size:.85em;color:var(--text)}
+
+/* ---------- get it ---------- */
+.get{text-align:left;position:relative;overflow:hidden}
+.get h2{font-weight:300;font-size:clamp(48px,9vw,132px);letter-spacing:-.045em;max-width:none}
+.btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.btn{display:inline-flex;align-items:center;gap:10px;text-decoration:none;border-radius:14px;padding:15px 22px;font-weight:500;border:1px solid var(--line2)}
+.btn.main{background:var(--amber);color:#14110b;border-color:var(--amber)}
+.btn:hover{border-color:var(--muted)}
+.get .small{color:var(--muted);font-size:15px;margin-top:18px}
+footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);font-size:14px}
+footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
+
+@media (max-width:860px){
+  .watch .grid{grid-template-columns:1fr}
+  .phone{margin:0 auto}
+  .row{grid-template-columns:1fr;gap:6px}
+  .day .cols{grid-template-columns:1fr}
+  .bar nav a:not(:last-child){display:none}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <a class="mark" href="#top" aria-label="Saturn, top of page">SATURN</a>
+  <nav>
+    <a href="#watch">Watch</a>
+    <a href="#private">Privacy</a>
+    <a href="#how">How it works</a>
+    <a href="https://github.com/gouravraghuwanshi/saturn-agent">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero" style="padding:0">
+    <canvas id="sky" aria-hidden="true"></canvas>
+    <div class="wrap">
+      <h1>Give it a job.<span>Put your phone away.</span></h1>
+      <p>Saturn runs a real coding agent on your Android phone, with a shell, node and git built in. Each moon up there is a task it's working on. When one comes back, it's done.</p>
+      <form class="ask" id="ask" autocomplete="off">
+        <label for="job" style="position:absolute;left:-9999px">A job for Saturn</label>
+        <input id="job" maxlength="48" placeholder="Try one: sort my screenshots by month">
+        <button type="submit">Send a moon</button>
+      </form>
+      <div class="hint" id="hint">nothing is sent anywhere, it's just this page</div>
+    </div>
+  </section>
+
+  <section class="watch" id="watch">
+    <div class="wrap grid">
+      <div>
+        <h2>It works while you don't.</h2>
+        <p class="lede">Every ask becomes its own task. Start three, lock the phone, go make tea. Saturn runs the commands, reads the errors, tries again and tells you when it's done.</p>
+        <ul class="beats">
+          <li><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="3.2" fill="#f2b35b"/><ellipse cx="9" cy="9" rx="8" ry="3.4" fill="none" stroke="#f2b35b" stroke-opacity=".6" transform="rotate(-18 9 9)"/></svg><span><b>A moon while it runs</b>Each helper it sends out gets its own moon, so you can see how busy it is at a glance.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 9.5l3.5 3.5 7.5-8" fill="none" stroke="#7cc79a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>A receipt when it's done</b>How long it took, the steps it ran, and what it made or changed.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2.5" fill="none" stroke="#6fb7cc" stroke-width="1.5"/><path d="M6 7h6M6 10h4" stroke="#6fb7cc" stroke-width="1.5" stroke-linecap="round"/></svg><span><b>Things you keep</b>Little web apps, notes and reports land in Artifacts, ready to open or share.</span></li>
+        </ul>
+      </div>
+      <div class="phone" aria-label="Saturn on a phone">
+        <div class="screen">
+          <div class="mini" id="mini" aria-hidden="true">
+            <div class="top"><span class="word">SATURN</span><span class="cost">$0.04 spent</span></div>
+            <div class="card run"><canvas id="moon"></canvas><div class="t">Research three cheap flights to Goa and compare them</div><div class="s" id="step">running: web_search</div></div>
+            <div class="card"><div class="t">Build a pocket budget tracker</div>Built pocket-budget.html, it's in your Artifacts.<div class="meta"><span><span class="trail"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>9 steps, took 1m 12s</span><span class="tick">✓</span></div></div>
+            <div class="card"><div class="t">Remind me to stretch in 45 minutes</div>Done, reminder set for 21:17.<div class="meta"><span><span class="trail"><i></i><i></i></span>2 steps, took 6s</span><span class="tick">✓</span></div></div>
+            <div class="composer">Ask Saturn to do something…</div>
+          </div>
+          <video id="demo" muted loop playsinline preload="none" poster="media/saturn-demo.jpg" hidden></video>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="reach">
+    <div class="wrap">
+      <h2>It knows it's on a phone.</h2>
+      <p class="lede">Saturn isn't a chat box. It has hands. Here's what you say, and what it quietly runs for you.</p>
+      <div class="rows">
+        <div class="row"><p>"Turn the torch off in ten minutes."</p><code><em>$</em> saturn-schedule in 10m -- termux-torch off</code></div>
+        <div class="row"><p>"What's draining my battery?"</p><code><em>$</em> termux-battery-status | jq .percentage</code></div>
+        <div class="row"><p>"Fix the failing test and open a PR."</p><code><em>$</em> npm test &amp;&amp; git push &amp;&amp; gh pr create</code></div>
+        <div class="row"><p>"Run this on my laptop instead."</p><code><em>$</em> ssh laptop 'make release'</code></div>
+        <div class="row"><p>"Summarise the PDF I just shared."</p><code><em>$</em> pdftotext lease.pdf - | head -200</code></div>
+        <div class="row"><p>"Check the router page and tell me who's online."</p><code><em>browser</em> open http://192.168.1.1</code></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="day" id="private">
+    <div class="wrap">
+      <h2>Your stuff stays on your phone.</h2>
+      <div class="cols">
+        <p><b>No account</b>There's nothing to sign up for. Open the app and give it a model.</p>
+        <p><b>No server of ours</b>Saturn talks to the AI provider you picked, and nobody else.</p>
+        <p><b>No tracking</b>No ads, no analytics. Your keys and files live in the app's private storage.</p>
+      </div>
+      <p class="fine">The one thing that leaves your phone is what the agent sends to your model so it can think. That's how every agent works, and we'd rather say it plainly. <a href="https://github.com/gouravraghuwanshi/saturn-agent/blob/main/PRIVACY.md">Read the privacy note</a>.</p>
+    </div>
+  </section>
+
+  <section class="how" id="how">
+    <div class="wrap">
+      <h2>How a phone runs a Linux agent.</h2>
+      <p class="lede">Android won't run programs from an app's storage, but it will load native libraries shipped inside it. So Saturn ships node, bash and git as <code>lib*.so</code> files, links them into a tiny Linux-style folder when it starts, and runs the real <a href="https://pi.dev">Pi agent</a> on top. No root, no Termux.</p>
+      <svg class="diagram" viewBox="0 0 1000 230" role="img" aria-label="Inside the app, native libraries become a small usr folder, which runs one Pi process per task, which the app's screen talks to. Phone features go back through a local bridge.">
+        <defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L8 4L0 8z" fill="#4a3c22"/></marker></defs>
+        <g font-family="JetBrains Mono, monospace" font-size="14" fill="#e9e6df">
+          <rect x="2" y="50" width="200" height="90" rx="14" fill="#16181e" stroke="#2e333d"/>
+          <text x="22" y="86">the APK</text><text x="22" y="112" fill="#8e949e" font-size="12">libnode.so libbash.so</text>
+          <rect x="266" y="50" width="200" height="90" rx="14" fill="#16181e" stroke="#2e333d"/>
+          <text x="286" y="86">usr/bin</text><text x="286" y="112" fill="#8e949e" font-size="12">node bash git rg jq</text>
+          <rect x="530" y="50" width="200" height="90" rx="14" fill="#2a2418" stroke="#4a3c22"/>
+          <text x="550" y="86" fill="#f2b35b">pi --mode rpc</text><text x="550" y="112" fill="#8e949e" font-size="12">one per task</text>
+          <rect x="794" y="50" width="200" height="90" rx="14" fill="#16181e" stroke="#2e333d"/>
+          <text x="814" y="86">the screen</text><text x="814" y="112" fill="#8e949e" font-size="12">Kotlin + Compose</text>
+          <path d="M204 95H262M468 95H526M732 95H790" stroke="#4a3c22" stroke-width="1.5" marker-end="url(#a)"/>
+          <path d="M630 142V190H894V144" fill="none" stroke="#2d768a" stroke-width="1.5" stroke-dasharray="4 5" marker-end="url(#a)"/>
+          <text x="548" y="214" fill="#6fb7cc" font-size="12">torch, camera, location: a local bridge back into the app</text>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <section class="get" id="get">
+    <div class="wrap">
+      <h2>Your phone has moons now.</h2>
+      <p class="lede">Android 10 or newer, any 64-bit phone from the last few years. Free and open source.</p>
+      <div class="btns">
+        <a class="btn main" href="https://github.com/gouravraghuwanshi/saturn-agent/releases/latest">Download the APK</a>
+        <a class="btn" href="https://github.com/gouravraghuwanshi/saturn-agent">Read the code</a>
+      </div>
+      <p class="small">Bring any model: sign in with ChatGPT, Claude or Copilot, paste a key, or start with a free OpenRouter key.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Saturn is Apache-2.0. Built on <a href="https://pi.dev">Pi</a>, Node.js and Termux packages.</span>
+    <span>Not affiliated with Earendil Works or Termux.</span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------------- the sky: a planet, its ring, and task moons ---------------- */
+  const sky = document.getElementById("sky"), g = sky.getContext("2d");
+  let W, H, dpr, cx, cy, R;
+  const stars = [];
+  function size() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = sky.clientWidth; H = sky.clientHeight;
+    sky.width = W * dpr; sky.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const wide = W > 860;
+    cx = wide ? W * .74 : W * .5; cy = wide ? H * .4 : H * .3;
+    R = Math.min(W, H) * (wide ? .13 : .14);
+    stars.length = 0;
+    for (let i = 0; i < Math.round(W * H / 5200); i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.1 + .2, p: Math.random() * 6.28 });
+  }
+  const jobs = ["fix the failing test", "summarise lease.pdf", "build a tip calculator", "back up my notes", "remind me at 6", "find cheap flights", "clean up Downloads"];
+  const moons = jobs.map((t, i) => moon(t, i));
+  function moon(text, i, fresh) {
+    return { text, a: (i / jobs.length) * Math.PI * 2 + Math.random() * .3, orbit: 1.85 + (i % 4) * .42 + Math.random() * .15,
+      speed: .00016 / (1 + (i % 4) * .45), size: 3 + Math.random() * 2.2, born: fresh ? performance.now() : -1e9,
+      done: fresh ? performance.now() + 9000 + Math.random() * 4000 : Infinity, tilt: -.32 };
+  }
+  // where a moon is: an ellipse tilted with the ring; z says if it's in front of the planet
+  function pos(m) {
+    const rx = R * m.orbit, ry = rx * .34, x0 = Math.cos(m.a) * rx, y0 = Math.sin(m.a) * ry;
+    const c = Math.cos(m.tilt), s = Math.sin(m.tilt);
+    return { x: cx + x0 * c - y0 * s, y: cy + x0 * s + y0 * c, z: Math.sin(m.a) };
+  }
+  function ring(front) {
+    g.save(); g.translate(cx, cy); g.rotate(-.32);
+    g.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const rx = R * (1.42 + k * .17), ry = rx * .3;
+      g.beginPath(); g.ellipse(0, 0, rx, ry, 0, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2);
+      g.strokeStyle = `rgba(242,179,91,${[.5, .32, .18][k]})`; g.lineWidth = [5, 3, 1.5][k] * (R / 90); g.stroke();
+    }
+    g.restore();
+  }
+  function planet(t) {
+    const grd = g.createRadialGradient(cx - R * .35, cy - R * .45, R * .1, cx, cy, R);
+    grd.addColorStop(0, "#f7d08f"); grd.addColorStop(.45, "#d48f3c"); grd.addColorStop(1, "#3a2410");
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fillStyle = grd; g.fill();
+    // soft bands
+    g.save(); g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.clip(); g.translate(cx, cy); g.rotate(-.32);
+    for (let b = -3; b <= 3; b++) { g.fillStyle = `rgba(60,30,8,${b % 2 ? .12 : .06})`; g.fillRect(-R, b * R * .26 + Math.sin(t / 4000 + b) * 2, R * 2, R * .1); }
+    g.restore();
+    const glow = g.createRadialGradient(cx, cy, R * .9, cx, cy, R * 3.2);
+    glow.addColorStop(0, "rgba(242,179,91,.16)"); glow.addColorStop(1, "rgba(242,179,91,0)");
+    g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  }
+  function drawMoon(m, t) {
+    const p = pos(m), age = Math.min(1, (t - m.born) / 900);
+    const finished = t > m.done, fade = finished ? Math.max(0, 1 - (t - m.done) / 2600) : 1;
+    if (fade <= 0) return;
+    const sz = m.size * (R / 90) * (0.85 + (p.z + 1) * .15) * (m.born > 0 ? .4 + .6 * age : 1);
+    g.globalAlpha = fade * (.55 + (p.z + 1) * .22);
+    g.beginPath(); g.arc(p.x, p.y, sz, 0, Math.PI * 2);
+    g.fillStyle = finished ? "#7cc79a" : m.born > 0 ? "#f2b35b" : "#e9e6df"; g.fill();
+    if (W > 520 || m.born > 0) {
+      g.font = `400 ${m.born > 0 ? 13 : 12}px "JetBrains Mono", monospace`;
+      g.fillStyle = finished ? "#7cc79a" : m.born > 0 ? "#f2b35b" : "#8e949e";
+      g.shadowColor = "#0b0c0f"; g.shadowBlur = 6; const label = (finished ? "✓ " : "") + m.text, lw = g.measureText(label).width;
+      g.fillText(label, p.x + sz + 8 + lw > W - 12 ? p.x - sz - 8 - lw : p.x + sz + 8, p.y + 4);
+    }
+    g.shadowBlur = 0; g.globalAlpha = 1;
+  }
+  function frame(t) {
+    g.clearRect(0, 0, W, H);
+    for (const s of stars) { g.globalAlpha = .25 + .25 * Math.sin(t / 1400 + s.p); g.fillStyle = "#e9e6df"; g.fillRect(s.x, s.y, s.r, s.r); }
+    g.globalAlpha = 1;
+    for (const m of moons) if (!still) m.a += m.speed * 16 * (m.born > 0 ? 2.2 : 1);
+    const back = moons.filter((m) => pos(m).z < 0), front = moons.filter((m) => pos(m).z >= 0);
+    for (const m of back) drawMoon(m, t);
+    ring(false); planet(t); ring(true);
+    for (const m of front) drawMoon(m, t);
+    // retire finished user moons
+    for (let i = moons.length - 1; i >= 0; i--) if (t - moons[i].done > 2700) moons.splice(i, 1);
+    if (!still) requestAnimationFrame(frame);
+  }
+  size(); addEventListener("resize", () => { size(); if (still) frame(performance.now()); });
+  document.fonts?.ready.then(() => { if (still) frame(performance.now()); });
+  requestAnimationFrame(frame);
+
+  const hint = document.getElementById("hint");
+  document.getElementById("ask").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const box = document.getElementById("job"), text = box.value.trim() || box.placeholder.replace(/^Try one: /, "");
+    moons.push(moon(text.toLowerCase(), moons.length, true)); box.value = "";
+    hint.textContent = "it's orbiting. watch for the tick";
+    if (still) frame(performance.now());
+  });
+
+  /* ---------------- the running card's little moon ---------------- */
+  const mc = document.getElementById("moon"), mg = mc.getContext("2d");
+  const steps = ["web_search", "fetch skyscanner.net", "bash: node compare.js", "write flights.md", "read flights.md"];
+  let si = 0;
+  if (!still) setInterval(() => { si = (si + 1) % steps.length; document.getElementById("step").textContent = "running: " + steps[si]; }, 1700);
+  function card(t) {
+    const w = mc.clientWidth, h = mc.clientHeight, d = Math.min(devicePixelRatio || 1, 2);
+    if (mc.width !== w * d) { mc.width = w * d; mc.height = h * d; }
+    mg.setTransform(d, 0, 0, d, 0, 0); mg.clearRect(0, 0, w, h);
+    const ox = w - 46, oy = h - 34, a = t / 1100;
+    mg.strokeStyle = "rgba(242,179,91,.25)"; mg.beginPath(); mg.ellipse(ox, oy, 30, 10, -.3, 0, Math.PI * 2); mg.stroke();
+    mg.fillStyle = "#f2b35b"; mg.beginPath(); mg.arc(ox, oy, 7, 0, Math.PI * 2); mg.fill();
+    for (const [k, off] of [[1, 0], [.8, 2.1]]) {
+      const x = ox + Math.cos(a * k + off) * 30, y = oy + Math.sin(a * k + off) * 10;
+      const rx = ox + (x - ox) * Math.cos(-.3) - (y - oy) * Math.sin(-.3), ry = oy + (x - ox) * Math.sin(-.3) + (y - oy) * Math.cos(-.3);
+      mg.fillStyle = "#e9e6df"; mg.beginPath(); mg.arc(rx, ry, 2.4, 0, Math.PI * 2); mg.fill();
+    }
+    if (!still) requestAnimationFrame(card);
+  }
+  requestAnimationFrame(card);
+
+  /* ---------------- a recorded demo replaces the drawn screen when it exists ---------------- */
+  const v = document.getElementById("demo");
+  v.src = "media/saturn-demo.mp4";
+  v.addEventListener("loadeddata", () => { v.hidden = false; document.getElementById("mini").hidden = true; if (!still) v.play().catch(() => {}); });
+  v.load();
+})();
+</script>
+</body>
+</html>

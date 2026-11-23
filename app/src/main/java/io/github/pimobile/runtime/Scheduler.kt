@@ -75,7 +75,7 @@ object Scheduler {
     private val logs get() = File(PiRuntime.get(app).home, ".saturn/jobs")
 
     /** Jobs, soonest first (Compose state for the Scheduled screen). */
-    var jobs by mutableStateOf<List<Job>>(emptyList())
+    var jobs by mutableStateOf<List<Job>>(emptyList(), androidx.compose.runtime.neverEqualPolicy())
         private set
 
     fun init(context: Context) {
@@ -83,7 +83,7 @@ object Scheduler {
         app = context.applicationContext
         store = runCatching { JSONArray(file.readText()).let { a -> (0 until a.length()).map { Job.from(a.getJSONObject(it)) } } }
             .getOrDefault(emptyList()).sortedBy { it.next }
-        jobs = store
+        jobs = shownCopies(store)
         store.forEach(::arm)
     }
 
@@ -98,11 +98,14 @@ object Scheduler {
         store = sorted
         // The screen gets copies: changes are made to these objects in place, and handing back the same
         // (now edited) objects looked like "nothing changed", so a switch flipped but the card never redrew.
-        val shown = sorted.map { it.copy(runs = it.runs.map { r -> r.copy() }.toMutableList()) }
+        val shown = shownCopies(sorted)
         main.post { jobs = shown }
     }
 
     @Synchronized private fun current() = store.toMutableList()
+
+    /** What the screen gets: copies, never the objects that are edited in place (always, from the first load on). */
+    private fun shownCopies(list: List<Job>) = list.map { it.copy(runs = it.runs.map { r -> r.copy() }.toMutableList()) }
 
     private fun pending(id: String, flags: Int = PendingIntent.FLAG_UPDATE_CURRENT) = PendingIntent.getBroadcast(app, id.hashCode(),
         Intent(app, JobReceiver::class.java).setAction("saturn.job").putExtra("id", id), flags or PendingIntent.FLAG_IMMUTABLE)

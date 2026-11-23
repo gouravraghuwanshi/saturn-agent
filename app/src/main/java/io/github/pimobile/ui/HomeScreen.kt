@@ -484,7 +484,7 @@ fun HomeScreen(
                             "Open a task to use /$name", android.widget.Toast.LENGTH_SHORT).show()
                         else -> {
                             val t = UiStore.newTask(text, File(project), attachments.toList()); attachments.clear()
-                            if (UiStore.openNewTasks) onOpen(t)
+                            if (UiStore.openNewTasks) { UiStore.slipInto = t.task.id; onOpen(t) }
                         }
                     }
                 },

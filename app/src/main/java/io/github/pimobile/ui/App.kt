@@ -36,6 +36,9 @@ fun App() {
         BackHandler(enabled = openId != null) { openId = null }
         // e.g. a new branch: open its card.
         UiStore.openRequest?.let { id -> LaunchedEffect(id) { openId = if (id == io.github.pimobile.MainActivity.HOME) null else id; UiStore.openRequest = null } }
+        // The slip-in applies to that one task's way in and out; anything else navigates as usual.
+        LaunchedEffect(openId) { if (openId != UiStore.slipInto && openId != null) UiStore.slipInto = null
+            if (openId == null && UiStore.slipInto != null) { kotlinx.coroutines.delay(450); UiStore.slipInto = null } }
         LaunchedEffect(openId) {
             // Other screens (store, terminal, artifacts) aren't a task: treat them as "elsewhere".
             UiStore.openTaskId = openId?.takeIf { UiStore.find(it) != null } ?: if (openId == null) null else "screen:$openId"
@@ -53,7 +56,22 @@ fun App() {
         SharedTransitionLayout(Modifier.fillMaxSize().background(Ph.Ground)) {
             AnimatedContent(
                 targetState = openId,
-                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
+                transitionSpec = {
+                    val slip = UiStore.slipInto
+                    val glide = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.92f, stiffness = 260f)
+                    when {
+                        // A new task from the message box: the chat rises out of the box while home sinks back and dims.
+                        slip != null && initialState == null && targetState == slip ->
+                            (androidx.compose.animation.slideInVertically(glide) { it / 3 } + fadeIn(tween(260)))
+                                .togetherWith(androidx.compose.animation.scaleOut(tween(380), targetScale = 0.94f) +
+                                    androidx.compose.animation.slideOutVertically(tween(380)) { -it / 14 } + fadeOut(tween(300)))
+                        // And back: the chat drops away, home comes forward again.
+                        slip != null && initialState == slip && targetState == null ->
+                            (androidx.compose.animation.scaleIn(tween(360), initialScale = 0.94f) + fadeIn(tween(280)))
+                                .togetherWith(androidx.compose.animation.slideOutVertically(tween(320)) { it / 3 } + fadeOut(tween(260)))
+                        else -> fadeIn(tween(220)) togetherWith fadeOut(tween(180))
+                    }
+                },
                 label = "nav",
             ) { id ->
                 val task = id?.let { UiStore.find(it) }

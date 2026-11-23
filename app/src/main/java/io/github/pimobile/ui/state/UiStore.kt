@@ -496,6 +496,9 @@ object UiStore : TaskManager.Listener {
     /** Chat screen in paper (book) colours. */
     // Loaded on first use: prefs need the app context, which isn't set yet when this object is created.
     // Home settings (read on first use, like reading mode: prefs need the app context).
+    /** A task just created and opened from home's message box: it slips in from the box instead of morphing from its card. */
+    var slipInto by mutableStateOf<String?>(null)
+
     private var swipePagesState by mutableStateOf<Boolean?>(null)
     /** Swiping sideways on home switches Tasks ↔ Routines; task cards then don't swipe to archive/delete. */
     var swipePages: Boolean

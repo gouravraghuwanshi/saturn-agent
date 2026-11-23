@@ -135,6 +135,16 @@ fun Markdown(text: String, modifier: Modifier = Modifier) {
                     while (i < lines.size && !lines[i].trimStart().startsWith("```")) { code.appendLine(lines[i]); i++ }
                     CodeBlock(code.toString().trimEnd())
                 }
+                // A table: a row of cells, then a |---|---| line under it.
+                isTableRow(l) && i + 1 < lines.size && Regex("^\\s*\\|?\\s*:?-{2,}").containsMatchIn(lines[i + 1]) -> {
+                    flush()
+                    val header = cells(l)
+                    i += 2
+                    val rows = mutableListOf<List<String>>()
+                    while (i < lines.size && isTableRow(lines[i])) { rows += cells(lines[i]); i++ }
+                    i--
+                    MdTable(header, rows)
+                }
                 l.startsWith("#") -> {
                     flush()
                     Text(inline(l.trimStart('#', ' ')), style = Ph.title)
@@ -154,6 +164,35 @@ fun Markdown(text: String, modifier: Modifier = Modifier) {
             i++
         }
         flush()
+    }
+}
+
+private fun isTableRow(l: String) = l.trim().let { it.startsWith("|") && it.count { c -> c == '|' } >= 2 }
+private fun cells(l: String) = l.trim().removePrefix("|").removeSuffix("|").split("|").map { it.trim() }
+
+/** A Markdown table: header in bold over a hairline, columns sized to their content, scrolls sideways when wide. */
+@Composable
+private fun MdTable(header: List<String>, rows: List<List<String>>) {
+    val n = maxOf(header.size, rows.maxOfOrNull { it.size } ?: 0)
+    // Column width from its longest cell (in characters), kept between a narrow and a wide column.
+    val widths = (0 until n).map { c ->
+        val longest = (listOf(header) + rows).maxOf { r -> r.getOrNull(c)?.replace("**", "")?.replace("`", "")?.length ?: 0 }
+        (longest * 7.6f + 20f).coerceIn(44f, 230f).dp
+    }
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
+        .horizontalScroll(rememberScrollState())) {
+        Column {
+            listOf(header).plus(rows).forEachIndexed { ri, r ->
+                Row(Modifier.background(if (ri == 0) Ph.Chip.copy(alpha = 0.6f) else if (ri % 2 == 0) Ph.Deep.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color.Transparent)) {
+                    (0 until n).forEach { c ->
+                        Text(inline(r.getOrNull(c).orEmpty()), modifier = Modifier.width(widths[c]).padding(horizontal = 10.dp, vertical = 7.dp),
+                            style = Ph.body.copy(fontSize = 13.sp, lineHeight = 18.sp,
+                                fontWeight = if (ri == 0) FontWeight.SemiBold else null, color = if (ri == 0) Ph.Text else Ph.TextSoft))
+                    }
+                }
+                if (ri == 0) Box(Modifier.width(widths.fold(0.dp) { a, b -> a + b }).height(1.dp).background(Ph.LineStrong))
+            }
+        }
     }
 }
 

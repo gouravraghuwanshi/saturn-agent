@@ -323,9 +323,9 @@ fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifi
 }
 
 /**
- * A task that's done (or stopped, or failed). How it ended is written up its front edge, sideways:
- * DONE, STOPPED or FAILED. Then the title and when it ran, its last reply, and one line of what
- * happened: the steps, how long it took, and what it made in Artifacts (or else the files it changed).
+ * A task that's done (or stopped, or failed): the title and when it ran, its last reply, and one line
+ * of what happened (the steps, how long it took, what it made in Artifacts or else the files it
+ * changed) ending, bottom right, in how it ended: a tick, a square if stopped, a cross if it failed.
  */
 @Composable
 fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: String?, selected: Boolean, modifier: Modifier = Modifier) {
@@ -339,18 +339,9 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
     val stamp = t.lastRunAt?.let { at -> remember(at) { stamp(ctx, at) } }
     val bg by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberWash else Ph.Surface, tween(200), label = "bg")
     val edge by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberLine else Ph.Line, tween(200), label = "edge")
-    val spine = 24.dp
 
     Box(modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape)) {
-        // How it ended, in thin plain letters up the front edge.
-        Box(Modifier.matchParentSize()) {
-            Box(Modifier.fillMaxHeight().width(spine), contentAlignment = Alignment.Center) {
-                Text(when { failed -> "FAILED"; stopped -> "STOPPED"; else -> "DONE" }, maxLines = 1, softWrap = false,
-                    style = Ph.monoSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Light, letterSpacing = 0.32.em, color = Ph.Muted),
-                    modifier = Modifier.sideways())
-            }
-        }
-        Column(Modifier.fillMaxWidth().padding(start = spine + 6.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 leading()
@@ -363,7 +354,7 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
             val made = outcome?.made.orEmpty(); val changed = outcome?.changed.orEmpty()
             val files = (made.ifEmpty { changed }).let { f -> if (f.isEmpty()) null else f.take(2).joinToString(", ") + if (f.size > 2) " +${f.size - 2}" else "" }
             val facts = listOfNotNull(steps?.takeIf { it > 0 }?.let { if (it == 1) "1 step" else "$it steps" }, t.workMs.takeIf { it >= 1000 }?.let { took(it) })
-            if (facts.isNotEmpty() || files != null) Row(Modifier.padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically,
+            Row(Modifier.fillMaxWidth().padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (steps != null && steps > 0) StepTrail(steps, failed)
                 Text(androidx.compose.ui.text.buildAnnotatedString {
@@ -372,16 +363,15 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
                         if (facts.isNotEmpty()) append(" · ")
                         withStyle(androidx.compose.ui.text.SpanStyle(color = if (made.isNotEmpty()) Ph.Amber else Ph.TextSoft)) { append(files) }
                     }
-                }, style = Ph.monoSmall.copy(color = Ph.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }, style = Ph.monoSmall.copy(color = Ph.Muted), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // How it ended, bottom right: a tick, a small square if you stopped it, a cross if it failed.
+                if (stopped) Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(1.5.dp)).background(Ph.Muted))
+                } else PhIcon(if (failed) PhIcons.Close else PhIcons.Check, if (failed) Ph.Red else Ph.Green, 14.dp,
+                    description = if (failed) "Failed" else "Finished")
             }
         }
     }
-}
-
-/** Lays text out turned a quarter to the left, reading upwards. */
-private fun Modifier.sideways() = this.layout { m, _ ->
-    val p = m.measure(androidx.compose.ui.unit.Constraints())
-    layout(p.height, p.width) { p.placeWithLayer(-(p.width - p.height) / 2, (p.width - p.height) / 2) { rotationZ = -90f } }
 }
 
 /** "42s", "3m 12s", "1h 4m". */

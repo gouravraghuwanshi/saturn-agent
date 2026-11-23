@@ -472,6 +472,9 @@ fun HomeScreen(
             UiStore.undo?.let { u -> UndoBar(u) }
             Column {
             val pick = rememberAttachPicker { attachments.addAll(it) }
+            // Typing only recomposes the message box, not all of home: re-laying out the task list on the
+            // first keystroke made its cards jump down and spring back (right after the list had tucked up).
+            Isolated {
             Composer(
                 value = input, onValue = { input = it },
                 attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
@@ -494,6 +497,7 @@ fun HomeScreen(
                     }
                 },
             )
+            }
             // The gesture hint is for newcomers (and while selecting); it goes once there are a few tasks.
             if (selecting || projectTasks.count { !it.hidden } in 1..3)
                 Text(if (selecting) "tap tasks to select · back to cancel" else if (UiStore.swipePages) "swipe sideways for routines  ·  hold to select" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)), textAlign = TextAlign.Center,
@@ -826,3 +830,7 @@ private fun plainPreview(md: String): String =
         .replace(Regex("^(#{1,6}\\s+|[-*+]\\s+|>\\s*|\\d+\\.\\s+)"), "")
         .replace(Regex("\\[([^]]*)]\\([^)]*\\)"), "$1")
         .replace(Regex("[*_`~]{1,3}"), "")
+
+/** Runs [content] in its own recomposition scope, so state it reads doesn't recompose the caller. */
+@Composable
+private fun Isolated(content: @Composable () -> Unit) = content()

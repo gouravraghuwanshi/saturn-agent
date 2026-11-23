@@ -89,6 +89,18 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 if (features) { Divider(); Item(PhIcons.Lock, "Permissions", "What Saturn may use") { open = "permissions" } }
             }
 
+            Group("Home") {
+                var swipePages by remember { mutableStateOf(UiStore.swipePages) }
+                Toggle(PhIcons.Clock, "Swipe for routines", "Sideways swipes switch pages, not archive", swipePages) {
+                    swipePages = it; UiStore.swipePages = it
+                }
+                Divider()
+                var openNew by remember { mutableStateOf(UiStore.openNewTasks) }
+                Toggle(PhIcons.Send, "Open new tasks", "Go straight into the chat after you send", openNew) {
+                    openNew = it; UiStore.openNewTasks = it
+                }
+            }
+
             Group("Appearance") {
                 Toggle(PhIcons.Sparkle, "Pure black", "True black, saves battery", Ph.amoled) { UiStore.setAmoled(it) }
             }

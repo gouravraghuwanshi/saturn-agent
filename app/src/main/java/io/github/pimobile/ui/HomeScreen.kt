@@ -261,6 +261,30 @@ fun HomeScreen(
     val blurR by androidx.compose.animation.core.animateDpAsState(if (searchOpen) 18.dp else 0.dp,
         androidx.compose.animation.core.tween(260), label = "blur")
 
+    // Swiping sideways switches Tasks ↔ Routines: always on an empty home, and anywhere on the list when the
+    // setting says swipes are for pages (the cards then don't swipe). Saturn leans along with your finger.
+    val pageSwipe = Modifier.pointerInput(page, UiStore.swipePages, showList) {
+        if (showList && !UiStore.swipePages) return@pointerInput
+        val threshold = 72.dp.toPx()
+        var crossed = false
+        detectHorizontalDragGestures(
+            onDragStart = { swipeJob?.cancel(); crossed = false },
+            onDragEnd = {
+                val go = (page == 0 && heroDrag < -threshold) || (page == 1 && heroDrag > threshold)
+                if (go) { page = 1 - page; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM) }
+                swipeJob = scope.launch { androidx.compose.animation.core.animate(heroDrag, 0f,
+                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)) { v, _ -> heroDrag = v } }
+            },
+            onDragCancel = { swipeJob = scope.launch { androidx.compose.animation.core.animate(heroDrag, 0f) { v, _ -> heroDrag = v } } },
+        ) { change, dx ->
+            change.consume()
+            val toward = (page == 0 && dx < 0) || (page == 1 && dx > 0) || (page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0)
+            heroDrag = (heroDrag + dx * if (toward) 0.6f else 0.15f).coerceIn(-size.width * 0.45f, size.width * 0.45f)
+            val now = kotlin.math.abs(heroDrag) > threshold && ((page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0))
+            if (now != crossed) { crossed = now; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) }
+        }
+    }
+
     var loginArg by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
     val builtins = listOf(
@@ -343,9 +367,9 @@ fun HomeScreen(
             }
             // ---- tasks
             if (!showList) ProjectRow(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp))
-            if (!showList) EmptyState(Modifier.weight(1f), UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
+            if (!showList) EmptyState(Modifier.weight(1f).then(pageSwipe).graphicsLayer { translationX = heroDrag * 0.5f }, UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
                 project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() }) { sheet = "login" }
-            else Box(Modifier.weight(1f)) {
+            else Box(Modifier.weight(1f).then(pageSwipe)) {
             PullToSearchHint(pull / pullAt, Modifier.align(Alignment.TopCenter).padding(top = 6.dp))
             LazyColumn(
                 Modifier.fillMaxSize().nestedScroll(pullConn).graphicsLayer { translationY = pull }, state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 200.dp),
@@ -414,7 +438,7 @@ fun HomeScreen(
                         with(shared) {
                             Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
                                 boundsTransform = CardMorph, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
-                                SwipeCard(t, enabled = !selecting) {
+                                SwipeCard(t, enabled = !selecting && !UiStore.swipePages) {
                                     TaskCard(t, selected = if (selecting) t.task.id in selected else null,
                                         onOpen = { if (selecting) toggle(t) else onOpen(t) }, onSelect = { toggle(t) })
                                 }
@@ -458,13 +482,16 @@ fun HomeScreen(
                         // pi built-ins that act on one task: don't start a task (and an LLM call) by accident.
                         text.startsWith("/") && name in TASK_ONLY -> android.widget.Toast.makeText(context,
                             "Open a task to use /$name", android.widget.Toast.LENGTH_SHORT).show()
-                        else -> { UiStore.newTask(text, File(project), attachments.toList()); attachments.clear() }
+                        else -> {
+                            val t = UiStore.newTask(text, File(project), attachments.toList()); attachments.clear()
+                            if (UiStore.openNewTasks) onOpen(t)
+                        }
                     }
                 },
             )
             // The gesture hint is for newcomers (and while selecting); it goes once there are a few tasks.
             if (selecting || projectTasks.count { !it.hidden } in 1..3)
-                Text(if (selecting) "tap tasks to select · back to cancel" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)), textAlign = TextAlign.Center,
+                Text(if (selecting) "tap tasks to select · back to cancel" else if (UiStore.swipePages) "swipe sideways for routines  ·  hold to select" else "swipe ← delete · archive →  ·  hold to select", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)), textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
             }
         }
@@ -564,6 +591,10 @@ private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = n
         }
         Spacer(Modifier.height(28.dp))
         TrustLine()
+        if (hasKey) {
+            Spacer(Modifier.height(14.dp))
+            Text("‹  swipe for routines", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)))
+        }
         Spacer(Modifier.height(140.dp))
     }
 }

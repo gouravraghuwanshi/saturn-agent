@@ -96,7 +96,10 @@ object Scheduler {
         file.writeText(JSONArray(list.map { it.json() }).toString())
         val sorted = list.sortedBy { it.next }
         store = sorted
-        main.post { jobs = sorted }
+        // The screen gets copies: changes are made to these objects in place, and handing back the same
+        // (now edited) objects looked like "nothing changed", so a switch flipped but the card never redrew.
+        val shown = sorted.map { it.copy(runs = it.runs.map { r -> r.copy() }.toMutableList()) }
+        main.post { jobs = shown }
     }
 
     @Synchronized private fun current() = store.toMutableList()

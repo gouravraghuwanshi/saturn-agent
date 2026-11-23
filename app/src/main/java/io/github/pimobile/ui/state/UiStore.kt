@@ -495,6 +495,18 @@ object UiStore : TaskManager.Listener {
     fun markSaturnTapped() { prefs.edit().putBoolean("saturn_tapped", true).apply() }
     /** Chat screen in paper (book) colours. */
     // Loaded on first use: prefs need the app context, which isn't set yet when this object is created.
+    // Home settings (read on first use, like reading mode: prefs need the app context).
+    private var swipePagesState by mutableStateOf<Boolean?>(null)
+    /** Swiping sideways on home switches Tasks ↔ Routines; task cards then don't swipe to archive/delete. */
+    var swipePages: Boolean
+        get() = swipePagesState ?: prefs.getBoolean("swipe_pages", false).also { swipePagesState = it }
+        set(v) { swipePagesState = v; prefs.edit().putBoolean("swipe_pages", v).apply() }
+    private var openNewState by mutableStateOf<Boolean?>(null)
+    /** Sending a new task from home goes straight into its chat. */
+    var openNewTasks: Boolean
+        get() = openNewState ?: prefs.getBoolean("open_new_tasks", false).also { openNewState = it }
+        set(v) { openNewState = v; prefs.edit().putBoolean("open_new_tasks", v).apply() }
+
     private var readingState by mutableStateOf<Boolean?>(null)
     val reading: Boolean get() = readingState ?: prefs.getBoolean("reading", false).also { readingState = it }
     fun toggleReading() { val v = !reading; readingState = v; prefs.edit().putBoolean("reading", v).apply() }

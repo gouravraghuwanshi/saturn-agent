@@ -1,5 +1,7 @@
 package io.github.pimobile.ui
 
+import io.github.pimobile.ui.state.buzz
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -224,7 +226,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val slop = with(density) { 6.dp.toPx() }
     val startNewTask = {
-        hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        hostView.buzz(android.view.HapticFeedbackConstants.CONFIRM)
         UiStore.selectProject(t.task.cwd); UiStore.composeRequest = true; onBack()
     }
     LaunchedEffect(list) {
@@ -425,13 +427,13 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                                 if (pull > 0f || topPull > 0f) { c.consume(); if (pull > slop) edgeDrag = true }
                             } else { anchor = null; pull = 0f; topPull = 0f }
                             if (!ticked && (pull > slop * 2 || topPull > slop * 2)) {
-                                ticked = true; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                                ticked = true; hostView.buzz(android.view.HapticFeedbackConstants.CLOCK_TICK)
                             }
                             lift = -liftMax * (1f - kotlin.math.exp(-pull / liftMax)) + topMax * (1f - kotlin.math.exp(-topPull / topMax))
                             val nowArmed = pull >= pullArm
                             if (nowArmed != armed) {
                                 armed = nowArmed
-                                hostView.performHapticFeedback(if (android.os.Build.VERSION.SDK_INT >= 34) {
+                                hostView.buzz(if (android.os.Build.VERSION.SDK_INT >= 34) {
                                     if (nowArmed) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
                                     else android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
                                 } else if (nowArmed) android.view.HapticFeedbackConstants.CONTEXT_CLICK else android.view.HapticFeedbackConstants.CLOCK_TICK)
@@ -469,7 +471,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                             val now = drag >= sideArm
                             if (now != sideArmed) {
                                 sideArmed = now
-                                hostView.performHapticFeedback(if (android.os.Build.VERSION.SDK_INT >= 34) {
+                                hostView.buzz(if (android.os.Build.VERSION.SDK_INT >= 34) {
                                     if (now) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
                                     else android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
                                 } else if (now) android.view.HapticFeedbackConstants.CONTEXT_CLICK else android.view.HapticFeedbackConstants.CLOCK_TICK)
@@ -478,7 +480,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         if (on) {
                             val go = sideArmed; val toHome = dx > 0
                             sideArmed = false
-                            if (go) hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                            if (go) hostView.buzz(android.view.HapticFeedbackConstants.CONFIRM)
                             if (go && toHome) onBack()
                             else {
                                 if (go) tab = "terminal"
@@ -1336,12 +1338,12 @@ private fun ReadingIcon(lampOpen: Boolean, onLamp: (Boolean) -> Unit) {
         .pointerInput(lampOpen) {
             detectTapGestures(
                 onTap = {
-                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                    view.buzz(android.view.HapticFeedbackConstants.CLOCK_TICK)
                     if (lampOpen) onLamp(false) else UiStore.toggleReading()
                 },
                 onLongPress = {
                     if (!UiStore.reading) UiStore.toggleReading()
-                    view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    view.buzz(android.view.HapticFeedbackConstants.LONG_PRESS)
                     onLamp(true)
                 },
             )
@@ -1366,7 +1368,7 @@ private fun LampSlider(onTouch: () -> Unit) {
         val nv = (x / w).coerceIn(0f, 1f)
         UiStore.previewShade(nv); onTouch()
         val now = (nv * 10).toInt()
-        if (now != step) { step = now; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) }
+        if (now != step) { step = now; view.buzz(android.view.HapticFeedbackConstants.SEGMENT_TICK) }
     }
     val warm = Color(0xFFFFC46B); val pale = Color(0xFFFFF0CC); val ink = Color(0xFF3B2608)
     val shape = RoundedCornerShape(26.dp)

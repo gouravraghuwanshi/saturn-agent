@@ -1,5 +1,7 @@
 package io.github.pimobile.ui
 
+import io.github.pimobile.ui.state.buzz
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -135,7 +137,7 @@ fun OrbitHero(active: List<TaskUi>, total: Int, onOpen: (TaskUi) -> Unit, onPlan
                         androidx.compose.ui.text.style.LineHeightStyle.Trim.None)),
                 modifier = Modifier.pointerInput(moons) {
                     detectTapGestures { p ->
-                        view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                        view.buzz(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                         val cw = size.width / AsciiSaturn.COLS.toFloat(); val ch = size.height / AsciiSaturn.ROWS.toFloat()
                         val hit = frame.moons.minByOrNull { (c, r, _) -> (Offset((c + 0.5f) * cw, (r + 0.5f) * ch) - p).getDistance() }
                         if (hit != null && (Offset((hit.first + 0.5f) * cw, (hit.second + 0.5f) * ch) - p).getDistance() < 28.dp.toPx())

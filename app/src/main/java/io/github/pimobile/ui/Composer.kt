@@ -1,5 +1,7 @@
 package io.github.pimobile.ui
 
+import io.github.pimobile.ui.state.buzz
+
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -211,7 +213,7 @@ fun Composer(
     fun send() {
         val t = text.trim()
         if (t.isEmpty() && attachments.isEmpty()) return
-        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        haptics.buzz(HapticFeedbackType.Confirm)
         onSend(t)
     }
 
@@ -315,11 +317,11 @@ fun Composer(
                             var t = 0L
                             for (gap in listOf(170L, 150L, 120L, 95L, 75L)) {
                                 kotlinx.coroutines.delay(gap); t += gap
-                                view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                                view.buzz(android.view.HapticFeedbackConstants.CLOCK_TICK)
                             }
                             kotlinx.coroutines.delay((holdMs - t).coerceAtLeast(0))
                             charging = false; active = true; hoverIdx = -1
-                            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                            view.buzz(android.view.HapticFeedbackConstants.LONG_PRESS)
                         }
                         try {
                             // Before the ting: a move or a lift means it was a tap or a scroll after all.
@@ -347,11 +349,11 @@ fun Composer(
                                 } ?: -1
                                 if (hit != hoverIdx) {
                                     hoverIdx = hit
-                                    view.performHapticFeedback(if (hit >= 0) (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                                    view.buzz(if (hit >= 0) (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                                         else (if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE else android.view.HapticFeedbackConstants.CLOCK_TICK))
                                 }
                             }
-                            if (hoverIdx >= 0) { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM); UiStore.holdUses += 1; pulls[hoverIdx].onRelease() }
+                            if (hoverIdx >= 0) { view.buzz(android.view.HapticFeedbackConstants.CONFIRM); UiStore.holdUses += 1; pulls[hoverIdx].onRelease() }
                         } finally {
                             ticks.cancel(); charging = false; active = false; hoverIdx = -1; stretchTarget = 0f
                         }
@@ -705,9 +707,9 @@ private fun ThinkingSlider(c: ThinkingControl, modifier: Modifier, onDone: () ->
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var widthPx by remember { mutableStateOf(1f) }
     fun at(x: Float) = ((x / widthPx) * (levels.size - 1) + 0.5f).toInt().coerceIn(0, levels.size - 1)
-    fun move(i: Int) { if (i != pick) { pick = i; view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) } }
+    fun move(i: Int) { if (i != pick) { pick = i; view.buzz(android.view.HapticFeedbackConstants.SEGMENT_TICK) } }
     fun commit() {
-        view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        view.buzz(android.view.HapticFeedbackConstants.CONFIRM)
         c.onSet(levels[pick])
         scope.launch { kotlinx.coroutines.delay(350); onDone() }
     }

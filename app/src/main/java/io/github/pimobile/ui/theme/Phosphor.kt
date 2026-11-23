@@ -1,5 +1,7 @@
 package io.github.pimobile.ui.theme
 
+import io.github.pimobile.ui.state.buzz
+
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -116,7 +118,7 @@ private class HapticNode(
         coroutineScope.launch {
             source.interactions.collect {
                 if (it is androidx.compose.foundation.interaction.PressInteraction.Press)
-                    currentValueOf(androidx.compose.ui.platform.LocalView).performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    currentValueOf(androidx.compose.ui.platform.LocalView).buzz(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
             }
         }
     }

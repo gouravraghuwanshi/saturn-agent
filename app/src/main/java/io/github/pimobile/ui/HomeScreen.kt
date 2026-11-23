@@ -1,5 +1,7 @@
 package io.github.pimobile.ui
 
+import io.github.pimobile.ui.state.buzz
+
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -210,7 +212,7 @@ fun HomeScreen(
             val o = list.firstVisibleItemScrollOffset
             if (o in 1 until h) {
                 if (o > h * 0.35f) list.animateScrollToItem(1) else list.animateScrollToItem(0)
-                hostView.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK)
+                hostView.buzz(android.view.HapticFeedbackConstants.SEGMENT_TICK)
             }
         }
     }
@@ -227,7 +229,7 @@ fun HomeScreen(
             val now = pull >= pullAt
             if (now == armed) return
             armed = now
-            hostView.performHapticFeedback(when {
+            hostView.buzz(when {
                 android.os.Build.VERSION.SDK_INT >= 34 -> if (now) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
                     else android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
                 else -> android.view.HapticFeedbackConstants.CLOCK_TICK
@@ -252,7 +254,7 @@ fun HomeScreen(
         }
         override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
             if (pull <= 0f) return androidx.compose.ui.unit.Velocity.Zero
-            if (pull >= pullAt) { searchOpen = true; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM) }
+            if (pull >= pullAt) { searchOpen = true; hostView.buzz(android.view.HapticFeedbackConstants.CONFIRM) }
             armed = false
             pullJob = scope.launch { androidx.compose.animation.core.animate(pull, 0f,
                 animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.78f, stiffness = 380f)) { v, _ -> pull = v } }
@@ -272,7 +274,7 @@ fun HomeScreen(
             onDragStart = { swipeJob?.cancel(); crossed = false },
             onDragEnd = {
                 val go = (page == 0 && heroDrag < -threshold) || (page == 1 && heroDrag > threshold)
-                if (go) { page = 1 - page; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM) }
+                if (go) { page = 1 - page; hostView.buzz(android.view.HapticFeedbackConstants.CONFIRM) }
                 swipeJob = scope.launch { androidx.compose.animation.core.animate(heroDrag, 0f,
                     animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)) { v, _ -> heroDrag = v } }
             },
@@ -282,7 +284,7 @@ fun HomeScreen(
             val toward = (page == 0 && dx < 0) || (page == 1 && dx > 0) || (page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0)
             heroDrag = (heroDrag + dx * if (toward) 0.6f else 0.15f).coerceIn(-size.width * 0.45f, size.width * 0.45f)
             val now = kotlin.math.abs(heroDrag) > threshold && ((page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0))
-            if (now != crossed) { crossed = now; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) }
+            if (now != crossed) { crossed = now; hostView.buzz(android.view.HapticFeedbackConstants.CLOCK_TICK) }
         }
     }
 
@@ -383,7 +385,7 @@ fun HomeScreen(
                 // Saturn and its moons: shrinks, rises and fades as the list scrolls up.
                 item(key = "hero") {
                     OrbitHero(UiStore.tasks.filter { it.status in ACTIVE }, visible.size, onOpen = { if (!selecting) onOpen(it) }, onPlanet = { sheet = "saturn" },
-                        page = page, pageStatus = if (page == 1) routinesStatus() else null, onPage = { page = it; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK) },
+                        page = page, pageStatus = if (page == 1) routinesStatus() else null, onPage = { page = it; hostView.buzz(android.view.HapticFeedbackConstants.SEGMENT_TICK) },
                         modifier = Modifier.onGloballyPositioned { heroCenter = it.boundsInRoot().center }
                             // Swipe Saturn sideways: it follows your finger (with weight) and flips the page past the threshold.
                             .pointerInput(page) {
@@ -393,7 +395,7 @@ fun HomeScreen(
                                     onDragStart = { swipeJob?.cancel(); crossed = false },
                                     onDragEnd = {
                                         val go = (page == 0 && heroDrag < -threshold) || (page == 1 && heroDrag > threshold)
-                                        if (go) { page = 1 - page; hostView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM) }
+                                        if (go) { page = 1 - page; hostView.buzz(android.view.HapticFeedbackConstants.CONFIRM) }
                                         swipeJob = scope.launch { androidx.compose.animation.core.animate(heroDrag, 0f,
                                             animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)) { v, _ -> heroDrag = v } }
                                     },
@@ -404,7 +406,7 @@ fun HomeScreen(
                                     val toward = (page == 0 && dx < 0) || (page == 1 && dx > 0) || (page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0)
                                     heroDrag = (heroDrag + dx * if (toward) 0.6f else 0.15f).coerceIn(-size.width * 0.45f, size.width * 0.45f)
                                     val now = kotlin.math.abs(heroDrag) > threshold && ((page == 0 && heroDrag < 0) || (page == 1 && heroDrag > 0))
-                                    if (now != crossed) { crossed = now; hostView.performHapticFeedback(
+                                    if (now != crossed) { crossed = now; hostView.buzz(
                                         if (now) android.view.HapticFeedbackConstants.CLOCK_TICK else android.view.HapticFeedbackConstants.CLOCK_TICK) }
                                 }
                             }.graphicsLayer {
@@ -628,7 +630,7 @@ private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect
     val needs = t.status == Status.NEEDS_INPUT
     val working = t.status == Status.RUNNING || t.status == Status.STARTING
     val tap = Modifier.combinedClickable(onClick = onOpen, onClickLabel = if (selected != null) "Select task" else "Open task",
-        onLongClick = { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onSelect() },
+        onLongClick = { haptics.buzz(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onSelect() },
         onLongClickLabel = "Select task")
     // The tick circle slides in when selecting starts (pushing the title over), fills with a little
     // bounce when picked, and slides away again when selecting ends.
@@ -715,7 +717,7 @@ private fun SwipeCard(t: TaskUi, enabled: Boolean, content: @Composable () -> Un
     var width by remember { mutableStateOf(1f) }
     var armed by remember { mutableStateOf(false) }
     val threshold = width * 0.38f
-    fun tick(c: Int) { view.performHapticFeedback(c) }
+    fun tick(c: Int) { view.buzz(c) }
     val armOn = if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else android.view.HapticFeedbackConstants.CONTEXT_CLICK
     val armOff = if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE else android.view.HapticFeedbackConstants.CLOCK_TICK
 

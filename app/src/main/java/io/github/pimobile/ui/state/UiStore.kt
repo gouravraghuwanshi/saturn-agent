@@ -512,6 +512,11 @@ object UiStore : TaskManager.Listener {
     var swipePages: Boolean
         get() = swipePagesState ?: prefs.getBoolean("swipe_pages", false).also { swipePagesState = it }
         set(v) { swipePagesState = v; prefs.edit().putBoolean("swipe_pages", v).apply() }
+    private var hapticsState by mutableStateOf<Boolean?>(null)
+    /** Vibrations for taps, swipes, steps and finished runs (all of them go through buzz()). */
+    var haptics: Boolean
+        get() = hapticsState ?: prefs.getBoolean("haptics", true).also { hapticsState = it }
+        set(v) { hapticsState = v; prefs.edit().putBoolean("haptics", v).apply() }
     private var openNewState by mutableStateOf<Boolean?>(null)
     /** Sending a new task from home goes straight into its chat. */
     var openNewTasks: Boolean

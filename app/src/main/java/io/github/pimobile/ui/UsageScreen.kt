@@ -1,5 +1,7 @@
 package io.github.pimobile.ui
 
+import io.github.pimobile.ui.state.buzz
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -358,7 +360,7 @@ private fun Bars(values: List<Double>, picked: Int, key: Any, modifier: Modifier
     Canvas(modifier.fillMaxWidth().height(120.dp).pointerInput(values.size) {
         detectTapGestures { p ->
             val i = (p.x / size.width * values.size).toInt().coerceIn(0, values.lastIndex)
-            view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK); onPick(i)
+            view.buzz(android.view.HapticFeedbackConstants.CLOCK_TICK); onPick(i)
         }
     }) {
         val gap = if (values.size > 14) 3.dp.toPx() else 6.dp.toPx()

@@ -99,6 +99,13 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Toggle(PhIcons.Send, "Open new tasks", "Go straight into the chat after you send", openNew) {
                     openNew = it; UiStore.openNewTasks = it
                 }
+                Divider()
+                var haptics by remember { mutableStateOf(UiStore.haptics) }
+                val view = androidx.compose.ui.platform.LocalView.current
+                Toggle(PhIcons.Vibrate, "Haptics", "Little vibrations on taps, swipes and finished tasks", haptics) {
+                    haptics = it; UiStore.haptics = it
+                    if (it) view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                }
             }
 
             Group("Appearance") {

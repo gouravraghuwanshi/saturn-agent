@@ -16,7 +16,7 @@ object Haptics {
 
     private fun play(constant: Int) {
         if (!UiStore.foreground) return
-        view?.performHapticFeedback(constant)
+        view?.buzz(constant)
     }
 
     /** A tool call started: a light tick, at most ~6 a second. */

@@ -1,5 +1,7 @@
 package io.github.pimobile.ui.theme
 
+import io.github.pimobile.ui.state.buzz
+
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.View
@@ -43,7 +45,7 @@ private class BounceOverscroll(private val scope: CoroutineScope, private val vi
     private fun axis(v: Float) = if (vertical) Offset(0f, v) else Offset(v, 0f)
 
     private fun edgeTick() {
-        view.performHapticFeedback(if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+        view.buzz(if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
             else HapticFeedbackConstants.CONTEXT_CLICK)
     }
 

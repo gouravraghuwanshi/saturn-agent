@@ -76,6 +76,10 @@ class PiRuntime private constructor(private val ctx: Context) {
     val tmp = File(ctx.cacheDir, "tmp")
     val piRoot = File(ctx.filesDir, "pi")
     val piCli get() = File(piRoot, "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js")
+    /** Where `npm i -g` puts packages (npm's prefix is $PREFIX). */
+    val globalModules get() = File(usr, "lib/node_modules")
+    /** jq, fold, pdftotext and friendly python/apt messages (assets/saturn-tools.js). */
+    private val toolsJs get() = File(usr, "lib/saturn-tools.js")
     private val npmCli get() = File(piRoot, "node_modules/npm/bin/npm-cli.js")
     private val npxCli get() = File(piRoot, "node_modules/npm/bin/npx-cli.js")
     private val bashEnv = File(usr, "etc/pi-bash-env.sh")
@@ -103,7 +107,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         if (prepared) return
         extractAsset("pi-bundle", piRoot, wipe = true, log)
         extractAsset("usr-data", usr, wipe = false, log)
-        listOf(home, projects, artifacts, tmp, bin, gitCore, bashEnv.parentFile!!).forEach { it.mkdirs() }
+        listOf(home, projects, artifacts, tmp, bin, gitCore, bashEnv.parentFile!!, globalModules).forEach { it.mkdirs() }
         link(bin, BIN)
         link(gitCore, GIT_CORE)
         // Real npm/npx commands (npm's own #!/usr/bin/env node scripts), so
@@ -149,6 +153,9 @@ class PiRuntime private constructor(private val ctx: Context) {
         "GIT_CONFIG_NOSYSTEM" to "1",
         // Non-interactive bash (pi's shell tool) sources this: npm/npx helpers.
         "BASH_ENV" to bashEnv.path,
+        // Packages from `npm i -g` can be require()'d from any script, not just from their own folder.
+        "NODE_PATH" to globalModules.path,
+        "SATURN_NPM_CLI" to npmCli.path,
         "PI_SKIP_VERSION_CHECK" to "1",
         // npm is bundled with the app; its "new version available" notice is noise here.
         "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
@@ -200,7 +207,13 @@ class PiRuntime private constructor(private val ctx: Context) {
                 """.trimMargin()
         }
         val schedule = "saturn-schedule" to device.getValue("termux-torch").replace("/app/device/termux-torch", "/app/schedule").replace("termux-torch: ", "saturn-schedule: ")
-        for ((name, body) in shims + device + schedule) {
+        // Stand-ins for desktop tools the model reaches for (see assets/saturn-tools.js), and `pi` itself.
+        toolsJs.parentFile?.mkdirs()
+        ctx.assets.open("saturn-tools.js").use { i -> toolsJs.outputStream().use { i.copyTo(it) } }
+        val tools = listOf("jq", "fold", "pdftotext", "python", "python3", "pip", "pip3", "apt", "apt-get", "pkg")
+            .associateWith { "exec \"${File(bin, "node").path}\" \"${toolsJs.path}\" $it \"${'$'}@\"" } +
+            ("pi" to "exec \"${File(bin, "node").path}\" \"${piCli.path}\" \"${'$'}@\"")
+        for ((name, body) in shims + device + schedule + tools) {
             val f = File(bin, name)
             f.delete()
             f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
@@ -251,8 +264,11 @@ class PiRuntime private constructor(private val ctx: Context) {
             |- After saving, tell the user the file name and that it is in Artifacts.
             |
             |## Environment
-            |A Linux-like userland on Android: bash, node, npm/npx, git, curl, ripgrep. There is no apt/pkg,
-            |no sudo and no python unless installed via npm packages. `npm i -g <pkg>` installs CLIs on PATH.
+            |A Linux-like userland on Android: bash, node, npm/npx, git, curl, ripgrep (rg: filter files with
+            |--glob, not grep's --include), plus small built-ins: jq (common filters), fold, and
+            |`pdftotext file.pdf [out.txt|-]` to read PDFs. There is no python, apt/pkg or sudo: write scripts in
+            |JavaScript with node (node -e '…'; node -p '2n ** 64n' for quick maths). `npm i -g <pkg>` installs
+            |CLIs on PATH, and globally installed packages can be require()'d from any script.
             |Paths: there is no /tmp (use ${'$'}TMPDIR), no /home/user (use ${'$'}HOME or ~), and /, /etc, /usr, /bin are
             |read-only (Saturn's userland is in ${'$'}PREFIX, already on PATH). Write files in the task's folder,
             |${'$'}HOME or ${'$'}TMPDIR. Call tools by name (node, bash, git), not by /usr/bin/… paths.

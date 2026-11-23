@@ -609,7 +609,7 @@ object UiStore : TaskManager.Listener {
         // the animation and first frame need. Sending a message starts it at once anyway.
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             ui.opening = false
-            if (ui.task.session == null) TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
+            if (ui.task.session == null) TaskManager.warm(ui.task)
         }, 700)
     }
 

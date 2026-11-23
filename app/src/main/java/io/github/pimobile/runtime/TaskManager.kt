@@ -271,9 +271,18 @@ object TaskManager {
         setStatus(task, Status.STOPPED)
     }
 
-    private fun ensureSession(task: Task) {
+    /**
+     * Start pi for a chat you just opened, quietly: the status doesn't change, so the screen doesn't act as if a
+     * run began (no "starting", no live Work card). A message sent meanwhile just waits its turn behind it.
+     */
+    fun warm(task: Task) = io.execute {
+        ensureSession(task, quiet = true)
+        task.session?.send(JSONObject().put("type", "get_state"))
+    }
+
+    private fun ensureSession(task: Task, quiet: Boolean = false) {
         if (task.session?.isAlive == true) return
-        setStatus(task, Status.STARTING)
+        if (!quiet) setStatus(task, Status.STARTING)
         val session = PiSession(runtime, task.sessionId, task.cwd, object : PiSession.Listener {
             override fun onRecord(record: JSONObject) = handle(task, record)
             override fun onLog(line: String) = emit(task, null, line)
@@ -287,7 +296,7 @@ object TaskManager {
         task.session = session
         try {
             session.start(envFor(task))
-            setStatus(task, Status.IDLE)
+            if (!quiet || task.status == Status.STARTING || task.status == Status.FAILED) setStatus(task, Status.IDLE)
             migrateSessionId(task)
             emit(task, JSONObject().put("type", SESSION_STARTED), null)
         } catch (e: Exception) {

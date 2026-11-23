@@ -62,6 +62,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import io.github.pimobile.runtime.TaskManager.Status
 import io.github.pimobile.ui.components.PhIcon
@@ -335,7 +336,9 @@ fun HomeScreen(
                     SaturnMark(Modifier.size(28.dp))
                 }
                 Column(Modifier.weight(1f).clickable { sheet = "model" }) {
-                    Text("Saturn", style = Ph.title.copy(fontSize = 18.sp))
+                    // The wordmark in the app's own mono face, tracked out, with a faint phosphor glow (none on paper).
+                    Text("SATURN", style = Ph.mono.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text,
+                        letterSpacing = 0.32.em, shadow = if (Ph.paper) null else androidx.compose.ui.graphics.Shadow(Ph.Amber.copy(alpha = 0.55f), blurRadius = 14f)))
                     val label = io.github.pimobile.ui.state.modelLabel(UiStore.model)
                     if (label != null) Text(androidx.compose.ui.text.buildAnnotatedString {
                         withStyle(androidx.compose.ui.text.SpanStyle(color = Ph.TextSoft)) { append(label.first) }

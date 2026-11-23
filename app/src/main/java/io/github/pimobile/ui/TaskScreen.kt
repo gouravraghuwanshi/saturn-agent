@@ -692,7 +692,8 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             else
             Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp).graphicsLayer { alpha = 1f - collapse },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT,
+                val helpers by remember(t) { androidx.compose.runtime.derivedStateOf { Shapes.liveHelpers(t.items) } }
+                MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT, helpers = helpers, modifier =
                     Modifier.width(118.dp).onGloballyPositioned { c -> onSaturn(c.boundsInRoot().center) })
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -792,8 +793,16 @@ private fun WorkBlock(b: Block.Work, live: Boolean, startedAt: Long?) {
             }
             PhIcon(PhIcons.Chevron, Ph.Muted, 13.dp, modifier = Modifier.graphicsLayer { rotationZ = if (open) 180f else 0f })
         }
+        // Re-read only when a tool's data changes (not on every spinner frame).
+        val rich by remember(b.key) { androidx.compose.runtime.derivedStateOf {
+            val ts = b.items.filterIsInstance<Item.Tool>()
+            val ct = ts.lastOrNull { Shapes.crew(it.details) != null }
+            Triple(ct, ct?.let { Shapes.crew(it.details) }, ts.asReversed().firstNotNullOfOrNull { Shapes.checklist(it.details, it.output, core = it.name in CORE_TOOLS) })
+        } }
+        val (crewTool, crew, plan) = rich
         if (!open) {
-            if (few && !active) Column { tools.forEach { StepRow(it, compact = true) } }
+            if (active && crew != null && crewTool?.state == io.github.pimobile.ui.state.ToolState.RUNNING) CrewPanel(crew, live = true)
+            else if (few && !active) Column { tools.forEach { StepRow(it, compact = true) } }
             else if (active) {
                 // Running: the current step's line, rolling up as each new one lands.
                 val lastItem = b.items.lastOrNull()
@@ -811,13 +820,18 @@ private fun WorkBlock(b: Block.Work, live: Boolean, startedAt: Long?) {
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(start = 2.dp))
                 }
             } else Text(shortSummary(tools), style = Ph.monoSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (!active && crew != null) Text(listOfNotNull("${crew.lanes.size} ${if (crew.lanes.size == 1) "helper" else "helpers"}",
+                crew.lanes.count { it.state == Shapes.LaneState.FAILED }.takeIf { it > 0 }?.let { "$it failed" },
+                crew.cost.takeIf { it >= 0.005 }?.let { String.format(Locale.US, "$%.2f", it) }).joinToString(" · "),
+                style = Ph.monoSmall.copy(color = Ph.TextSoft))
+            plan?.let { ChecklistCard(it, compact = true) }
         }
         // Open: one line per step.
         AnimatedVisibility(open, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 b.items.forEach { item ->
                     when (item) {
-                        is Item.Tool -> StepRow(item)
+                        is Item.Tool -> RichStep(item)
                         is Item.Assistant -> {
                             if (item.thinking.isNotBlank()) ThinkRow(item.key, item.thinking)
                             if (item.text.isNotBlank()) Text(item.text.trim(), style = Ph.body.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Ph.TextBody),
@@ -871,6 +885,21 @@ private fun shortSummary(tools: List<Item.Tool>): String {
         val other = tools.size - by.filterKeys { it in known }.values.sum()
         if (other > 0) add(n(other, "other tool", "other tools"))
     }.joinToString(" · ")
+}
+
+private val CORE_TOOLS = setOf("read", "bash", "edit", "write", "grep", "find", "ls")
+
+/** A step, with the card its data calls for: a crew's lanes, a plan's checklist, or a progress bar under the line. */
+@Composable
+private fun RichStep(tool: Item.Tool) {
+    val d = tool.details
+    val crew = remember(d) { Shapes.crew(d) }
+    if (crew != null) { Box(Modifier.padding(vertical = 4.dp)) { CrewPanel(crew, live = tool.state == io.github.pimobile.ui.state.ToolState.RUNNING) }; return }
+    StepRow(tool)
+    val plan = remember(d, tool.output) { Shapes.checklist(d, tool.output, core = tool.name in CORE_TOOLS) }
+    if (plan != null) { Box(Modifier.padding(start = 20.dp, top = 2.dp, bottom = 4.dp)) { ChecklistCard(plan) }; return }
+    val prog = remember(d) { Shapes.progress(d) }
+    if (prog != null && tool.state == io.github.pimobile.ui.state.ToolState.RUNNING) ProgressLine(prog)
 }
 
 /** A step as one mono line: ✓/✗ name target. Tap for its full command and output. */

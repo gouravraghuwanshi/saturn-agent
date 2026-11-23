@@ -78,6 +78,9 @@ android {
 }
 
 dependencies {
+    // Unit tests run on the JVM, where Android's org.json is only a stub: use the real one.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

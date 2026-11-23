@@ -30,6 +30,8 @@ sealed class Item(val key: String) {
     class Tool(key: String, val callId: String, val name: String, val args: JSONObject) : Item(key) {
         var state by mutableStateOf(ToolState.RUNNING)
         var output by mutableStateOf("")
+        /** The tool's structured result (`details`), live while it runs: what rich cards (crew, checklist, progress) are drawn from. */
+        var details by mutableStateOf<JSONObject?>(null)
     }
 
     class Notice(key: String, val text: String, val error: Boolean) : Item(key)
@@ -754,9 +756,14 @@ object UiStore : TaskManager.Listener {
                 Item.Tool(ui.key("t"), r.optString("toolCallId"), r.optString("toolName"), r.optJSONObject("args") ?: JSONObject())
                 )
             }
-            "tool_execution_update" -> tool(ui, r)?.output = resultText(r.optJSONObject("partialResult"))
+            "tool_execution_update" -> tool(ui, r)?.let {
+                val p = r.optJSONObject("partialResult")
+                it.output = resultText(p)
+                p?.optJSONObject("details")?.let { d -> it.details = d }
+            }
             "tool_execution_end" -> tool(ui, r)?.let {
                 it.output = resultText(r.optJSONObject("result"))
+                r.optJSONObject("result")?.optJSONObject("details")?.let { d -> it.details = d }
                 it.state = if (r.optBoolean("isError")) ToolState.ERROR else ToolState.DONE
             }
             "auto_retry_start" -> ui.items.add(Item.Notice(ui.key("n"),
@@ -914,6 +921,7 @@ object UiStore : TaskManager.Listener {
                 }
                 "toolResult" -> toolsById[m.optString("toolCallId")]?.let {
                     it.output = resultText(m)
+                    it.details = m.optJSONObject("details")
                     it.state = if (m.optBoolean("isError")) ToolState.ERROR else ToolState.DONE
                 }
             }

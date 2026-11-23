@@ -258,11 +258,12 @@ val CardMorph = androidx.compose.animation.BoundsTransform { _, _ ->
 
 /** A small, live Saturn in text for the chat header: turns while [spinning], a white moon when Saturn needs you. */
 @Composable
-fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifier) {
+fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifier, helpers: Int = 0) {
     var t by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0.6f) }
     androidx.compose.runtime.LaunchedEffect(spinning) { while (spinning) { kotlinx.coroutines.delay(66); t += 0.08f } }
     val cols = 30; val rows = 9
-    val frame = AsciiSaturn.frame(t, if (needsYou) listOf(true) else emptyList(), cols = cols, rows = rows, r = 4.6)
+    // Moons: one per helper (subagent) at work right now, plus a pale one while Saturn waits for you.
+    val frame = AsciiSaturn.frame(t, List(helpers.coerceAtMost(6)) { false } + if (needsYou) listOf(true) else emptyList(), cols = cols, rows = rows, r = 4.6)
     androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val fontPx = with(density) { maxWidth.toPx() } / (cols * 0.6f)

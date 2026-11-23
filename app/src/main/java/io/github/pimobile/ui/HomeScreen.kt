@@ -167,6 +167,11 @@ fun HomeScreen(
     // Work going on in other projects stays visible from here.
     val elsewhere = UiStore.tasks.count { it.status in ACTIVE } - projectTasks.count { it.status in ACTIVE }
 
+    // Read the chats you're likely to open next, quietly, once home has settled.
+    LaunchedEffect(projectTasks.size, project) {
+        kotlinx.coroutines.delay(900)
+        UiStore.prefetch(projectTasks.filterNot { it.hidden || it.archived }.take(10))
+    }
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     var heroDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var swipeJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }

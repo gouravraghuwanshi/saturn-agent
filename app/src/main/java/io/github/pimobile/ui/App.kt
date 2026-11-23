@@ -62,7 +62,7 @@ fun App() {
                 else if (id == ARTIFACTS) ArtifactsScreen { openId = null }
                 else if (id == USAGE) UsageScreen(onOpenTask = { openId = it }) { openId = null }
                 else if (task == null) HomeScreen(this@SharedTransitionLayout, this, onStore = { openId = STORE },
-                    onTerminal = { openId = TERMINAL }, onArtifacts = { openId = ARTIFACTS }, onUsage = { openId = USAGE }) { openId = it.task.id }
+                    onTerminal = { openId = TERMINAL }, onArtifacts = { openId = ARTIFACTS }, onUsage = { openId = USAGE }) { UiStore.open(it); openId = it.task.id }
                 else TaskScreen(task, this@SharedTransitionLayout, this, onOpenTask = { openId = it.task.id }) { openId = null }
             }
         }

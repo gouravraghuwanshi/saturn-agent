@@ -77,6 +77,8 @@ class TaskUi(val task: TaskManager.Task) {
     internal var current: Item.Assistant? = null
     internal val echoes = ArrayDeque<String>()
     internal var historyLoaded = false
+    /** open() is under way (so a second call from the screen doesn't read twice). */
+    internal var opening = false
     /** Set after the TUI ran: the transcript must be re-read from pi. */
     internal var historyStale = false
     private var seq = 0
@@ -563,21 +565,52 @@ object UiStore : TaskManager.Listener {
     /** Opening a restored task: start its process so history can be fetched. */
     private var lastOpened: TaskUi? = null
 
+    // Chats read ahead of time (home preloads the likely ones), so opening one shows it on the first frame.
+    private val preread = java.util.concurrent.ConcurrentHashMap<String, JSONArray>()
+    private val reader = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "history").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+    private fun unread(ui: TaskUi) = ui.task.restored && !ui.historyLoaded && ui.items.isEmpty()
+
+    /** Read these chats' history in the background, quietly, so they open instantly. */
+    fun prefetch(list: List<TaskUi>) {
+        list.filter { unread(it) && !preread.containsKey(it.task.id) && it.status !in ACTIVE_STATES }.forEach { ui ->
+            reader.execute {
+                if (!unread(ui) || preread.containsKey(ui.task.id)) return@execute
+                runCatching { readSessionMessages(ui.task.sessionId, ui.task.cwd) }.getOrNull()
+                    ?.takeIf { it.length() > 0 }?.let { preread[ui.task.id] = it }
+            }
+        }
+    }
+    private val ACTIVE_STATES = setOf(Status.RUNNING, Status.STARTING, Status.NEEDS_INPUT)
+
+    /** Called on tap, before the chat screen exists (and again from the screen; the second call does nothing). */
     fun open(ui: TaskUi) {
         lastOpened = ui
-        if (ui.task.restored && !ui.historyLoaded && ui.items.isEmpty()) {
-            // Show the chat straight from pi's session file (milliseconds), instead of waiting for
-            // pi to start just to hand it back; pi still starts so the task is ready to continue.
+        if (!unread(ui) || ui.opening) return
+        ui.opening = true
+        val t0 = android.os.SystemClock.uptimeMillis()
+        val ready = preread.remove(ui.task.id)
+        if (ready != null) {
+            ui.historyLoaded = true; rebuild(ui, ready)
+            android.util.Log.d("SaturnPerf", "open #${ui.task.number}: preloaded, ${ready.length()} msgs in ${android.os.SystemClock.uptimeMillis() - t0}ms")
+        } else {
+            // Show the chat straight from pi's session file, instead of waiting for pi to hand it back.
             val sessionId = ui.task.sessionId
             val cwd = ui.task.cwd
             Thread {
                 val msgs = runCatching { readSessionMessages(sessionId, cwd) }.getOrNull()
                 if (msgs != null && msgs.length() > 0) android.os.Handler(android.os.Looper.getMainLooper()).post {
                     if (ui.items.isEmpty() && !ui.historyLoaded) { ui.historyLoaded = true; rebuild(ui, msgs) }
+                    android.util.Log.d("SaturnPerf", "open #${ui.task.number}: read ${msgs.length()} msgs in ${android.os.SystemClock.uptimeMillis() - t0}ms")
                 }
-            }.apply { isDaemon = true }.start()
-            TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
+            }.apply { isDaemon = true; priority = Thread.MAX_PRIORITY }.start()
         }
+        // pi starts once the opening animation is over: a cold node start would otherwise take the CPU
+        // the animation and first frame need. Sending a message starts it at once anyway.
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            ui.opening = false
+            if (ui.task.session == null) TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
+        }, 700)
     }
 
     /**
@@ -675,6 +708,7 @@ object UiStore : TaskManager.Listener {
 
     override fun onTaskEvent(task: TaskManager.Task, record: JSONObject?, log: String?) {
         if (TaskManager.tasks.none { it.id == task.id }) return
+        preread.remove(task.id)   // its history moved on: read it fresh when opened
         val ui = ui(task)
         if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT) Haptics.finished(ok = true)
         if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT &&

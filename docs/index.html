@@ -210,7 +210,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
   <section class="how" id="how">
     <div class="wrap">
       <h2>How a phone runs a Linux agent.</h2>
-      <p class="lede">Android won't run programs from an app's storage, but it will load native libraries shipped inside it. So Saturn ships node, bash and git as <code>lib*.so</code> files, links them into a tiny Linux-style folder when it starts, and runs the real <a href="https://pi.dev">Pi agent</a> on top. No root, no Termux.</p>
+      <p class="lede">Android won't run programs from an app's storage, but it will load native libraries shipped inside it. So Saturn ships node, bash and git as <code>lib*.so</code> files, links them into a tiny Linux-style folder when it starts, and runs the real <a href="https://pi.dev">Pi</a> on top as its agent harness. No root, no Termux.</p>
       <svg class="diagram" viewBox="0 0 1000 230" role="img" aria-label="Inside the app, native libraries become a small usr folder, which runs one Pi process per task, which the app's screen talks to. Phone features go back through a local bridge.">
         <defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L8 4L0 8z" fill="#4a3c22"/></marker></defs>
         <g font-family="JetBrains Mono, monospace" font-size="14" fill="#e9e6df">
@@ -245,7 +245,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
 
 <footer>
   <div class="wrap">
-    <span>Saturn is Apache-2.0. Built on <a href="https://pi.dev">Pi</a>, Node.js and Termux packages.</span>
+    <span>Saturn is Apache-2.0. It uses <a href="https://pi.dev">Pi</a> as its harness, with Node.js and Termux packages.</span>
     <span>Not affiliated with Earendil Works or Termux.</span>
   </div>
 </footer>

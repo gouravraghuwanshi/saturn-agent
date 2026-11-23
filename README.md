@@ -6,7 +6,7 @@
 
 <p align="center"><b>A real coding agent, in your pocket.</b><br>
 You tell it what you want. It goes off and does it, right there on your phone.<br><br>
-<a href="https://gouravraghuwanshi.github.io/saturn-agent/"><b>Website</b></a> · <a href="../../releases/latest"><b>Download</b></a> · <a href="https://pi.dev">Built on Pi</a></p>
+<a href="https://gouravraghuwanshi.github.io/saturn-agent/"><b>Website</b></a> · <a href="../../releases/latest"><b>Download</b></a> · <a href="https://pi.dev">Uses Pi as its harness</a></p>
 
 <p align="center">
   <img src="docs/media/saturn-demo.gif" width="300" alt="Saturn running a task: the moon card, the steps, the answer and the tip calculator it built">
@@ -21,9 +21,9 @@ Saturn actually does the work. It runs the [Pi coding agent](https://pi.dev) on 
 
 No root. No Termux. No server of ours in the middle. Install it, pick a model, go.
 
-## Built on Pi, not wrapped around it
+## Uses Pi as its harness, not a wrapper around it
 
-[Pi](https://pi.dev) is the brain: the official, unmodified agent, which thinks, picks tools and edits files. Saturn is everything a brain needs to live on a phone, and almost none of that existed before:
+Saturn uses [Pi](https://pi.dev) as its agent harness: the official, unmodified Pi runs the loop that thinks, picks tools and edits files. Saturn is everything that harness needs to live on a phone, and almost none of that existed before:
 
 - **A Linux toolbox inside an app.** Android won't run programs from app storage, so Saturn ships node, bash, git, ripgrep, ssh and more as native libraries and builds a working `usr/` out of them at startup. No root, no Termux.
 - **Many agents at once.** Each task is its own Pi process, with its own session you can come back to, branch or export.

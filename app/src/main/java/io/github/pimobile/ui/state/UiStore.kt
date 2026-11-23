@@ -64,6 +64,12 @@ class TaskUi(val task: TaskManager.Task) {
     var stepsDone by mutableStateOf<Int?>(null)
     /** When the task last finished a run (or its session last changed). */
     var lastRunAt by mutableStateOf<Long?>(null)
+    /** Time Saturn has spent working on this task, over all its runs. */
+    var workMs by mutableStateOf(0L)
+    /** How the last run ended: "ok", "stopped" or "failed" (null while it runs, or if unknown). */
+    var ended by mutableStateOf<String?>(null)
+    /** What it made or changed, read from its session before the chat is loaded. */
+    var savedOutcome by mutableStateOf<Outcome?>(null)
     var pendingDialog by mutableStateOf<Item.Dialog?>(null)
     /** True while the current run is using the in-app browser (shows the browser tab). */
     var browsing by mutableStateOf(false)
@@ -219,6 +225,9 @@ object UiStore : TaskManager.Listener {
                     if (ui.savedReply == null) ui.savedReply = sum.lastReply
                     if (ui.stepsDone == null) ui.stepsDone = sum.steps
                     if (ui.lastRunAt == null) ui.lastRunAt = sum.at
+                    if (ui.workMs == 0L) ui.workMs = sum.workMs
+                    if (ui.ended == null) ui.ended = sum.ended
+                    if (ui.savedOutcome == null) ui.savedOutcome = Outcome.of(sum.calls)
                 }
             }
         }
@@ -787,8 +796,10 @@ object UiStore : TaskManager.Listener {
                     TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
                 }
             }
-            "agent_start" -> { ui.runStartedAt = System.currentTimeMillis(); ui.lastError = null }
+            "agent_start" -> { ui.runStartedAt = System.currentTimeMillis(); ui.lastError = null; ui.ended = null }
             TaskManager.FORCE_STOPPED -> {
+                ui.runStartedAt?.let { ui.workMs += System.currentTimeMillis() - it }
+                ui.ended = "stopped"
                 ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null
                 ui.items.add(Item.Notice(ui.key("n"), "Stopped. Saturn ended the run and everything it had started.", false))
             }
@@ -798,6 +809,8 @@ object UiStore : TaskManager.Listener {
                 if (quiet) setArchived(ui, true, undoable = false)
                 else { Haptics.finished(ok = ui.lastError == null && !ui.stopping); io.github.pimobile.runtime.Notifier.settled(app, ui) }
                 ui.lastRunAt = System.currentTimeMillis()
+                ui.runStartedAt?.let { ui.workMs += ui.lastRunAt!! - it }
+                if (ui.ended == null) ui.ended = when { ui.stopping -> "stopped"; ui.lastError != null -> "failed"; else -> "ok" }
                 ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return

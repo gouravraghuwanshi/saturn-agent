@@ -56,6 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.pimobile.runtime.TaskManager.Status
+import io.github.pimobile.ui.components.PhIcon
+import io.github.pimobile.ui.components.PhIcons
 import io.github.pimobile.ui.components.PulseDot
 import io.github.pimobile.ui.components.toolTarget
 import io.github.pimobile.ui.state.Item
@@ -319,10 +321,13 @@ fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifi
 /** A task that's done (or paused, or failed): H2's quiet card: dot, title, one line of what happened. */
 @Composable
 fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: String?, selected: Boolean, modifier: Modifier = Modifier) {
-    val failed = t.lastError != null || t.status == Status.FAILED
+    val failed = t.lastError != null || t.status == Status.FAILED || t.ended == "failed"
+    val stopped = !failed && t.ended == "stopped"
     val shape = RoundedCornerShape(18.dp)
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val steps = if (t.items.isNotEmpty()) t.tools.size else t.stepsDone
+    val loaded = t.items.isNotEmpty()
+    val steps = if (loaded) t.tools.size else t.stepsDone
+    val outcome = if (loaded) remember(t.items.size) { io.github.pimobile.ui.state.Outcome.of(t.tools.map { it.name to it.args }) } else t.savedOutcome
     val stamp = t.lastRunAt?.let { at -> remember(at) { stamp(ctx, at) } }
     val bg by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberWash else Ph.Surface, tween(200), label = "bg")
     val edge by androidx.compose.animation.animateColorAsState(if (selected) Ph.AmberLine else Ph.Line, tween(200), label = "edge")
@@ -331,24 +336,47 @@ fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: Strin
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             leading()
-            Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(when {
-                failed -> Ph.Red; else -> Ph.Green }))
+            EndMark(failed, stopped)
             Text(t.title, style = Ph.title.copy(fontSize = 15.sp, color = Ph.Text), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f))
             stamp?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Muted)) }
         }
         preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.TextSoft),
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 19.dp)) }
-        // The steps it went through, as a little trail of dots, then the count and its number.
-        Row(Modifier.padding(start = 19.dp, top = 1.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (steps != null && steps > 0) {
-                StepTrail(steps, failed)
-                Text(if (steps == 1) "1 step" else "$steps steps", style = Ph.monoSmall.copy(color = Ph.Muted))
-                Text("·", style = Ph.monoSmall.copy(color = Ph.Muted))
-            }
-            Text(if (failed) "failed · #${t.task.number}" else "#${t.task.number}", style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted))
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 26.dp)) }
+        // The steps it went through (a little trail of dots), how long it took, and what it made in
+        // Artifacts — or, if nothing, the files it changed.
+        val took = t.workMs.takeIf { it >= 1000 }?.let { took(it) }
+        val made = outcome?.made.orEmpty(); val changed = outcome?.changed.orEmpty()
+        val facts = listOfNotNull(steps?.takeIf { it > 0 }?.let { if (it == 1) "1 step" else "$it steps" }, took, "failed".takeIf { failed })
+        Row(Modifier.padding(start = 26.dp, top = 1.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (steps != null && steps > 0) StepTrail(steps, failed)
+            Text(facts.ifEmpty { listOf("#${t.task.number}") }.joinToString(" · "), style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted), maxLines = 1)
+        }
+        if (made.isNotEmpty() || changed.isNotEmpty()) Row(Modifier.padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val files = if (made.isNotEmpty()) made else changed
+            PhIcon(if (made.isNotEmpty()) PhIcons.Sparkle else PhIcons.Pencil, if (made.isNotEmpty()) Ph.Amber else Ph.Muted, 12.dp)
+            Text(files.take(2).joinToString(", ") + if (files.size > 2) " +${files.size - 2}" else "",
+                style = Ph.monoSmall.copy(color = if (made.isNotEmpty()) Ph.Amber else Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+/** How the last run ended: a tick when it finished, a square when you stopped it, a cross when it failed. */
+@Composable
+private fun EndMark(failed: Boolean, stopped: Boolean) {
+    val c = when { failed -> Ph.Red; stopped -> Ph.Muted; else -> Ph.Green }
+    Box(Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(alpha = 0.16f)).border(1.dp, c.copy(alpha = 0.55f), RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center) {
+        if (stopped) Box(Modifier.size(5.dp).clip(RoundedCornerShape(1.dp)).background(c))
+        else PhIcon(if (failed) PhIcons.Close else PhIcons.Check, c, 10.dp, description = if (failed) "Failed" else "Finished")
+    }
+}
+
+/** "42s", "3m 12s", "1h 4m". */
+private fun took(ms: Long): String {
+    val s = ms / 1000
+    return when { s < 60 -> "${s}s"; s < 3600 -> "${s / 60}m ${s % 60}s"; else -> "${s / 3600}h ${s % 3600 / 60}m" }
 }
 
 /** One dot per step (up to 12), brightening towards the latest; the last is red if the task failed. */

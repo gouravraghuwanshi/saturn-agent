@@ -122,14 +122,41 @@ object Transfer {
      * large; the last reply is near the end). Null if there's none or the file can't be read.
      */
     /** What a home card shows for a task that hasn't been opened yet. */
-    class Summary(val lastReply: String?, val steps: Int, val at: Long)
+    class Summary(val lastReply: String?, val steps: Int, val at: Long, val workMs: Long,
+                  val calls: List<Pair<String, org.json.JSONObject>>, val ended: String?)
 
-    /** [lastReply], plus how many steps (tool calls) the session ran and when it last changed. */
+    /**
+     * [lastReply], plus how many steps (tool calls) the session ran, when it last changed, how long
+     * Saturn spent working (each message you sent → the last thing Saturn did before the next), and
+     * its tool calls (to tell what it made or changed).
+     */
     fun summary(ctx: Context, sessionId: String): Summary? = runCatching {
         val f = sessionFile(ctx, sessionId) ?: return null
-        var steps = 0
-        f.bufferedReader().useLines { ls -> ls.forEach { if (it.contains("\"role\":\"toolResult\"")) steps++ } }
-        Summary(lastReply(ctx, sessionId), steps, f.lastModified())
+        var steps = 0; var workMs = 0L; var runStart: Long? = null; var lastTs: Long? = null; var ended: String? = null
+        val calls = ArrayList<Pair<String, org.json.JSONObject>>()
+        fun tsOf(o: org.json.JSONObject, m: org.json.JSONObject?): Long? =
+            o.optString("timestamp").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+                ?: m?.optLong("timestamp")?.takeIf { it > 0 }
+        f.bufferedReader().useLines { ls -> ls.forEach { line ->
+            val tool = line.contains("\"role\":\"toolResult\"")
+            if (tool) steps++
+            if (!tool && !line.contains("\"role\":\"user\"") && !line.contains("\"role\":\"assistant\"")) return@forEach
+            val o = runCatching { org.json.JSONObject(line) }.getOrNull() ?: return@forEach
+            val m = o.optJSONObject("message") ?: return@forEach
+            val ts = tsOf(o, m) ?: return@forEach
+            when (m.optString("role")) {
+                "user" -> { if (runStart != null && lastTs != null) workMs += (lastTs!! - runStart!!).coerceAtLeast(0); runStart = ts }
+                "assistant" -> m.optJSONArray("content")?.also {
+                    ended = when (m.optString("stopReason")) { "aborted" -> "stopped"; "error" -> "failed"; else -> "ok" }
+                }?.let { c -> for (i in 0 until c.length()) {
+                    val b = c.optJSONObject(i) ?: continue
+                    if (b.optString("type") == "toolCall") calls += b.optString("name") to (b.optJSONObject("arguments") ?: org.json.JSONObject())
+                } }
+            }
+            lastTs = ts
+        } }
+        if (runStart != null && lastTs != null) workMs += (lastTs!! - runStart!!).coerceAtLeast(0)
+        Summary(lastReply(ctx, sessionId), steps, f.lastModified(), workMs, calls, ended)
     }.getOrNull()
 
     fun lastReply(ctx: Context, sessionId: String): String? = runCatching {

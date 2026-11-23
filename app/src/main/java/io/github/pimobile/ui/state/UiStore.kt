@@ -60,6 +60,10 @@ class TaskUi(val task: TaskManager.Task) {
     var lastError by mutableStateOf<String?>(null)
     /** Saturn's last reply read from the session file, for the home card before the chat is loaded. */
     var savedReply by mutableStateOf<String?>(null)
+    /** Steps (tool calls) the task has run, read from its session before the chat is loaded. */
+    var stepsDone by mutableStateOf<Int?>(null)
+    /** When the task last finished a run (or its session last changed). */
+    var lastRunAt by mutableStateOf<Long?>(null)
     var pendingDialog by mutableStateOf<Item.Dialog?>(null)
     /** True while the current run is using the in-app browser (shows the browser tab). */
     var browsing by mutableStateOf(false)
@@ -210,8 +214,12 @@ object UiStore : TaskManager.Listener {
             tasks.add(ui); sortTasks()
             // A task restored after a restart has no transcript until it's opened: read its last reply for the card.
             if (task.restored) previewIo.execute {
-                val reply = io.github.pimobile.runtime.Transfer.lastReply(app, task.sessionId)
-                if (reply != null) android.os.Handler(android.os.Looper.getMainLooper()).post { if (ui.savedReply == null) ui.savedReply = reply }
+                val sum = io.github.pimobile.runtime.Transfer.summary(app, task.sessionId)
+                if (sum != null) android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    if (ui.savedReply == null) ui.savedReply = sum.lastReply
+                    if (ui.stepsDone == null) ui.stepsDone = sum.steps
+                    if (ui.lastRunAt == null) ui.lastRunAt = sum.at
+                }
             }
         }
     }
@@ -739,6 +747,31 @@ object UiStore : TaskManager.Listener {
         record?.let { reduce(ui, it) }
     }
 
+    /**
+     * A new task is named after Saturn's first words back, not your prompt: once its first reply
+     * lands, the title becomes that reply's first sentence (unless you've renamed the task).
+     */
+    private fun agentTitle(ui: TaskUi, text: String) {
+        if (text.isBlank()) return
+        val users = ui.items.filterIsInstance<Item.User>()
+        if (users.size != 1 || ui.items.count { it is Item.Assistant && it.text.isNotBlank() } != 1) return
+        val prompt = users[0].text.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("[Attached image:") && !it.startsWith("[Attached file:") }
+        if (prompt == null || ui.task.title != prompt.take(80)) return
+        val title = headline(text) ?: return
+        TaskManager.rename(ui.task, title); ui.title = title
+    }
+
+    /** The first sentence of [md] as plain text, short enough for a card title. */
+    internal fun headline(md: String): String? {
+        val line = md.lineSequence()
+            .map { it.trim().trimStart('#', '>', '-', '*', ' ').replace(Regex("[*_`]"), "").replace(Regex("\\[([^\\]]*)\\]\\(([^)]*)\\)"), "$1").trim() }
+            .firstOrNull { it.isNotBlank() } ?: return null
+        val end = Regex("[.!?](\\s|$)").findAll(line).map { it.range.first }.firstOrNull { it >= 8 }
+        var s = if (end != null && end <= 90) line.substring(0, end + 1) else line
+        if (s.length > 72) s = s.take(72).substringBeforeLast(' ').trimEnd(',', ';', ':', ' ') + "…"
+        return s.removeSuffix(".").trim().ifBlank { null }
+    }
+
     private fun reduce(ui: TaskUi, r: JSONObject) {
         when (r.optString("type")) {
             TaskManager.SESSION_STARTED -> {
@@ -759,6 +792,7 @@ object UiStore : TaskManager.Listener {
                 val quiet = runCatching { io.github.pimobile.runtime.Scheduler.settled(ui) }.getOrDefault(false)
                 if (quiet) setArchived(ui, true, undoable = false)
                 else { Haptics.finished(ok = ui.lastError == null && !ui.stopping); io.github.pimobile.runtime.Notifier.settled(app, ui) }
+                ui.lastRunAt = System.currentTimeMillis()
                 ui.stopping = false; ui.runStartedAt = null; ui.browsing = false; ui.current?.streaming = false; ui.current = null }
             "message_start" -> {
                 val m = r.optJSONObject("message") ?: return
@@ -788,6 +822,7 @@ object UiStore : TaskManager.Listener {
                     val final = textOf(m)
                     if (final.isNotEmpty()) cur.text = final
                     if (cur.text.isBlank() && cur.thinking.isBlank()) ui.items.remove(cur)
+                    else agentTitle(ui, cur.text)
                 }
                 ui.current = null
                 m.optJSONObject("usage")?.let { u ->

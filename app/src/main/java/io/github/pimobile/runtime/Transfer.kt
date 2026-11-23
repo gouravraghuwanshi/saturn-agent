@@ -121,6 +121,17 @@ object Transfer {
      * Saturn's last text reply in a session, read from the end of its file (sessions can be
      * large; the last reply is near the end). Null if there's none or the file can't be read.
      */
+    /** What a home card shows for a task that hasn't been opened yet. */
+    class Summary(val lastReply: String?, val steps: Int, val at: Long)
+
+    /** [lastReply], plus how many steps (tool calls) the session ran and when it last changed. */
+    fun summary(ctx: Context, sessionId: String): Summary? = runCatching {
+        val f = sessionFile(ctx, sessionId) ?: return null
+        var steps = 0
+        f.bufferedReader().useLines { ls -> ls.forEach { if (it.contains("\"role\":\"toolResult\"")) steps++ } }
+        Summary(lastReply(ctx, sessionId), steps, f.lastModified())
+    }.getOrNull()
+
     fun lastReply(ctx: Context, sessionId: String): String? = runCatching {
         val f = sessionFile(ctx, sessionId) ?: return null
         val tail = java.io.RandomAccessFile(f, "r").use { r ->

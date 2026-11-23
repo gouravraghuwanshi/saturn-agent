@@ -319,19 +319,59 @@ fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifi
 fun QuietRow(t: TaskUi, leading: @Composable RowScope.() -> Unit, preview: String?, selected: Boolean, modifier: Modifier = Modifier) {
     val failed = t.lastError != null || t.status == Status.FAILED
     val shape = RoundedCornerShape(18.dp)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val steps = if (t.items.isNotEmpty()) t.tools.size else t.stepsDone
+    val stamp = t.lastRunAt?.let { at -> remember(at) { stamp(ctx, at) } }
     Column(modifier.fillMaxWidth().clip(shape).background(if (selected) Ph.AmberWash else Ph.Surface)
-        .border(1.dp, if (selected) Ph.AmberLine else Ph.Line, shape).padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        .border(1.dp, if (selected) Ph.AmberLine else Ph.Line, shape).padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             leading()
             Box(Modifier.size(9.dp).clip(RoundedCornerShape(5.dp)).background(when {
                 failed -> Ph.Red; else -> Ph.Green }))
-            Text(t.title, style = Ph.title.copy(fontSize = 15.sp, color = Ph.TextSoft), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            Text(t.title, style = Ph.title.copy(fontSize = 15.sp, color = Ph.Text), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f))
-            Text(if (failed) "failed" else "#${t.task.number}", style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted))
+            stamp?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Muted)) }
         }
-        preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.Muted),
+        preview?.let { Text(it, style = Ph.mono.copy(fontSize = 11.5.sp, color = if (failed) Ph.Red else Ph.TextSoft),
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 19.dp)) }
+        // The steps it went through, as a little trail of dots, then the count and its number.
+        Row(Modifier.padding(start = 19.dp, top = 1.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (steps != null && steps > 0) {
+                StepTrail(steps, failed)
+                Text(if (steps == 1) "1 step" else "$steps steps", style = Ph.monoSmall.copy(color = Ph.Muted))
+                Text("·", style = Ph.monoSmall.copy(color = Ph.Muted))
+            }
+            Text(if (failed) "failed · #${t.task.number}" else "#${t.task.number}", style = Ph.monoSmall.copy(color = if (failed) Ph.Red else Ph.Muted))
+        }
+    }
+}
+
+/** One dot per step (up to 12), brightening towards the latest; the last is red if the task failed. */
+@Composable
+private fun StepTrail(n: Int, failed: Boolean) {
+    val shown = n.coerceAtMost(12)
+    Canvas(Modifier.size(width = (shown * 6).dp, height = 6.dp)) {
+        val gap = 6.dp.toPx(); val r = 1.8.dp.toPx()
+        for (i in 0 until shown) {
+            val c = if (failed && i == shown - 1) Ph.Red else Ph.Amber
+            drawCircle(c.copy(alpha = 0.3f + 0.6f * (i + 1) / shown), r, Offset(gap * i + gap / 2, size.height / 2))
+        }
+    }
+}
+
+/** "14:41", "Yesterday 14:41", "24 Nov 14:41", or "24 Nov 2025" (in the phone's 12/24-hour style). */
+private fun stamp(ctx: android.content.Context, ms: Long): String {
+    val time = android.text.format.DateFormat.getTimeFormat(ctx).format(java.util.Date(ms))
+    val now = java.util.Calendar.getInstance(); val c = java.util.Calendar.getInstance().apply { timeInMillis = ms }
+    fun same(a: java.util.Calendar, b: java.util.Calendar) = a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) && a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR)
+    val yesterday = (now.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+    val loc = java.util.Locale.getDefault()
+    return when {
+        same(c, now) -> time
+        same(c, yesterday) -> "Yesterday $time"
+        c.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) -> java.text.SimpleDateFormat("d MMM", loc).format(java.util.Date(ms)) + " $time"
+        else -> java.text.SimpleDateFormat("d MMM yyyy", loc).format(java.util.Date(ms))
     }
 }
 

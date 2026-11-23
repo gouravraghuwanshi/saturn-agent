@@ -651,7 +651,9 @@ private fun TaskCard(t: TaskUi, selected: Boolean?, onOpen: () -> Unit, onSelect
         }
         else -> {
             val last = t.lastError ?: (t.items.lastOrNull { it is Item.Assistant && it.text.isNotBlank() } as? Item.Assistant)?.text ?: t.savedReply
-            QuietRow(t, check, last?.takeIf { it.isNotBlank() }?.let { plainPreview(it) }?.takeIf { it.isNotBlank() }, selected == true, tap)
+            // Don't repeat the title (now taken from Saturn's first reply) as the preview.
+            val head = t.title.removeSuffix("…").take(40)
+            QuietRow(t, check, last?.takeIf { it.isNotBlank() }?.let { plainPreview(it) }?.takeIf { it.isNotBlank() && !it.startsWith(head) }, selected == true, tap)
         }
     }
 }

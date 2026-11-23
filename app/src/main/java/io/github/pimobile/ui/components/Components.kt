@@ -38,6 +38,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxHeight
+import kotlinx.coroutines.launch
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -145,6 +148,21 @@ fun Markdown(text: String, modifier: Modifier = Modifier) {
                     i--
                     MdTable(header, rows)
                 }
+                Regex("^\\s*(-{3,}|\\*{3,}|_{3,})\\s*$").matches(l) -> {
+                    flush()
+                    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(Ph.Line))
+                }
+                l.trimStart().startsWith(">") -> {
+                    flush()
+                    val quote = StringBuilder()
+                    while (i < lines.size && lines[i].trimStart().startsWith(">")) { quote.append(lines[i].trimStart().removePrefix(">").trim()).append(' '); i++ }
+                    i--
+                    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
+                        Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(Ph.AmberLine))
+                        Text(inline(quote.toString().trim()), style = Ph.body.copy(color = Ph.TextBody,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic), modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
                 l.startsWith("#") -> {
                     flush()
                     Text(inline(l.trimStart('#', ' ')), style = Ph.title)
@@ -179,9 +197,12 @@ private fun MdTable(header: List<String>, rows: List<List<String>>) {
         val longest = (listOf(header) + rows).maxOf { r -> r.getOrNull(c)?.replace("**", "")?.replace("`", "")?.length ?: 0 }
         (longest * 7.6f + 20f).coerceIn(44f, 230f).dp
     }
+    val cap = io.github.pimobile.ui.rememberCapture()
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
         .horizontalScroll(rememberScrollState())) {
-        Column {
+        // Captured inside the scroller: the image holds the whole table, not just the part on screen.
+        Column(Modifier.then(io.github.pimobile.ui.captureModifier(cap))) {
             listOf(header).plus(rows).forEachIndexed { ri, r ->
                 Row(Modifier.background(if (ri == 0) Ph.Chip.copy(alpha = 0.6f) else if (ri % 2 == 0) Ph.Deep.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color.Transparent)) {
                     (0 until n).forEach { c ->
@@ -191,6 +212,38 @@ private fun MdTable(header: List<String>, rows: List<List<String>>) {
                     }
                 }
                 if (ri == 0) Box(Modifier.width(widths.fold(0.dp) { a, b -> a + b }).height(1.dp).background(Ph.LineStrong))
+            }
+        }
+    }
+    val md = remember(header, rows) { (listOf(header, header.map { "---" }) + rows).joinToString("\n") { r -> "| " + r.joinToString(" | ") + " |" } }
+    ShareRow(md, "Table", cap, Modifier.align(Alignment.End))
+    }
+}
+
+/** Copy and Share (image, Markdown) for a block of the chat: a quiet row under it. */
+@Composable
+fun ShareRow(md: String, title: String, capture: io.github.pimobile.ui.Capture?, modifier: Modifier = Modifier) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var menu by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
+    if (copied) androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(1400); copied = false }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Copy") {
+            ctx.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Saturn", md)); copied = true
+        }.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            PhIcon(if (copied) PhIcons.Check else PhIcons.Copy, if (copied) Ph.Green else Ph.Muted, 13.dp)
+            Text(if (copied) "copied" else "copy", style = Ph.monoSmall.copy(color = if (copied) Ph.Green else Ph.Muted))
+        }
+        Box {
+            Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Share") { menu = true }.padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                PhIcon(PhIcons.Share, Ph.Muted, 13.dp)
+                Text("share", style = Ph.monoSmall)
+            }
+            io.github.pimobile.ui.ShareMenu(menu, { menu = false }) { how ->
+                scope.launch { runCatching { io.github.pimobile.ui.Export.share(ctx, how, md, title, capture) }
+                    .onFailure { android.widget.Toast.makeText(ctx, "Couldn't share: ${it.message}", android.widget.Toast.LENGTH_SHORT).show() } }
             }
         }
     }
@@ -204,6 +257,17 @@ private fun inline(s: String): AnnotatedString = buildAnnotatedString {
                 val end = s.indexOf("**", i + 2)
                 withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Ph.Text)) { append(s.substring(i + 2, end)) }
                 i = end + 2
+            }
+            s[i] == '[' && Regex("^\\[([^]]+)]\\(([^)\\s]+)\\)").find(s.substring(i)) != null -> {
+                val m = Regex("^\\[([^]]+)]\\(([^)\\s]+)\\)").find(s.substring(i))!!
+                withLink(androidx.compose.ui.text.LinkAnnotation.Url(m.groupValues[2], androidx.compose.ui.text.TextLinkStyles(
+                    SpanStyle(color = Ph.Amber, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)))) { append(m.groupValues[1]) }
+                i += m.value.length
+            }
+            (s[i] == '*' || s[i] == '_') && io.github.pimobile.ui.italicEnd(s, i) > 0 -> {
+                val end = io.github.pimobile.ui.italicEnd(s, i)
+                withStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) { append(inline(s.substring(i + 1, end))) }
+                i = end + 1
             }
             s[i] == '`' && s.indexOf('`', i + 1) > 0 -> {
                 val end = s.indexOf('`', i + 1)

@@ -1011,8 +1011,9 @@ private fun Row1(t: TaskUi, item: Item, hideThinking: Boolean = false, latest: B
                 detectTapGestures { showActions = !showActions } } else Modifier),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (item.thinking.isNotBlank() && !hideThinking) Thinking(item)
-                if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text) }
-                AnimatedVisibility(canAct && (isLatest || showActions)) { ReplyActions(t, item) }
+                val cap = rememberCapture()
+                if (item.text.isNotBlank()) SelectionContainer { Markdown(item.text, Modifier.capture(cap)) }
+                AnimatedVisibility(canAct && (isLatest || showActions)) { ReplyActions(t, item, cap) }
             }
         }
         is Item.Notice -> if (item.error) ErrorCard(t, item.text, actionable = latest && !t.status.let { it == Status.RUNNING || it == Status.STARTING }, onSheet)
@@ -1141,7 +1142,7 @@ private fun endOfTurn(t: TaskUi, item: Item.Assistant): Boolean {
 }
 
 @Composable
-private fun ReplyActions(t: TaskUi, item: Item.Assistant) {
+private fun ReplyActions(t: TaskUi, item: Item.Assistant, capture: Capture? = null) {
     val copy = copier()
     var report by remember { mutableStateOf(false) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -1150,6 +1151,16 @@ private fun ReplyActions(t: TaskUi, item: Item.Assistant) {
     val last = t.items.lastOrNull { it is Item.Assistant && it.text.isNotBlank() } === item
     Row(Modifier.offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
         ActIcon(PhIcons.Copy, "Copy reply") { copy(item.text) }
+        // Share this reply: as an image of how it looks here, or as Markdown.
+        Box {
+            var menu by remember { mutableStateOf(false) }
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            ActIcon(PhIcons.Share, "Share reply") { menu = true }
+            ShareMenu(menu, { menu = false }) { how ->
+                scope.launch { runCatching { Export.share(ctx, how, item.text, displayTitle(t.title) + " · reply", capture) }
+                    .onFailure { android.widget.Toast.makeText(ctx, "Couldn't share: ${it.message}", android.widget.Toast.LENGTH_SHORT).show() } }
+            }
+        }
         if (last && idle) {
             val busy = UiStore.retrying(t)
             Row(Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = !busy, onClickLabel = "Retry") { UiStore.retry(t) }

@@ -181,12 +181,11 @@ private fun DrawScope.moon(at: Offset, t: TaskUi, ping: Float) {
 }
 
 /**
- * A running task: a glass card with water flowing along its foot (bubbles rising,
- * light glinting on the crest), and the current step fading in as it changes.
+ * A running task: a small moon orbits the card, and the current step fades in as it changes.
  */
 @Composable
 fun LiquidCard(t: TaskUi, leading: @Composable RowScope.() -> Unit, modifier: Modifier = Modifier) {
-    LiquidFrame(modifier, footer = {
+    LiquidFrame(modifier, steps = t.tools.size, footer = {
         Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 9.dp)) {
             Text(listOfNotNull(t.tools.size.takeIf { it > 0 }?.let { "step $it" }, t.task.cwd.name).joinToString(" · "),
                 style = Ph.monoSmall.copy(color = Ph.Text), modifier = Modifier.weight(1f))
@@ -223,91 +222,70 @@ fun StepLine(step: String, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** Something in motion: a glass card with live water along the foot. Home's running card and the chat's live steps. */
+/**
+ * A running task: a night-sky card with a small moon on a tilted orbit. It passes in front of the
+ * text and behind it, trailing light, and sends out a pulse each time a step lands ([steps]).
+ */
 @Composable
-fun LiquidFrame(modifier: Modifier = Modifier, wave: androidx.compose.ui.unit.Dp = 54.dp,
+fun LiquidFrame(modifier: Modifier = Modifier, wave: androidx.compose.ui.unit.Dp = 54.dp, steps: Int = 0,
                 footer: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
                 content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    val inf = rememberInfiniteTransition(label = "liquid")
-    val flow by inf.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(6_000, easing = LinearEasing)), label = "flow")
-    val outer = RoundedCornerShape(22.dp)
-    val inner = RoundedCornerShape(21.dp)
+    // Seconds since this card appeared, ticking every frame (only while a task runs).
+    val time by androidx.compose.runtime.produceState(0f) {
+        var start = -1L
+        while (true) androidx.compose.runtime.withFrameNanos { n -> if (start < 0) start = n; value = (n - start) / 1e9f }
+    }
+    val pulses = remember { androidx.compose.runtime.mutableStateListOf<Float>() }
+    var seen by remember { androidx.compose.runtime.mutableIntStateOf(steps) }
+    androidx.compose.runtime.LaunchedEffect(steps) {
+        if (steps > seen) pulses.add(time)
+        seen = steps
+    }
+    val stars = remember { val r = java.util.Random(); List(26) { Star(r.nextFloat(), r.nextFloat(), 0.25f + r.nextFloat() * r.nextFloat() * 1.1f, r.nextFloat() * 6.283f, 0.5f + r.nextFloat() * 1.8f) } }
+    val shape = RoundedCornerShape(22.dp)
+    val sky = if (Ph.amoled) Color(0xFF050506) else Color(0xFF0A0B0E)
 
-    // Bubbles and the glass's sheen keep their own, slower clocks.
-    val rise by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(8_000, easing = LinearEasing)), label = "rise")
-    val sheen by inf.animateFloat(-0.6f, 1.6f, infiniteRepeatable(tween(5_500, easing = LinearEasing)), label = "sheen")
-
-    // A still glass rim: light catches the top edge and fades down the sides.
-    Box(modifier.fillMaxWidth().clip(outer)
-        .background(Brush.verticalGradient(0f to AmberLight.copy(alpha = 0.38f), 0.35f to Ph.AmberLine, 1f to Ph.Line))
-        .padding(1.dp)) {
-        Column(Modifier.fillMaxWidth().clip(inner).background(if (Ph.amoled) Color(0xFF0A0A0B) else Color(0xFF121317))
-            .drawWithContent { drawContent(); glass(sheen) }) {
-            content()
-            Box(Modifier.fillMaxWidth().height(wave)) {
-                Canvas(Modifier.fillMaxSize()) {
-                    drawPath(wave(size, size.height * 0.40f, 6.dp.toPx(), 97.dp.toPx(), -flow * 1.5f), Ph.Amber.copy(alpha = 0.10f))
-                    drawPath(wave(size, size.height * 0.52f, 5.dp.toPx(), 130.dp.toPx(), flow), Ph.Amber.copy(alpha = 0.16f))
-                    water(flow, rise)
-                }
-                footer()
-            }
-        }
+    Column(modifier.fillMaxWidth().clip(shape).background(sky).border(1.dp, Color(0x12FFECC8), shape)
+        .drawBehind { orbit(time, stars, pulses) }) {
+        content()
+        Box(Modifier.fillMaxWidth().height(wave)) { footer() }
     }
 }
 
-/** Life in the water: light rippling under the surface, a glint gliding along the crest, bubbles rising and popping. */
-private fun DrawScope.water(flow: Float, rise: Float) {
-    val surface = size.height * 0.52f
-    val amp = 5.dp.toPx(); val len = 130.dp.toPx()
-    fun y(x: Float) = surface + amp * sin(2 * PI * x / len + flow).toFloat()
-    // Caustics: faint bright threads that wander under the surface.
-    for (k in 0 until 3) {
-        val depth = surface + (8 + k * 7).dp.toPx()
-        val p = Path(); var x = 0f
-        while (x <= size.width) {
-            val yy = depth + 2.dp.toPx() * sin(2 * PI * x / (60 + k * 23).dp.toPx() - flow * (2 - k * 0.5) + k).toFloat()
-            if (x == 0f) p.moveTo(x, yy) else p.lineTo(x, yy); x += 5f
-        }
-        drawPath(p, Brush.horizontalGradient(listOf(Color.Transparent, AmberLight.copy(alpha = 0.07f), Color.Transparent),
-            startX = size.width * ((flow / (2 * PI).toFloat() + k * 0.37f) % 1f) - size.width * 0.5f,
-            endX = size.width * ((flow / (2 * PI).toFloat() + k * 0.37f) % 1f) + size.width * 0.5f),
-            style = Stroke(1.dp.toPx()))
-    }
-    // The crest catches the light: a glint that slides along the surface.
-    val crest = Path(); var x = 0f
-    while (x <= size.width) { if (x == 0f) crest.moveTo(x, y(x)) else crest.lineTo(x, y(x)); x += 4f }
-    val g = size.width * (1.3f * ((flow / (2 * PI).toFloat()) % 1f) - 0.15f)
-    drawPath(crest, Brush.horizontalGradient(listOf(Color.Transparent, AmberLight.copy(alpha = 0.55f), Color.Transparent),
-        startX = g - 70.dp.toPx(), endX = g + 70.dp.toPx()), style = Stroke(1.2.dp.toPx()))
-    // Bubbles: each rises at its own pace with a little wobble, fades in, and pops at the surface.
-    val bubbles = floatArrayOf(0.08f, 0.21f, 0.34f, 0.47f, 0.61f, 0.73f, 0.86f, 0.95f)
-    bubbles.forEachIndexed { i, bx ->
-        val speed = if (i % 3 == 0) 2 else 1
-        val t = (rise * speed + i * 0.29f) % 1f
-        val cx0 = size.width * bx
-        val top = y(cx0)
-        val cy = size.height + 3.dp.toPx() - t * (size.height + 3.dp.toPx() - top)
-        val cx = cx0 + 2.5.dp.toPx() * sin(t * 9f + i).toFloat()
-        val r = (1.1f + (i % 3) * 0.6f).dp.toPx() * (0.7f + 0.3f * t)
-        val a = (t / 0.15f).coerceAtMost(1f) * (if (t > 0.93f) 0f else 1f)
-        if (t > 0.93f) { // pop: a tiny ring at the surface
-            val p = (t - 0.93f) / 0.07f
-            drawCircle(AmberLight.copy(alpha = 0.35f * (1f - p)), radius = r * (1f + 2.2f * p), center = Offset(cx, top), style = Stroke(0.7.dp.toPx()))
-        } else {
-            drawCircle(AmberLight.copy(alpha = 0.32f * a), radius = r, center = Offset(cx, cy), style = Stroke(0.8.dp.toPx()))
-            drawCircle(Color.White.copy(alpha = 0.35f * a), radius = r * 0.28f, center = Offset(cx - r * 0.35f, cy - r * 0.35f))
-        }
-    }
-}
+private class Star(val x: Float, val y: Float, val r: Float, val phase: Float, val speed: Float)
 
-/** A little glass: a bright hairline along the top edge and a soft sheen that drifts across now and then. */
-private fun androidx.compose.ui.graphics.drawscope.ContentDrawScope.glass(sheen: Float) {
-    drawLine(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent)),
-        Offset(size.width * 0.08f, 0.6.dp.toPx()), Offset(size.width * 0.92f, 0.6.dp.toPx()), 1.dp.toPx())
-    val cx = size.width * sheen
-    drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.045f), Color.Transparent),
-        start = Offset(cx - size.height * 0.9f, 0f), end = Offset(cx + size.height * 0.3f, size.height)))
+private fun DrawScope.orbit(t: Float, stars: List<Star>, pulses: MutableList<Float>) {
+    val w = size.width; val h = size.height
+    for (s in stars) {
+        val a = (0.2f + 0.6f * (0.5f + 0.5f * sin(t * s.speed + s.phase))) * 0.7f
+        drawCircle(Color(0xFFFFF6E8).copy(alpha = a), s.r.dp.toPx(), Offset(s.x * w, s.y * h))
+    }
+    val cx = w * 0.56f; val cy = h * 0.56f; val rx = w * 0.5f; val ry = h * 0.2f; val rot = -0.12f
+    val cr = kotlin.math.cos(rot); val sr = kotlin.math.sin(rot)
+    fun at(a: Float): Offset { val x = kotlin.math.cos(a) * rx; val y = sin(a) * ry; return Offset(cx + x * cr - y * sr, cy + x * sr + y * cr) }
+    pulses.removeAll { t - it > 1.1f || it > t }
+    val flash = pulses.lastOrNull()?.let { kotlin.math.exp(-(t - it) / 0.6f) } ?: 0f
+    // The orbit itself, a hairline that brightens with each step.
+    rotate(Math.toDegrees(rot.toDouble()).toFloat(), Offset(cx, cy)) {
+        drawOval(AmberLight.copy(alpha = 0.08f + 0.14f * flash), Offset(cx - rx, cy - ry), Size(rx * 2, ry * 2), style = Stroke(0.8.dp.toPx()))
+    }
+    val a = t * 0.55f
+    // A trail of light behind the moon: brighter on the near side of the orbit.
+    for (k in 1..46) {
+        val b = a - k * 0.028f; val p = at(b); val near = sin(b) > 0; val f = 1f - k / 46f
+        drawCircle(AmberLight.copy(alpha = (if (near) 0.45f else 0.2f) * f), ((if (near) 1.5f else 1f) * f + 0.2f).dp.toPx(), p)
+    }
+    val m = at(a); val near = sin(a) > 0
+    val r = (if (near) 4.8f else 3.2f).dp.toPx(); val dim = if (near) 1f else 0.5f
+    val halo = 20.dp.toPx()
+    drawCircle(Brush.radialGradient(listOf(Ph.Amber.copy(alpha = (0.3f * dim + 0.35f * flash).coerceAtMost(1f)), Color.Transparent), m, halo), halo, m)
+    drawCircle(Brush.radialGradient(0f to Color(0xFFFFECCD).copy(alpha = dim), 0.55f to Ph.Amber.copy(alpha = dim), 1f to Color(0xFF5A3714).copy(alpha = dim),
+        center = Offset(m.x - r * 0.4f, m.y - r * 0.45f), radius = r * 1.4f), r, m)
+    // A pulse out from the moon for each step.
+    for (p0 in pulses) {
+        val p = (t - p0) / 1.1f
+        drawCircle(AmberLight.copy(alpha = 0.45f * (1f - p)), r + p * 26.dp.toPx(), m, style = Stroke(1.dp.toPx()))
+    }
 }
 
 /** Card ⇄ task screen: the card grows into the chat and shrinks back, on a soft spring. */
@@ -334,13 +312,6 @@ fun MiniSaturn(spinning: Boolean, needsYou: Boolean, modifier: Modifier = Modifi
                 lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
                     androidx.compose.ui.text.style.LineHeightStyle.Trim.None)))
     }
-}
-
-private fun wave(size: Size, base: Float, amp: Float, length: Float, phase: Float) = Path().apply {
-    moveTo(0f, size.height); lineTo(0f, base)
-    var x = 0f
-    while (x <= size.width) { lineTo(x, base + amp * sin(2 * PI * x / length + phase).toFloat()); x += 6f }
-    lineTo(size.width, base); lineTo(size.width, size.height); close()
 }
 
 /** A task that's done (or paused, or failed): H2's quiet card: dot, title, one line of what happened. */

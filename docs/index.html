@@ -271,7 +271,8 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     const artW = wide ? Math.min(W * 0.5, 980) : W * 0.98;
     fontPx = artW / (COLS * 0.6); cw = fontPx * 0.6; lh = fontPx * 1.08;
     R = RC * cw;
-    cx = wide ? W * .72 : W * .5; cy = wide ? H * .4 : H * .27;
+    wingScale = wide ? .78 : .56;
+    cx = wide ? W * .72 : W * .5; cy = wide ? H * .48 : H * .31;
     art.width = Math.ceil((COLS * cw + 40) * dpr); art.height = Math.ceil((ROWS * lh + 40) * dpr);
     artT = -1;
     stars.length = 0;
@@ -349,67 +350,63 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     }
     g.shadowBlur = 0; g.globalAlpha = 1; g.textAlign = "left";
   }
-  /* ---------------- a raven, flying past Saturn: bold gold lines, flapping wings, short glides ---------------- */
-  const raven = { x: 0, y: 0, dir: -1, t0: -1, speed: 0, alt: 0, wait: 1200 };
-  function launch(t) {
-    raven.dir = Math.random() < .5 ? -1 : 1;
-    raven.t0 = t; raven.speed = W / (4.2 + Math.random() * 1.6); // across the screen in ~5 s
-    raven.alt = H * (.1 + Math.random() * .2);
+  /* ---------------- a raven's wings, spread behind Saturn: layered pointed feathers, a slow beat ---------------- */
+  // One pointed feather from its base, along angle `a`, length `l`, width `w`; dark fill so the layers above cover it.
+  function feather(x, y, a, l, w) {
+    const ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
+    const tx = x + ux * l, ty = y + uy * l;
+    g.beginPath();
+    g.moveTo(x + nx * w * .35, y + ny * w * .35);
+    g.quadraticCurveTo(x + ux * l * .55 + nx * w, y + uy * l * .55 + ny * w, tx, ty);          // one vane to the sharp tip
+    g.quadraticCurveTo(x + ux * l * .5 - nx * w * .8, y + uy * l * .5 - ny * w * .8, x - nx * w * .35, y - ny * w * .35);
+    g.closePath(); g.fill(); g.stroke();
+    g.save(); g.globalAlpha *= .45; g.beginPath(); g.moveTo(x, y); g.lineTo(x + ux * l * .92, y + uy * l * .92); g.stroke(); g.restore(); // the shaft
   }
-  // The bird in its own units (length ~1, facing +x). flap: -1 wings down … 1 wings up.
-  function bird(ctx, flap, far) {
-    const up = Math.sin(flap * 1.2), sg = up >= 0 ? 1 : -1;
-    const reach = far ? .84 : 1;
-    const S = [.16, -.07];                                        // shoulder
-    const wrist = [-.02, S[1] - .52 * up * reach];
-    const tip = [-.42 * reach, S[1] - .98 * up * reach];
-    ctx.beginPath();
-    ctx.moveTo(S[0] + .04, S[1] + .02);
-    ctx.quadraticCurveTo(.08, wrist[1] - .04 * sg, wrist[0], wrist[1]);   // leading edge, a strong arm
-    ctx.quadraticCurveTo(-.2, (wrist[1] + tip[1]) / 2 - .03 * sg, tip[0], tip[1]);
-    // five long, separated primaries: the raven's "fingers"
-    for (let k = 0; k < 5; k++) {
-      const f = (k + 1) / 5;
-      const bx = tip[0] + .06 + f * .2, by = tip[1] + (wrist[1] - tip[1]) * (f * .55) + .07 * up;
-      ctx.lineTo(bx - .1, by + .02 * sg);
-      ctx.lineTo(bx, by + .06 * up);
-    }
-    ctx.quadraticCurveTo(-.08, S[1] - .18 * up, -.24, -.01);             // broad secondaries back to the body
-    ctx.closePath();
+  // The wing's bone: shoulder → elbow → wrist → hand, in units of R, for the right wing (mirrored for the left).
+  function armAt(u) {
+    const P = [[.35, -.15], [1.3, -.8], [2.15, -1.25], [2.9, -1.6]];
+    const k = Math.min(2, Math.floor(u * 3)), f = u * 3 - k;
+    return [P[k][0] + (P[k + 1][0] - P[k][0]) * f, P[k][1] + (P[k + 1][1] - P[k][1]) * f];
   }
-  function body(ctx) {
-    ctx.beginPath();
-    ctx.moveTo(.64, -.02);                               // tip of the heavy beak
-    ctx.quadraticCurveTo(.58, -.1, .48, -.11);            // culmen
-    ctx.quadraticCurveTo(.4, -.17, .28, -.14);            // big head
-    ctx.quadraticCurveTo(.1, -.12, -.3, -.07);            // back
-    ctx.lineTo(-.62, -.14); ctx.lineTo(-.72, .0); ctx.lineTo(-.62, .13); // wedge tail
-    ctx.lineTo(-.3, .07);
-    ctx.quadraticCurveTo(.02, .17, .3, .09);              // deep belly
-    ctx.quadraticCurveTo(.42, .06, .5, .02);              // shaggy throat
-    ctx.quadraticCurveTo(.56, .0, .64, -.02);
-    ctx.closePath();
-  }
-  function drawRaven(t) {
-    if (raven.t0 < 0) { if (t > raven.wait) launch(t); else return; }
-    const s = (t - raven.t0) / 1000, len = R * 1.05;
-    const x = raven.dir < 0 ? W + len - s * raven.speed : -len + s * raven.speed;
-    if (x < -len * 1.5 || x > W + len * 1.5) { raven.t0 = -1; raven.wait = t + 2500 + Math.random() * 3000; return; }
-    // Flap fast, then glide for a beat every couple of seconds.
-    const cycle = s % 2.4, gliding = cycle > 1.7;
-    const flap = gliding ? .25 + .05 * Math.sin(s * 6) : Math.sin(s * Math.PI * 2 * 3.4);
-    const y = raven.alt + Math.sin(s * 2.1) * H * .025 - (gliding ? 0 : flap * len * .05);
+  function wing(side, beat) {
     g.save();
-    g.translate(x, y); g.scale(len * raven.dir, len);
-    g.rotate(gliding ? .02 : -.05);
-    g.lineJoin = "round"; g.lineCap = "round";
-    g.lineWidth = 2.6 / len; g.strokeStyle = "#f2b35b"; g.shadowColor = "rgba(242,179,91,.75)"; g.shadowBlur = 10;
-    g.fillStyle = "rgba(11,12,15,.88)";
-    g.globalAlpha = .55; bird(g, flap * .92 - .05, true); g.fill(); g.stroke();   // far wing
-    g.globalAlpha = 1; body(g); g.fill(); g.stroke();
-    g.beginPath(); g.arc(.4, -.1, .02, 0, Math.PI * 2); g.fillStyle = "#f2b35b"; g.fill(); // eye
-    g.beginPath(); g.moveTo(.63, -.025); g.lineTo(.5, -.045); g.stroke(); // the line of the beak
-    g.fillStyle = "rgba(11,12,15,.88)"; bird(g, flap, false); g.fill(); g.stroke();      // near wing
+    g.translate(cx, cy);
+    g.scale(side, 1);
+    g.rotate(-beat);                                   // the whole wing lifts and settles
+    g.scale(R * wingScale, R * wingScale);
+    g.lineWidth = 1.3 / R / wingScale; g.lineJoin = "round";
+    g.strokeStyle = "#d9a055"; g.fillStyle = "#0d0d10";
+    // rows from back to front: primaries (long, at the hand), secondaries (along the arm), coverts (short, on top)
+    const rows = [
+      { n: 11, from: .62, to: 1, len: [1.5, 2.5], w: .16, ang: [.2, -.7], alpha: .85 },
+      { n: 13, from: .05, to: .7, len: [1.05, 1.5], w: .17, ang: [1.55, .5], alpha: .8 },
+      { n: 12, from: .05, to: .8, len: [.55, .8], w: .14, ang: [1.45, .35], alpha: .9 },
+      { n: 10, from: .08, to: .75, len: [.3, .42], w: .1, ang: [1.3, .3], alpha: 1 },
+    ];
+    for (const r of rows) {
+      g.globalAlpha = r.alpha * wingAlpha;
+      for (let i = r.n - 1; i >= 0; i--) {
+        const f = i / (r.n - 1), u = r.from + (r.to - r.from) * f;
+        const [x, y] = armAt(u);
+        const a = r.ang[0] + (r.ang[1] - r.ang[0]) * f + Math.sin(beat * 4 + i * .7) * .015; // a ripple through the feathers
+        feather(x, y, a, r.len[0] + (r.len[1] - r.len[0]) * Math.pow(f, 1.3), r.w);
+      }
+    }
+    // the leading edge of the wing, a strong line over the coverts
+    g.globalAlpha = wingAlpha; g.lineWidth = 2.2 / R / wingScale; g.strokeStyle = "#f2b35b";
+    g.beginPath(); for (let k = 0; k <= 30; k++) { const [x, y] = armAt(k / 30); k ? g.lineTo(x, y - .05) : g.moveTo(x, y - .05); } g.stroke();
+    g.restore();
+  }
+  const wingAlpha = .78;
+  let wingScale = .78;
+  function wings(t) {
+    const beat = still ? .05 : .06 + .07 * Math.sin(t / 1000 * 1.1);
+    g.save();
+    // The wings are behind Saturn: nothing of them shows through the globe or the rings.
+    g.beginPath(); g.rect(0, 0, W, H); g.arc(cx, cy, R * 1.01, 0, Math.PI * 2); g.clip("evenodd");
+    g.beginPath(); g.rect(0, 0, W, H); g.ellipse(cx, cy, R * 2.32, R * 2.32 * E * 1.02, TILT, 0, Math.PI * 2); g.clip("evenodd");
+    g.shadowColor = "rgba(242,179,91,.35)"; g.shadowBlur = 8;
+    wing(-1, beat); wing(1, beat);
     g.restore();
   }
 
@@ -421,13 +418,13 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     glow.addColorStop(0, "rgba(242,179,91,.18)"); glow.addColorStop(.4, "rgba(224,138,58,.07)"); glow.addColorStop(1, "rgba(192,104,42,0)");
     g.fillStyle = glow; g.fillRect(0, 0, W, H);
     for (const m of moons) if (!still) m.a += m.speed * 16 * (m.born > 0 ? 2.2 : 1);
+    wings(t);
     for (const m of moons) if (pos(m).z < 0) drawMoon(m, t);
     // The text planet steps at ~15 frames a second, like the app.
     const at = still ? 0 : Math.floor(t / 66) * .057;
     if (at !== artT) { drawArt(at); artT = at; }
     g.drawImage(art, cx - COLS * cw / 2 - 20, cy - ROWS * lh / 2 - 20, art.width / dpr, art.height / dpr);
     for (const m of moons) if (pos(m).z >= 0) drawMoon(m, t);
-    if (!still) drawRaven(t);
     for (let i = moons.length - 1; i >= 0; i--) if (t - moons[i].done > 2700) moons.splice(i, 1);
     if (!still) requestAnimationFrame(frame);
   }

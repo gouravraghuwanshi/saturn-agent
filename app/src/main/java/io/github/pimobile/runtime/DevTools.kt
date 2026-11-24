@@ -21,8 +21,10 @@ object Tools {
     fun process(args: List<String>, cwd: File = rt.home, extraEnv: Map<String, String> = emptyMap()): Process {
         rt.prepare()
         // The app's own PATH doesn't include Saturn's usr/bin: resolve bundled tools to their full path.
-        val exe = args.first().let { n -> if ('/' in n) n else File(rt.bin, n).takeIf { it.exists() }?.path ?: n }
-        return ProcessBuilder(listOf(exe) + args.drop(1)).directory(cwd).redirectErrorStream(true)
+        // gh is downloaded on first use and runs through the system loader (see GhTool).
+        val cmd = if (args.first() == "gh") { GhTool.ensure(app); listOf(GhTool.LINKER, GhTool.file(app).path) }
+            else listOf(args.first().let { n -> if ('/' in n) n else File(rt.bin, n).takeIf { it.exists() }?.path ?: n })
+        return ProcessBuilder(cmd + args.drop(1)).directory(cwd).redirectErrorStream(true)
             .apply { environment().clear(); environment().putAll(rt.env() + TaskManager.sessionEnv + ("GH_PROMPT_DISABLED" to "1") + extraEnv) }
             .start().also { it.outputStream.close() }
     }
@@ -59,7 +61,12 @@ object GitHub {
     var error by mutableStateOf<String?>(null)
     private var login: Process? = null
 
+    /** Signed in before (gh keeps its login here), so gh is worth downloading to check. */
+    private fun everSignedIn() = File(PiRuntime.get(Tools.app).home, ".config/gh/hosts.yml").isFile
+
     fun refresh() = io.execute {
+        // Don't download gh just to find out nobody signed in.
+        if (!GhTool.installed(Tools.app) && !everSignedIn()) { main.post { user = null; checking = false }; return@execute }
         main.post { checking = true }
         val (c, out) = Tools.run("gh", "api", "user", "--jq", ".login", timeoutSec = 20)
         main.post { user = out.lines().lastOrNull()?.trim()?.takeIf { c == 0 && it.isNotBlank() }; checking = false }
@@ -85,6 +92,7 @@ object GitHub {
             login = null
             if (ok) {
                 Tools.run("gh", "auth", "setup-git")
+                GhTool.fixGitConfig(PiRuntime.get(Tools.app).home, File(PiRuntime.get(Tools.app).bin, "gh"))
                 // Commits need a name and email: use the GitHub account (private noreply address).
                 val (_, info) = Tools.run("gh", "api", "user", "--jq", "[.login, (.name // .login), (.id|tostring)] | join(\"\\t\")")
                 info.lines().lastOrNull()?.split('\t')?.takeIf { it.size == 3 }?.let { (login, name, id) ->
@@ -106,7 +114,7 @@ object GitHub {
     fun cancel() { login?.destroy(); login = null; signingIn = false; code = null; url = null; TaskManager.hold("github", false) }
 
     fun signOut() = io.execute {
-        Tools.run("gh", "auth", "logout", "--hostname", "github.com")
+        if (GhTool.installed(Tools.app) || everSignedIn()) Tools.run("gh", "auth", "logout", "--hostname", "github.com")
         refresh()
     }
 

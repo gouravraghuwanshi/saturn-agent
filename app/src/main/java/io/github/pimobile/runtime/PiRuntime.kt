@@ -35,7 +35,6 @@ class PiRuntime private constructor(private val ctx: Context) {
             "rg" to "libx_rg.so",
             "fd" to "libx_fd.so",
             "curl" to "libx_curl.so",
-            "gh" to "libx_gh.so",
             "ssh" to "libx_ssh.so",
             "ssh-keygen" to "libx_ssh-keygen.so",
         )
@@ -118,6 +117,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         }
         writeConfig()
         writeShims()
+        GhTool.fixGitConfig(home, File(bin, "gh"))
         // Artifacts are grouped by project; files from before that belong to "general".
         artifacts.listFiles()?.filter { it.isFile }?.forEach { f ->
             File(artifacts, GENERAL).mkdirs(); f.renameTo(File(artifacts, "$GENERAL/${f.name}"))
@@ -161,6 +161,8 @@ class PiRuntime private constructor(private val ctx: Context) {
         "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
         "NPM_CONFIG_FUND" to "false",
         "SATURN_ARTIFACTS" to artifacts.path,
+        // gh runs through the system loader, so it can't find itself: tell it (git credential helpers use this).
+        "GH_PATH" to File(bin, "gh").path,
         // pi (and other CLIs) then use termux-clipboard-set/get and Termux-friendly TUI redraws;
         // those commands are the app's own shims below, not Termux:API.
         "TERMUX_VERSION" to "saturn",
@@ -219,6 +221,20 @@ class PiRuntime private constructor(private val ctx: Context) {
             f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
             f.setExecutable(true, false)
         }
+        // gh: downloaded on first use (see GhTool), run through the system loader.
+        File(bin, "gh").apply {
+            delete()
+            writeText("""
+                |#!/system/bin/sh
+                |if [ ! -f "${File(GhTool.file(ctx).parentFile, ".verified").path}" ]; then
+                |  [ -n "${'$'}PIMOBILE_BROWSER_URL" ] || { echo "gh: not downloaded yet. Sign in to GitHub in Saturn's Settings, or run gh from a Saturn task." >&2; exit 1; }
+                |  echo "gh: downloading the GitHub CLI (first use, about 14 MB)..." >&2
+                |  out=${'$'}(curl -s --fail-with-body -X POST "${'$'}PIMOBILE_BROWSER_URL/app/gh-install" 2>&1) || { echo "gh: ${'$'}{out:-Saturn is not responding}" >&2; exit 1; }
+                |fi
+                |exec ${GhTool.LINKER} "${GhTool.file(ctx).path}" "${'$'}@"
+                |""".trimMargin())
+            setExecutable(true, false)
+        }
     }
 
     private fun writeConfig() {
@@ -231,6 +247,8 @@ class PiRuntime private constructor(private val ctx: Context) {
             npx() { node "${npxCli.path}" "${'$'}@"; }
             # Android has no home directory for app users, so ssh's "~" is wrong: always use Saturn's config.
             ssh() { command ssh -F "${'$'}HOME/.ssh/config" "${'$'}@"; }
+            # gh is a small script around the downloaded binary; run it through sh so it works without the exec shim too.
+            gh() { /system/bin/sh "${File(bin, "gh").path}" "${'$'}@"; }
             """.trimIndent() + "\n"
         )
         // Tell pi how to run npm for `pi install npm:...`.
@@ -305,7 +323,7 @@ class PiRuntime private constructor(private val ctx: Context) {
             |task with that prompt. Times are the phone's local time. Tell the user what you scheduled and when.
             |
             |## GitHub
-            |`gh` (GitHub's CLI) is installed. If the user signed in (Settings → GitHub; check with `gh auth status`),
+            |`gh` (GitHub's CLI) is available (the first run downloads it, about 14 MB). If the user signed in (Settings → GitHub; check with `gh auth status`),
             |you can clone, commit, push, and open pull requests and issues (`gh repo clone`, `git push`, `gh pr create`).
             |git is already set up to push with that account. Never print tokens.
             |

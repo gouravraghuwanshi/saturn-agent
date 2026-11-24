@@ -64,6 +64,10 @@ android {
         // Extract .so files to nativeLibraryDir on install: that directory is
         // the one place a modern (targetSdk 29+) app may exec() binaries from.
         jniLibs.useLegacyPackaging = true
+        // gh is downloaded on first use instead (runtime/GhTool.kt): 14 MB less to download.
+        jniLibs.excludes += "**/libx_gh.so"
+        // Compress the app's code in the APK: ~18 MB smaller download, same app.
+        dex.useLegacyPackaging = true
     }
 
     androidResources {

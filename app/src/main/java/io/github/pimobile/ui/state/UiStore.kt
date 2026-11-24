@@ -480,6 +480,9 @@ object UiStore : TaskManager.Listener {
 
     fun undoLast() { val u = undo ?: return; undo = null; undoHandler.removeCallbacksAndMessages(null); u.revert() }
 
+    /** Make the pending action final now (the app is leaving the screen). */
+    fun commitUndo() { val u = undo ?: return; undo = null; undoHandler.removeCallbacksAndMessages(null); u.commit() }
+
     /** Swipe-to-delete: hides the card now, deletes for real unless undone. */
     fun deleteWithUndo(ui: TaskUi) {
         ui.hidden = true
@@ -586,7 +589,11 @@ object UiStore : TaskManager.Listener {
         }.start()
     }
 
+    /** Deleted tasks: late events from their process (it's still stopping) must not bring the card back. */
+    private val deleted = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+
     fun delete(ui: TaskUi) {
+        deleted += ui.task.id
         BrowserManager.close(ui.task.id)
         TaskManager.delete(ui.task)
         tasks.remove(ui); byId.remove(ui.task.id)
@@ -744,7 +751,7 @@ object UiStore : TaskManager.Listener {
     // ----------------------------------------------------------------- events
 
     override fun onTaskEvent(task: TaskManager.Task, record: JSONObject?, log: String?) {
-        if (TaskManager.tasks.none { it.id == task.id }) return
+        if (task.id in deleted || TaskManager.tasks.none { it.id == task.id }) return
         preread.remove(task.id)   // its history moved on: read it fresh when opened
         val ui = ui(task)
         if (task.status == Status.NEEDS_INPUT && ui.status != Status.NEEDS_INPUT) Haptics.finished(ok = true)

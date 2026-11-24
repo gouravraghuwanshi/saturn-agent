@@ -95,6 +95,12 @@ object BrowserBridge {
                     .onSuccess { respondText(out, it) }
                     .onFailure { e -> respondText(out, (e.message ?: e.toString()), 400) }
             }
+            // `gh` the first time it runs: download and verify the GitHub CLI.
+            rest.startsWith("/app/gh-install") -> {
+                runCatching { io.github.pimobile.runtime.GhTool.ensure(io.github.pimobile.runtime.Tools.app) }
+                    .onSuccess { respondText(out, "ok") }
+                    .onFailure { e -> respondText(out, (e.message ?: e.toString()), 500) }
+            }
             // DevTools serves its WebSocket targets under /devtools/page/<id>.
             rest.startsWith("/devtools/") -> proxy(req, rest, input, out)
             else -> respond(out, 404, "{}")

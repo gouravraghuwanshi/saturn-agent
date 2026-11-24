@@ -25,7 +25,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); handle(intent) }
     override fun onStart() { super.onStart(); UiStore.foreground = true }
-    override fun onStop() { super.onStop(); UiStore.foreground = false }
+    // Leaving the app makes a pending delete final: if Android ends the process later, deleted tasks stay deleted.
+    override fun onStop() { super.onStop(); UiStore.foreground = false; UiStore.commitUndo() }
 
     /** Share sheet, notification taps, the widget and the quick-settings tile all land here. */
     private fun handle(i: android.content.Intent?) {

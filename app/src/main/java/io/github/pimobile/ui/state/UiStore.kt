@@ -357,7 +357,8 @@ object UiStore : TaskManager.Listener {
     // ------------------------------------------------------------ branches
 
     /** Something shared into Saturn from another app, waiting in the home composer. */
-    class Share(val text: String, val uris: List<android.net.Uri>)
+    /** [taskId]: dropped onto an open task (its message box); null means the home message box. */
+    class Share(val text: String, val uris: List<android.net.Uri>, val taskId: String? = null)
     var share by mutableStateOf<Share?>(null)
     /** Put the cursor in the home composer (widget, quick-settings tile). */
     var focusComposer by mutableStateOf(false)

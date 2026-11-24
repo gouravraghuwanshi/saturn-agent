@@ -143,13 +143,20 @@ fun HomeScreen(
     val homeFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     // Shared from another app: text into the box, files as attachments; the user reviews and sends.
-    UiStore.share?.let { sh -> LaunchedEffect(sh) {
+    UiStore.share?.takeIf { it.taskId == null }?.let { sh -> LaunchedEffect(sh) {
         UiStore.share = null
-        if (sh.text.isNotBlank()) input = TextFieldValue(sh.text, androidx.compose.ui.text.TextRange(sh.text.length))
-        val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            sh.uris.mapNotNull { u -> runCatching { UiStore.attach(u) }.getOrNull() }
+        if (sh.text.isNotBlank()) input = input.text.let { cur ->
+            val t = if (cur.isBlank()) sh.text else cur.trimEnd() + "\n" + sh.text
+            TextFieldValue(t, androidx.compose.ui.text.TextRange(t.length)) }
+        // Its own coroutine: clearing UiStore.share above ends this effect, which would cancel the copy.
+        scope.launch { val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            sh.uris.mapNotNull { u -> runCatching { UiStore.attach(u) }
+                .onFailure { e -> android.util.Log.w("SaturnDrop", "couldn't attach $u", e)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(UiStore.app, "Couldn't open ${u.lastPathSegment ?: "that file"}: ${e.message ?: e}", android.widget.Toast.LENGTH_LONG).show() } }
+                .getOrNull() }
         }
-        attachments.addAll(got)
+        attachments.addAll(got) }
         runCatching { homeFocus.requestFocus() }
     } }
     if (UiStore.focusComposer) LaunchedEffect(Unit) {
@@ -309,7 +316,7 @@ fun HomeScreen(
     var heroCenter by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     val breathe by androidx.compose.animation.core.rememberInfiniteTransition(label = "glow").animateFloat(0f, 1f,
         androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(4_000), androidx.compose.animation.core.RepeatMode.Reverse), label = "breathe")
-    Box(Modifier.fillMaxSize().background(Ph.Ground).drawBehind {
+    Box(Modifier.fillMaxSize().background(Ph.Ground).dropInto(null).drawBehind {
         val c = heroCenter
         if (c != null && showList) saturnGlow(c, 1f - collapse, breathe)
     }) {

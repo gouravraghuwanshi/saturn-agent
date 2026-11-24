@@ -151,6 +151,23 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                onOpenTask: (TaskUi) -> Unit = {}, onBack: () -> Unit) {
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<UiStore.Attachment>() }
+    val shareScope = androidx.compose.runtime.rememberCoroutineScope()
+    // Dragged in from another app (or pasted): text into the box, files attached; you review and send.
+    UiStore.share?.takeIf { it.taskId == t.task.id }?.let { sh -> LaunchedEffect(sh) {
+        UiStore.share = null
+        if (sh.text.isNotBlank()) input = input.text.let { cur ->
+            val v = if (cur.isBlank()) sh.text else cur.trimEnd() + "\n" + sh.text
+            TextFieldValue(v, androidx.compose.ui.text.TextRange(v.length)) }
+        // Its own coroutine: clearing UiStore.share above ends this effect, which would cancel the copy.
+        shareScope.launch {
+        val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            sh.uris.mapNotNull { u -> runCatching { UiStore.attach(u) }
+                .onFailure { e -> android.util.Log.w("SaturnDrop", "couldn't attach $u", e)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(UiStore.app, "Couldn't open ${u.lastPathSegment ?: "that file"}: ${e.message ?: e}", android.widget.Toast.LENGTH_LONG).show() } }
+                .getOrNull() } }
+            attachments.addAll(got) }
+    } }
     var followUp by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by rememberSaveable { mutableStateOf("chat") }
@@ -342,6 +359,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                 .then(if (UiStore.slipInto == t.task.id || LocalTwoPane.current) Modifier else Modifier.sharedBounds(rememberSharedContentState("task-${t.task.id}"),
                     visibility, boundsTransform = CardMorph, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp))))
                 .background(Ph.Ground)
+                .dropInto(t.task.id)
                 .onGloballyPositioned { rootAt = it.boundsInRoot().topLeft }
                 .drawBehind {
                     // Lamp light: the shadier the paper, the more the edges fall into shadow while a warm

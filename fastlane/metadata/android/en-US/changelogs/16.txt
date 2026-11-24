@@ -1,0 +1,1 @@
+Saturn now fits every screen: tablets and unfolded foldables show your tasks and the open task side by side, and phones held sideways get a layout that fits. Rotating or unfolding no longer resets what you were doing.

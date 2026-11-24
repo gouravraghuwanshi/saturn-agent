@@ -77,6 +77,8 @@ class TaskUi(val task: TaskManager.Task) {
     val responses = androidx.compose.runtime.mutableStateMapOf<String, JSONObject>()
     /** Text to put into the composer (e.g. the message chosen in /fork or /tree). */
     var prefill by mutableStateOf<String?>(null)
+    /** Editing your last message: the next send replaces it (and Saturn answers the new version). */
+    var editingLast by mutableStateOf(false)
     var thinkingLevel by mutableStateOf<String?>(null)
     /** Stop was pressed; cleared when the run ends. */
     var stopping by mutableStateOf(false)
@@ -268,8 +270,11 @@ object UiStore : TaskManager.Listener {
      */
     private val retryStep = androidx.compose.runtime.mutableStateMapOf<String, String>()
     fun retrying(ui: TaskUi) = ui.task.id in retryStep
-    fun retry(ui: TaskUi) {
+    /** Replacement text for an in-place retry (editing your last message); none means the same text again. */
+    private val retryWith = mutableMapOf<String, String>()
+    fun retry(ui: TaskUi, replacement: String? = null) {
         if (retrying(ui) || ui.status == Status.RUNNING || ui.status == Status.STARTING || ui.status == Status.NEEDS_INPUT) return
+        if (replacement != null) retryWith[ui.task.id] = replacement else retryWith.remove(ui.task.id)
         retryStep[ui.task.id] = "F"
         rpc(ui, "get_fork_messages")
     }
@@ -980,9 +985,9 @@ object UiStore : TaskManager.Listener {
             "get_fork_messages" -> if (retryStep[ui.task.id] == "F") {
                 val msgs = data?.optJSONArray("messages")
                 val last = msgs?.optJSONObject(msgs.length() - 1)
-                if (last == null) { retryStep.remove(ui.task.id); ui.items.add(Item.Notice(ui.key("n"), "Nothing to retry yet", false)) }
+                if (last == null) { retryStep.remove(ui.task.id); retryWith.remove(ui.task.id); ui.items.add(Item.Notice(ui.key("n"), "Nothing to retry yet", false)) }
                 else {
-                    retryStep[ui.task.id] = "T:" + last.optString("text")
+                    retryStep[ui.task.id] = "T:" + (retryWith.remove(ui.task.id) ?: last.optString("text"))
                     appCommand(ui, "tree", JSONObject().put("entryId", last.optString("entryId")))
                 }
             }

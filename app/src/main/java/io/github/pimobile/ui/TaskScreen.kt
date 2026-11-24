@@ -152,6 +152,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var input by remember { mutableStateOf(TextFieldValue("")) }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<UiStore.Attachment>() }
     val shareScope = androidx.compose.runtime.rememberCoroutineScope()
+    // Leaving the chat drops an unfinished edit (the box it lived in is gone).
+    androidx.compose.runtime.DisposableEffect(t) { onDispose { t.editingLast = false } }
     // Dragged in from another app (or pasted): text into the box, files attached; you review and send.
     UiStore.share?.takeIf { it.taskId == t.task.id }?.let { sh -> LaunchedEffect(sh) {
         UiStore.share = null
@@ -235,6 +237,15 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var liftX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var sideArmed by remember { mutableStateOf(false) }
     var sideJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // Swiping home leaves this screen still slid sideways; reopening the task while it's leaving brings
+    // the same screen back. Whenever it's coming back, settle it into place.
+    LaunchedEffect(visibility.transition.targetState) {
+        if (visibility.transition.targetState != androidx.compose.animation.EnterExitState.Visible) return@LaunchedEffect
+        sideArmed = false
+        val settle = androidx.compose.animation.core.spring<Float>(dampingRatio = 1f, stiffness = androidx.compose.animation.core.Spring.StiffnessMedium)
+        if (lift != 0f) launch { androidx.compose.animation.core.animate(lift, 0f, animationSpec = settle) { v, _ -> lift = v } }
+        if (liftX != 0f) androidx.compose.animation.core.animate(liftX, 0f, animationSpec = settle) { v, _ -> liftX = v }
+    }
     val sideMax = with(density) { 300.dp.toPx() }
     val sideArm = with(density) { 190.dp.toPx() }
     val sideAtArm = sideMax * (1f - kotlin.math.exp(-sideArm / sideMax))
@@ -279,7 +290,10 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val imeOpen = androidx.compose.foundation.layout.WindowInsets.isImeVisible
     LaunchedEffect(imeOpen) { if (imeOpen) reveal = false }
     val collapse by androidx.compose.animation.core.animateFloatAsState(
-        if (reveal && !imeOpen && tab == "chat") 0f else 1f, androidx.compose.animation.core.tween(320), label = "collapse")
+        // A critically damped spring, not a fixed tween: it eases in and out, and reversing mid-way
+        // carries on smoothly from where it is instead of restarting.
+        if (reveal && !imeOpen && tab == "chat") 0f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 320f), label = "collapse")
     val failedNow = t.status == Status.FAILED || (t.lastError != null && !running)
     val glow by androidx.compose.animation.core.animateFloatAsState(when {
         running -> 1f; t.status == Status.NEEDS_INPUT -> 0.85f; failedNow -> 0.5f; else -> 0.28f
@@ -288,7 +302,19 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val breatheV by breatheAnim.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(
         androidx.compose.animation.core.tween(2200), androidx.compose.animation.core.RepeatMode.Reverse), label = "b")
     val alive = running || t.status == Status.NEEDS_INPUT
-    val breathe = if (alive) breatheV else 1f
+    // Always breathing: gently when idle (done, failed, paused), deeper while Saturn works.
+    val breathe = breatheV
+    // Seconds the light has been drifting. Ticks only while Saturn works (no redraws when idle), and is
+    // read only while drawing, so it repaints the glow without recomposing the chat.
+    val drift = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    LaunchedEffect(alive) {
+        if (!alive) return@LaunchedEffect
+        var last = 0L
+        while (true) androidx.compose.runtime.withFrameNanos { now ->
+            if (last != 0L) drift.floatValue += (now - last) / 1e9f
+            last = now
+        }
+    }
     var glowAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified) }
     var rootAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
@@ -381,17 +407,34 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         paperGrain, androidx.compose.ui.graphics.TileMode.Repeated, androidx.compose.ui.graphics.TileMode.Repeated)),
                         alpha = 0.55f + 0.3f * Ph.paperShade)
                     // Amber glow is for the dark screen; on paper only a breath of it.
+                    // Where the light wanders while Saturn works: two slow waves multiplied, so it mostly lingers,
+                    // then now and then sweeps across. -1..1; settles back to centre when work stops.
+                    val d = drift.floatValue
+                    val wander = if (alive) (kotlin.math.sin(d * 0.42f) * kotlin.math.sin(d * 0.153f + 1.1f)) else 0f
+                    val wander2 = if (alive) (kotlin.math.sin(d * 0.31f + 2.4f) * kotlin.math.sin(d * 0.117f)) else 0f
                     if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
-                        saturnGlow(glowAt - rootAt, glow * (1f - collapse) * (if (Ph.paper) 0.35f else 1f), breathe, red = failedNow,
-                            depth = if (alive) 0.4f else 0.15f)
-                    // While Saturn works and the big glow has folded away (reading back, typing), a faint band
-                    // of the same light keeps breathing along the top edge, so you can tell it's busy at a glance.
-                    if (alive && !Ph.paper && collapse > 0.01f) {
-                        val h = 150.dp.toPx()
-                        val a = collapse * (0.05f + 0.08f * breathe)
-                        drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
-                            0f to Ph.Amber.copy(alpha = a), 0.45f to Color(0xFFE08A3A).copy(alpha = a * 0.35f), 1f to Color.Transparent,
-                            startY = 0f, endY = h), size = androidx.compose.ui.geometry.Size(size.width, h))
+                        saturnGlow(glowAt - rootAt + androidx.compose.ui.geometry.Offset(wander * size.width * 0.12f, 0f),
+                            glow * (1f - collapse) * (if (Ph.paper) 0.35f else 1f), breathe, red = failedNow,
+                            depth = if (alive) 0.4f else 0.25f)
+                    // While Saturn works, two soft warm lights drift along the top edge (stronger once the big glow
+                    // folds away while you read back or type), so you can tell it's busy at a glance.
+                    if (alive && !Ph.paper) {
+                        val strength = 0.35f + 0.65f * collapse
+                        val h = 170.dp.toPx()
+                        fun light(x: Float, down: Float, c: Color, a: Float, w: Float) {
+                            val r = size.width * w
+                            val at = androidx.compose.ui.geometry.Offset(x, -h * 0.15f + down)
+                            drawCircle(androidx.compose.ui.graphics.Brush.radialGradient(
+                                0f to c.copy(alpha = a), 0.5f to c.copy(alpha = a * 0.35f), 1f to Color.Transparent,
+                                center = at, radius = r), r, at)
+                        }
+                        val a = strength * (0.06f + 0.07f * breathe)
+                        // Now and then one light sinks deep into the chat and floats back up (fainter as it goes,
+                        // so it never sits heavily behind the text).
+                        val sink1 = (kotlin.math.sin(d * 0.19f + 0.7f) * kotlin.math.sin(d * 0.071f)).coerceAtLeast(0f)
+                        val sink2 = (kotlin.math.sin(d * 0.23f + 3.1f) * kotlin.math.sin(d * 0.089f + 1.9f)).coerceAtLeast(0f)
+                        light(size.width * (0.5f + 0.38f * wander), sink1 * size.height * 0.9f, Ph.Amber, a * (1f - 0.35f * sink1), 0.62f)
+                        light(size.width * (0.5f + 0.42f * wander2), sink2 * size.height * 0.8f, Color(0xFFE08A3A), a * 0.8f * (1f - 0.35f * sink2), 0.48f)
                     }
                 }
         ) {
@@ -631,11 +674,25 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
                         onSend = { text ->
                             input = TextFieldValue("")
-                            if (attachments.isNotEmpty() || !dispatchSlash(text, builtins)) {
+                            if (t.editingLast && attachments.isEmpty() && !running) { t.editingLast = false; UiStore.retry(t, text) }
+                            else if (attachments.isNotEmpty() || !dispatchSlash(text, builtins)) {
+                                t.editingLast = false
                                 UiStore.send(t, text, followUp, attachments.toList()); attachments.clear()
                             }
                         },
                         extra = {
+                            // Editing your last message: say so, and let it be cancelled (clears the box).
+                            if (t.editingLast) Row(
+                                Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.AmberWash)
+                                    .border(1.dp, Ph.AmberLine, RoundedCornerShape(14.dp))
+                                    .clickable(onClickLabel = "Stop editing") { t.editingLast = false; input = TextFieldValue("") }
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                PhIcon(PhIcons.Pencil, Ph.Amber, 13.dp)
+                                Text("editing", style = Ph.monoSmall.copy(color = Ph.Amber))
+                                PhIcon(PhIcons.Close, Ph.Amber, 11.dp, "Stop editing")
+                            }
                             if (running) Row(
                                 Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(Ph.RedWash)
                                     .border(1.dp, Ph.RedLine, RoundedCornerShape(14.dp))
@@ -705,11 +762,14 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                 Text(displayTitle(t.title), style = Ph.title.copy(fontSize = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // Folded: the status moves up here, one line.
-                if (collapse > 0.5f) Row(Modifier.padding(top = 2.dp).graphicsLayer { alpha = (collapse - 0.5f) * 2f },
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (running || t.status == Status.NEEDS_INPUT) PulseDot(tint, 6)
-                    else Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(tint))
-                    Text("#${t.task.number} · $status · ${t.task.cwd.name}", style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // It opens up gradually (no jump in the title row's height) and fades in once there's room.
+                if (collapse > 0.01f) Box(Modifier.clipToBounds().foldAway(1f - collapse)) {
+                    Row(Modifier.padding(top = 2.dp).graphicsLayer { alpha = ((collapse - 0.4f) / 0.6f).coerceIn(0f, 1f) },
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (running || t.status == Status.NEEDS_INPUT) PulseDot(tint, 6)
+                        else Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(tint))
+                        Text("#${t.task.number} · $status · ${t.task.cwd.name}", style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
             if (browser) HeaderIcon(PhIcons.Globe, tab == "browser", if (tab == "browser") "Back to chat" else "Show browser", dot = true) {
@@ -721,12 +781,18 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
         }
         // Open: a small Saturn in text, turning while it works, and where things stand.
         // Long-press the book icon and this band becomes the reading lamp for a moment.
-        val bandFold by androidx.compose.animation.core.animateFloatAsState(if (lampOpen) 0f else collapse, label = "band")
+        // Follows [collapse] directly (one motion, no second animation lagging behind it); the lamp
+        // opening it is its own small animation, combined with it.
+        val lampOut by androidx.compose.animation.core.animateFloatAsState(if (lampOpen) 0f else 1f,
+            androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 320f), label = "lamp")
+        val bandFold = collapse * lampOut
         Box(Modifier.fillMaxWidth().clipToBounds().foldAway(bandFold)) {
           androidx.compose.animation.Crossfade(lampOpen, label = "lamp") { lamp ->
             if (lamp) LampSlider(onTouch = { onLamp(true) })
             else
-            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp).graphicsLayer { alpha = 1f - collapse },
+            // Fades out in the first part of the fold, so it's gone before it gets squeezed (and in late on the way back).
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp).graphicsLayer {
+                    alpha = (1f - bandFold / 0.6f).coerceIn(0f, 1f); translationY = -bandFold * 10.dp.toPx() },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 val helpers by remember(t) { androidx.compose.runtime.derivedStateOf { Shapes.liveHelpers(t.items) } }
                 MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT, helpers = helpers, modifier =
@@ -1142,10 +1208,24 @@ private fun UserMessage(t: TaskUi, item: Item.User) {
             }
         }
         AnimatedVisibility(open) {
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val index = t.items.filterIsInstance<Item.User>().indexOf(item)
+            androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val users = t.items.filterIsInstance<Item.User>()
+                val index = users.indexOf(item)
+                val latest = index == users.lastIndex
+                val busy = t.status == Status.RUNNING || t.status == Status.STARTING || t.status == Status.NEEDS_INPUT
+                fun wait() = android.widget.Toast.makeText(context, "Wait until Saturn finishes, or stop it", android.widget.Toast.LENGTH_SHORT).show()
+                // Your last message: change it in the box; sending replaces it and Saturn answers again.
+                // (Older ones: Branch from here keeps this chat and starts a copy from that point.)
+                if (latest && text.isNotEmpty()) MsgAction(PhIcons.Pencil, "Edit") {
+                    if (busy) wait() else { t.prefill = text; t.editingLast = true; open = false }
+                }
+                // Your last message is answered again in place; an older one is sent again at the end.
+                if (text.isNotEmpty()) MsgAction(PhIcons.Retry, if (UiStore.retrying(t)) "resending…" else "Resend") {
+                    if (busy) wait() else { if (latest) UiStore.retry(t) else UiStore.send(t, text); open = false }
+                }
                 MsgAction(PhIcons.Fork, if (UiStore.branching) "branching…" else "Branch from here") {
-                    if (t.status == Status.RUNNING || t.status == Status.NEEDS_INPUT) UiStore.branchError = "wait until Saturn finishes, or stop it"
+                    if (busy) UiStore.branchError = "wait until Saturn finishes, or stop it"
                     else { UiStore.branch(t, index, text); open = false }
                 }
                 MsgAction(PhIcons.Copy, "Copy") { copy(text); open = false }

@@ -46,7 +46,9 @@ When Pi gets better, Saturn gets better on the next update, and every Pi extensi
 
 **It reaches further when you want.** It has a built-in browser you can watch it use, GitHub sign-in so it can clone, commit and open PRs, and SSH, so your laptop or server can do the heavy lifting.
 
-**It fits into Android.** You can share anything to it from any app, reply to a finished task from the notification, use the home-screen widget or the quick-settings tile, or just talk to it.
+**It fits into Android.** You can share or drag anything to it from any app, reply to a finished task from the notification, use the home-screen widget or the quick-settings tile, or just talk to it.
+
+**It fits your screen.** On a tablet, an unfolded foldable or DeX, your tasks and the open task sit side by side. Turn your phone sideways and it still fits.
 
 **Any model you like.** Sign in with ChatGPT, Claude, Copilot and others, paste an API key, or use a free OpenRouter key to start.
 
@@ -63,6 +65,8 @@ The only thing that leaves the phone is what the agent sends to the AI provider 
 Download the APK from [Releases](../../releases). You'll need Android 10 or newer on a 64-bit ARM phone, which is pretty much any phone from the last few years.
 
 Open it, follow the short setup and give it something to do.
+
+After that, Saturn keeps itself up to date: when a new release is out, tap **Update** and it installs it. It only accepts updates signed with Saturn's own key. Android may offer to scan the app first, which is normal for apps from outside the Play Store.
 
 ## Want it to tap through your other apps?
 

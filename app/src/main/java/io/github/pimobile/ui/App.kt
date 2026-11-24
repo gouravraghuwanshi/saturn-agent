@@ -12,7 +12,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,7 +53,14 @@ fun App() {
         }
         if (Onboarding.needed()) {
             // On a tablet, the welcome pages sit in a phone-width column in the middle.
-            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Ph.Ground)) { Readable(600.dp) { Onboarding.Screen() } }
+            MeasureRoom { room ->
+                // Tablets: a phone-sized card in the middle of the screen, not a strip along the top.
+                val big = room.width >= 600.dp && room.height >= 760.dp
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Ph.Ground),
+                    contentAlignment = if (big) androidx.compose.ui.Alignment.Center else androidx.compose.ui.Alignment.TopCenter) {
+                    androidx.compose.foundation.layout.Box(Modifier.widthIn(max = 600.dp).then(if (big) Modifier.heightIn(max = 700.dp) else Modifier)) { Onboarding.Screen() }
+                }
+            }
             return@PhosphorTheme
         }
         val ctx = androidx.compose.ui.platform.LocalContext.current

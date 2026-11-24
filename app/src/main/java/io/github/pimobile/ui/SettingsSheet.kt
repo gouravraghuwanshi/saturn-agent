@@ -255,6 +255,13 @@ private fun UpdateRows() {
             style = Ph.body.copy(fontSize = 12.5.sp, lineHeight = 18.sp, color = Ph.TextBody), maxLines = 6, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 64.dp, end = 16.dp, bottom = 12.dp))
     }
+    // Play Protect asks to scan apps that update from outside the Play Store; say so before it surprises anyone.
+    if (rel != null || u.installing) Row(Modifier.padding(start = 64.dp, end = 16.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        PhIcon(PhIcons.Lock, Ph.Muted, 12.dp, modifier = Modifier.padding(top = 3.dp))
+        Text("Android may offer to scan Saturn first. That's normal for apps from GitHub. Saturn only installs updates signed with its own key.",
+            style = Ph.body.copy(fontSize = 12.sp, lineHeight = 17.sp, color = Ph.Muted))
+    }
     Divider()
     Toggle(PhIcons.Clock, "Check for updates", "Once a day, from Saturn's GitHub releases", u.auto) { u.auto = it }
 }

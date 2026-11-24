@@ -1,1 +1,0 @@
-/home/gourav/pi-android/terminal/src/main/cpp/CMakeLists.txt

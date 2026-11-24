@@ -118,7 +118,7 @@ internal fun ComputersSheet(onDismiss: () -> Unit) {
 
             Text("2 · Add it here", style = Ph.title.copy(fontSize = 14.sp), modifier = Modifier.padding(top = 6.dp))
             Field(name, { name = it; error = null }, "name, e.g. laptop")
-            Field(target, { target = it.trim(); error = null }, "user@address, e.g. gourav@192.168.0.10")
+            Field(target, { target = it.trim(); error = null }, "user@address, e.g. me@192.168.1.10")
             Field(port, { port = it.filter(Char::isDigit).take(5) }, "port (22)")
             error?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Red)) }
             Pill("Add computer", primary = true, enabled = name.isNotBlank() && target.isNotBlank()) {

@@ -176,7 +176,7 @@ object Computers {
         val a = alias.trim().lowercase().replace(Regex("[^a-z0-9_-]"), "-").trim('-')
         if (a.isEmpty()) return "Give it a short name, like laptop"
         val (u, h) = target.trim().let { if ('@' in it) it.substringBefore('@') to it.substringAfter('@') else "" to it }
-        if (u.isBlank() || h.isBlank()) return "Use the form user@address, like gourav@192.168.0.10"
+        if (u.isBlank() || h.isBlank()) return "Use the form user@address, like me@192.168.1.10"
         if (hosts.any { it.alias == a }) return "There's already a computer called $a"
         save(hosts + Host(a, u, h, port))
         return null

@@ -382,7 +382,8 @@ fun HomeScreen(
             // ---- tasks
             if (!showList) ProjectRow(Modifier.padding(start = 16.dp, end = 20.dp, bottom = 12.dp))
             if (!showList) EmptyState(Modifier.weight(1f).then(pageSwipe).graphicsLayer { translationX = heroDrag * 0.5f }, UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty(),
-                project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() }) { sheet = "login" }
+                project = projectLabel.takeIf { UiStore.tasks.isNotEmpty() },
+                onTry = { p -> input = TextFieldValue(p, androidx.compose.ui.text.TextRange(p.length)); runCatching { homeFocus.requestFocus() } }) { sheet = "login" }
             else Box(Modifier.weight(1f).then(pageSwipe)) {
             PullToSearchHint(pull / pullAt, Modifier.align(Alignment.TopCenter).padding(top = 6.dp))
             LazyColumn(
@@ -611,7 +612,7 @@ fun IconBox(icon: androidx.compose.ui.graphics.vector.ImageVector, description: 
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = null, onSettings: () -> Unit) {
+private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = null, onTry: (String) -> Unit = {}, onSettings: () -> Unit) {
     // A phone on its side has little height and the message box covers the bottom: smaller glyph, room
     // for the box below (the spacer at the end), and it scrolls rather than hiding the Sign in button.
     val short = LocalRoom.current.short
@@ -646,6 +647,13 @@ private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = n
             else "Sign in with a subscription (Claude, ChatGPT, Copilot…) or add an API key.",
             style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), textAlign = TextAlign.Center,
         )
+        // Nothing here yet: a few things to try, each showing a different side of Saturn. A tap puts it in the box; you send it.
+        if (hasKey) {
+            Spacer(Modifier.height(20.dp))
+            Column(Modifier.widthIn(max = 420.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TRY_THESE.forEach { (icon, label, prompt) -> TryChip(icon, label) { onTry(prompt) } }
+            }
+        }
         if (!hasKey) {
             Spacer(Modifier.height(20.dp))
             Box(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Amber).clickable { onSettings() }
@@ -661,6 +669,29 @@ private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = n
         }
         Spacer(Modifier.height(140.dp))
     }
+    }
+}
+
+private val TRY_THESE = listOf(
+    Triple(PhIcons.Sparkle, "Build a tip calculator I can keep",
+        "Build me a simple, good-looking tip calculator app I can keep and reuse. Split between people and round up."),
+    Triple(PhIcons.Clock, "Remind me to stretch in 20 minutes",
+        "Remind me to stand up and stretch in 20 minutes."),
+    Triple(PhIcons.Search, "What's new on Hacker News?",
+        "Read the Hacker News front page and tell me the 5 most interesting stories in one line each, with links."),
+    Triple(PhIcons.Terminal, "Flash my phone's torch",
+        "Turn my phone's torch on for 3 seconds, then off."),
+)
+
+@Composable
+private fun TryChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(Modifier.fillMaxWidth().clip(shape).background(Ph.Surface).border(1.dp, Ph.Line, shape)
+        .clickable(onClickLabel = "Try: $label") { onClick() }.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        PhIcon(icon, Ph.Amber, 17.dp)
+        Text(label, style = Ph.body.copy(color = Ph.Text, fontSize = 14.sp), modifier = Modifier.weight(1f))
+        PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp, modifier = Modifier.graphicsLayer { rotationZ = -90f })
     }
 }
 

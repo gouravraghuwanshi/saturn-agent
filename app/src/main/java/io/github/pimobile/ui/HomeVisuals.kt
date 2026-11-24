@@ -494,10 +494,11 @@ object AsciiSaturn {
  * The warm light behind Saturn: one wide, soft amber glow that fades very slowly outward, so a
  * little of it reaches the header and the lines around Saturn. Drawn behind the whole screen.
  */
-fun DrawScope.saturnGlow(center: Offset, strength: Float, breathe: Float, red: Boolean = false) {
+fun DrawScope.saturnGlow(center: Offset, strength: Float, breathe: Float, red: Boolean = false, depth: Float = 0.15f) {
     if (strength <= 0.01f) return
     val r = size.width * 0.95f
-    val a = strength * (0.85f + 0.15f * breathe)
+    // depth: how much the light swells and settles with each breath (0.15 = a hint, 0.4 = visibly alive).
+    val a = strength * (1f - depth + depth * breathe)
     drawCircle(Brush.radialGradient(
         0f to (if (red) Ph.Red else Ph.Amber).copy(alpha = 0.26f * a),
         0.22f to (if (red) Ph.Red else Ph.Amber).copy(alpha = 0.15f * a),

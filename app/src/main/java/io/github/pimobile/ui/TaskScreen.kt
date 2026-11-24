@@ -287,7 +287,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     val breatheAnim = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe")
     val breatheV by breatheAnim.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(
         androidx.compose.animation.core.tween(2200), androidx.compose.animation.core.RepeatMode.Reverse), label = "b")
-    val breathe = if (running || t.status == Status.NEEDS_INPUT) breatheV else 1f
+    val alive = running || t.status == Status.NEEDS_INPUT
+    val breathe = if (alive) breatheV else 1f
     var glowAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified) }
     var rootAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
@@ -381,7 +382,17 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                         alpha = 0.55f + 0.3f * Ph.paperShade)
                     // Amber glow is for the dark screen; on paper only a breath of it.
                     if (glowAt != androidx.compose.ui.geometry.Offset.Unspecified)
-                        saturnGlow(glowAt - rootAt, glow * (1f - collapse) * (if (Ph.paper) 0.35f else 1f), breathe, red = failedNow)
+                        saturnGlow(glowAt - rootAt, glow * (1f - collapse) * (if (Ph.paper) 0.35f else 1f), breathe, red = failedNow,
+                            depth = if (alive) 0.4f else 0.15f)
+                    // While Saturn works and the big glow has folded away (reading back, typing), a faint band
+                    // of the same light keeps breathing along the top edge, so you can tell it's busy at a glance.
+                    if (alive && !Ph.paper && collapse > 0.01f) {
+                        val h = 150.dp.toPx()
+                        val a = collapse * (0.05f + 0.08f * breathe)
+                        drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0f to Ph.Amber.copy(alpha = a), 0.45f to Color(0xFFE08A3A).copy(alpha = a * 0.35f), 1f to Color.Transparent,
+                            startY = 0f, endY = h), size = androidx.compose.ui.geometry.Size(size.width, h))
+                    }
                 }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {

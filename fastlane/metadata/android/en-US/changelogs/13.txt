@@ -1,0 +1,1 @@
+New home: the running card has a moon in orbit, finished cards show how long a task took, its steps, what it made and how it ended. Tasks are named from Saturn's first reply. Haptics switch. Copy and share tables and replies as images or Markdown. Sub-agents work. Built-in jq and pdftotext. Smoother chat opening.

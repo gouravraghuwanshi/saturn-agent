@@ -1,0 +1,1 @@
+Fixed: right after updating, Saturn could offer the version it had just installed.

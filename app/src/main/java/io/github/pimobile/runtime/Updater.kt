@@ -68,7 +68,9 @@ object Updater {
         if (!supported) return
         checkedAt = prefs.getLong("checked_at", 0L)
         // A release found earlier is shown right away, until a newer check says otherwise.
-        prefs.getString("found", null)?.let { runCatching { parse(JSONObject(it)) }.getOrNull() }?.let { available = it }
+        prefs.getString("found", null)?.let { runCatching { parse(JSONObject(it)) }.getOrNull() }
+            ?.takeIf { newer(it.version, current) }?.let { available = it }
+            ?: prefs.edit().remove("found").apply() // that release is this app now
         cleanup()
     }
 
@@ -129,7 +131,7 @@ object Updater {
 
     /** Download, verify, install. */
     fun update(ctx: Context) {
-        val rel = available ?: return
+        val rel = available?.takeIf { newer(it.version, current) } ?: run { available = null; return }
         if (progress != null || installing) return
         if (!canInstall()) { askPermission(ctx); return }
         error = null; progress = 0f
@@ -208,7 +210,7 @@ object Updater {
                         else intent.getParcelableExtra(Intent.EXTRA_INTENT)) ?: return
                     ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
-                PackageInstaller.STATUS_SUCCESS -> { installing = false; cleanup() }
+                PackageInstaller.STATUS_SUCCESS -> { installing = false; available = null; prefs.edit().remove("found").apply(); cleanup() }
                 else -> {
                     installing = false
                     val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)

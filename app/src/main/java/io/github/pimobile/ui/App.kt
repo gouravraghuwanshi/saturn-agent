@@ -9,7 +9,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,7 +49,11 @@ fun App() {
             // Opening a task clears its "done" notification.
             openId?.let { runCatching { io.github.pimobile.runtime.Notifier.clear(io.github.pimobile.ui.state.UiStore.app, it) } }
         }
-        if (Onboarding.needed()) { Onboarding.Screen(); return@PhosphorTheme }
+        if (Onboarding.needed()) {
+            // On a tablet, the welcome pages sit in a phone-width column in the middle.
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Ph.Ground)) { Readable(600.dp) { Onboarding.Screen() } }
+            return@PhosphorTheme
+        }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         UiStore.branchError?.let { e -> LaunchedEffect(e) {
             android.widget.Toast.makeText(ctx, "Couldn't branch: $e", android.widget.Toast.LENGTH_LONG).show(); UiStore.branchError = null } }
@@ -53,8 +61,43 @@ fun App() {
         // Live WebViews that aren't on screen keep rendering here, under the opaque UI.
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         BrowserHost(BrowserManager.shown)
+        MeasureRoom { room ->
+        androidx.compose.runtime.CompositionLocalProvider(LocalRoom provides room) {
         SharedTransitionLayout(Modifier.fillMaxSize().background(Ph.Ground)) {
-            AnimatedContent(
+            val home: @Composable (androidx.compose.animation.AnimatedVisibilityScope) -> Unit = { scope ->
+                HomeScreen(this@SharedTransitionLayout, scope, onStore = { openId = STORE },
+                    onTerminal = { openId = TERMINAL }, onArtifacts = { openId = ARTIFACTS }, onUsage = { openId = USAGE }) { UiStore.open(it); openId = it.task.id }
+            }
+            // Anything that isn't home: a task, the store, the terminal, artifacts, usage. Null when there's nothing to show.
+            val detail: @Composable (String?, androidx.compose.animation.AnimatedVisibilityScope) -> Boolean = { id, scope ->
+                val task = id?.let { UiStore.find(it) }
+                when {
+                    id == STORE -> { StoreScreen { openId = null }; true }
+                    id == TERMINAL -> { ShellScreen { openId = null }; true }
+                    id == ARTIFACTS -> { ArtifactsScreen { openId = null }; true }
+                    id == USAGE -> { UsageScreen(onOpenTask = { openId = it }) { openId = null }; true }
+                    task != null -> { TaskScreen(task, this@SharedTransitionLayout, scope, onOpenTask = { openId = it.task.id }) { openId = null }; true }
+                    else -> false
+                }
+            }
+            if (room.twoPane) {
+                // Tablets, unfolded foldables, DeX: the task list stays on the left, the open task fills the right.
+                androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+                    androidx.compose.runtime.CompositionLocalProvider(LocalTwoPane provides true) {
+                        androidx.compose.foundation.layout.Box(Modifier.width(listPaneWidth(room.width)).fillMaxHeight()) {
+                            androidx.compose.animation.AnimatedVisibility(true, label = "list") { home(this) }
+                        }
+                        androidx.compose.foundation.layout.Box(Modifier.width(1.dp).fillMaxHeight().background(Ph.Line))
+                        androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxHeight()) {
+                            AnimatedContent(targetState = openId,
+                                transitionSpec = { (fadeIn(tween(220)) + androidx.compose.animation.slideInHorizontally(tween(260)) { it / 12 }) togetherWith fadeOut(tween(160)) },
+                                label = "detail") { id ->
+                                Readable(880.dp) { if (!detail(id, this)) EmptyPane() }
+                            }
+                        }
+                    }
+                }
+            } else AnimatedContent(
                 targetState = openId,
                 transitionSpec = {
                     val slip = UiStore.slipInto
@@ -74,16 +117,24 @@ fun App() {
                 },
                 label = "nav",
             ) { id ->
-                val task = id?.let { UiStore.find(it) }
-                if (id == STORE) StoreScreen { openId = null }
-                else if (id == TERMINAL) ShellScreen { openId = null }
-                else if (id == ARTIFACTS) ArtifactsScreen { openId = null }
-                else if (id == USAGE) UsageScreen(onOpenTask = { openId = it }) { openId = null }
-                else if (task == null) HomeScreen(this@SharedTransitionLayout, this, onStore = { openId = STORE },
-                    onTerminal = { openId = TERMINAL }, onArtifacts = { openId = ARTIFACTS }, onUsage = { openId = USAGE }) { UiStore.open(it); openId = it.task.id }
-                else TaskScreen(task, this@SharedTransitionLayout, this, onOpenTask = { openId = it.task.id }) { openId = null }
+                // Portrait tablets and phones on their side: one screen at a time, kept to a readable width.
+                Readable { if (!detail(id, this)) home(this) }
             }
         }
         }
+        }
+        }
+    }
+}
+
+/** The right pane of the two-pane layout when no task is open. */
+@Composable
+private fun EmptyPane() {
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxSize(),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+        io.github.pimobile.ui.components.PhIcon(io.github.pimobile.ui.components.PhIcons.Sparkle, Ph.LineStrong, 56.dp)
+        androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+        androidx.compose.material3.Text("Open a task, or start one on the left.", style = Ph.mono.copy(color = Ph.Muted))
     }
 }

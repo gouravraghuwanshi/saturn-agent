@@ -339,7 +339,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         Box(
             Modifier.fillMaxSize()
                 // Morphs from (and back into) its home card; a task that slipped in from the message box doesn't.
-                .then(if (UiStore.slipInto == t.task.id) Modifier else Modifier.sharedBounds(rememberSharedContentState("task-${t.task.id}"),
+                .then(if (UiStore.slipInto == t.task.id || LocalTwoPane.current) Modifier else Modifier.sharedBounds(rememberSharedContentState("task-${t.task.id}"),
                     visibility, boundsTransform = CardMorph, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp))))
                 .background(Ph.Ground)
                 .onGloballyPositioned { rootAt = it.boundsInRoot().topLeft }

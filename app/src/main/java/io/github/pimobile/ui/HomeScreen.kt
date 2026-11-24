@@ -9,6 +9,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -103,6 +104,7 @@ fun HomeScreen(
     onUsage: () -> Unit,
     onOpen: (TaskUi) -> Unit,
 ) {
+    val twoPane = LocalTwoPane.current
     val selected = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     val selecting = selected.isNotEmpty()
     androidx.activity.compose.BackHandler(enabled = selecting) { selected.clear() }
@@ -462,8 +464,11 @@ fun HomeScreen(
                     }
                     if (!collapsed) items(list, key = { it.task.id }) { t ->
                         with(shared) {
-                            Box(Modifier.animateItem().sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
-                                boundsTransform = CardMorph, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp)))) {
+                            // Side by side (tablets), the card stays put while its task opens beside it, so no morph; the open one is outlined.
+                            Box(Modifier.animateItem().then(if (twoPane) Modifier.then(if (UiStore.openTaskId == t.task.id)
+                                    Modifier.border(1.5.dp, Ph.AmberLine, RoundedCornerShape(18.dp)) else Modifier)
+                                else Modifier.sharedBounds(rememberSharedContentState("task-${t.task.id}"), visibility,
+                                boundsTransform = CardMorph, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(18.dp))))) {
                                 SwipeCard(t, enabled = !selecting && !UiStore.swipePages) {
                                     TaskCard(t, selected = if (selecting) t.task.id in selected else null,
                                         onOpen = { if (selecting) toggle(t) else onOpen(t) }, onSelect = { toggle(t) })
@@ -600,10 +605,32 @@ fun IconBox(icon: androidx.compose.ui.graphics.vector.ImageVector, description: 
 
 @Composable
 private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = null, onSettings: () -> Unit) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 32.dp), verticalArrangement = Arrangement.Center,
+    // A phone on its side has little height and the message box covers the bottom: smaller glyph, room
+    // for the box below (the spacer at the end), and it scrolls rather than hiding the Sign in button.
+    val short = LocalRoom.current.short
+    if (short && !hasKey) {
+        // Sideways on a phone: one row, so the button stays above the message box.
+        Row(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp), verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_glyph), contentDescription = null, tint = Ph.LineStrong, modifier = Modifier.size(40.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Connect a model to begin", style = Ph.title.copy(fontSize = 17.sp))
+                Spacer(Modifier.height(4.dp))
+                Text("Sign in with a subscription (Claude, ChatGPT, Copilot…) or add an API key.", style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp))
+            }
+            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Amber).clickable { onSettings() }
+                .padding(horizontal = 18.dp, vertical = 12.dp)) {
+                Text("Sign in", style = Ph.title.copy(fontSize = 14.sp, color = Ph.AmberInk))
+            }
+        }
+        return
+    }
+    Box(modifier.fillMaxWidth()) {
+    Column(Modifier.align(Alignment.Center).fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState())
+        .padding(start = 32.dp, end = 32.dp, top = if (short) 4.dp else 0.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_glyph), contentDescription = null, tint = Ph.LineStrong, modifier = Modifier.size(84.dp))
-        Spacer(Modifier.height(16.dp))
+        androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(io.github.pimobile.R.drawable.ic_saturn_glyph), contentDescription = null, tint = Ph.LineStrong, modifier = Modifier.size(if (short) 44.dp else 84.dp))
+        Spacer(Modifier.height(if (short) 8.dp else 16.dp))
         Text(if (!hasKey) "Connect a model to begin" else if (project != null) "No tasks in $project yet" else "What should Saturn work on?",
             style = Ph.title.copy(fontSize = 18.sp), textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
@@ -626,6 +653,7 @@ private fun EmptyState(modifier: Modifier, hasKey: Boolean, project: String? = n
             Text("‹  swipe for routines", style = Ph.monoSmall.copy(color = Ph.Muted.copy(alpha = 0.7f)))
         }
         Spacer(Modifier.height(140.dp))
+    }
     }
 }
 

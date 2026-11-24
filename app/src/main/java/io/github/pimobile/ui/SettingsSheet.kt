@@ -126,6 +126,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Item(PhIcons.Check, "Check Saturn's tools", "node, git, curl, gh, ssh…") { open = "diagnostics" }
             }
 
+            if (io.github.pimobile.runtime.Updater.supported) Group("Updates") { UpdateRows() }
+
             Group("About") {
                 Item(PhIcons.Lock, "Privacy", "What stays on your phone") { open = "privacy" }
                 Divider()
@@ -222,6 +224,40 @@ private fun DiagnosticsSheet(onDismiss: () -> Unit) {
 }
 
 // ------------------------------------------------------------ components
+
+/** Settings → Updates: what's new (or that this is the latest), the update button, and the daily check switch. */
+@Composable
+private fun UpdateRows() {
+    val u = io.github.pimobile.runtime.Updater
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) { u.check(force = true) }
+    val rel = u.available
+    val (title, sub, subColor) = when {
+        u.installing -> Triple("Installing ${rel?.version ?: ""}", "Android will finish the update", Ph.Amber)
+        u.progress != null -> Triple("Downloading ${rel?.version ?: ""}", "${((u.progress ?: 0f) * 100).toInt()}%", Ph.Amber)
+        u.error != null -> Triple(if (rel != null) "Saturn ${rel.version} is ready" else "Updates", u.error!!, Ph.Red)
+        rel != null -> Triple("Saturn ${rel.version} is ready", if (u.canInstall()) "Tap to update · you have ${u.current}" else "Tap to allow Saturn to install updates", Ph.Amber)
+        u.checking -> Triple("Checking for updates…", "You have ${u.current}", Ph.TextBody)
+        else -> Triple("Saturn is up to date", "Version ${u.current}", Ph.Green)
+    }
+    Item(PhIcons.Import, title, sub, tint = if (rel != null) Ph.Amber else Ph.TextSoft, subColor = subColor, trailing = {
+        val p = u.progress
+        if (p != null) androidx.compose.material3.CircularProgressIndicator(progress = { p }, color = Ph.Amber, trackColor = Ph.Chip,
+            strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+        else if (rel != null) Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Ph.Amber).padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Text("Update", style = Ph.title.copy(fontSize = 13.sp, color = Ph.AmberInk))
+        }
+        else PhIcon(PhIcons.Retry, Ph.Muted, 16.dp)
+    }) { if (rel != null) u.update(ctx) else u.check(force = true) }
+    if (rel != null && rel.notes.isNotBlank() && u.progress == null) {
+        Text(rel.notes.lines().map { it.trim().removePrefix("- ").removePrefix("* ").replace("**", "").replace("`", "") }
+            .filter { it.isNotBlank() && !it.startsWith("#") }.take(5).joinToString("\n") { "· $it" },
+            style = Ph.body.copy(fontSize = 12.5.sp, lineHeight = 18.sp, color = Ph.TextBody), maxLines = 6, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 64.dp, end = 16.dp, bottom = 12.dp))
+    }
+    Divider()
+    Toggle(PhIcons.Clock, "Check for updates", "Once a day, from Saturn's GitHub releases", u.auto) { u.auto = it }
+}
 
 @Composable
 private fun Group(title: String?, content: @Composable () -> Unit) {

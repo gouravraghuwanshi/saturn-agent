@@ -139,6 +139,7 @@ object UiStore : TaskManager.Listener {
         io.github.pimobile.device.Device.init(app)
         io.github.pimobile.runtime.Scheduler.init(app)
         io.github.pimobile.runtime.Tools.init(app)
+        io.github.pimobile.runtime.Updater.init(app)
         io.github.pimobile.runtime.Computers.load()
         Thread { runCatching { io.github.pimobile.runtime.Computers.writeConfig() } }.start()
         applySecrets()

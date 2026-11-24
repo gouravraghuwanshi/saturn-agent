@@ -1,0 +1,1 @@
+Saturn now updates itself from GitHub: it checks once a day and shows when a new version is ready; one tap installs it. The app is a third smaller (77 MB): the GitHub tool downloads the first time you use it. Fixed: deleted tasks sometimes came back.

@@ -423,6 +423,27 @@ fun HomeScreen(
                     item(key = "filler") { Spacer(Modifier.height(with(density) { fillerPx.toDp() })) }
                     return@LazyColumn
                 }
+                io.github.pimobile.runtime.Updater.available?.let { rel ->
+                    // A quiet line when a new Saturn is out: tap to update right here.
+                    item(key = "update") {
+                        val u = io.github.pimobile.runtime.Updater
+                        val ctx = androidx.compose.ui.platform.LocalContext.current
+                        val p = u.progress
+                        Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Ph.AmberWash)
+                            .border(1.dp, Ph.AmberLine, RoundedCornerShape(14.dp)).clickable { u.update(ctx) }.padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            PhIcon(PhIcons.Import, Ph.Amber, 16.dp)
+                            Text(when {
+                                u.installing -> "Installing Saturn ${rel.version}…"
+                                p != null -> "Downloading Saturn ${rel.version} · ${(p * 100).toInt()}%"
+                                u.error != null -> u.error!!
+                                else -> "Saturn ${rel.version} is ready"
+                            }, style = Ph.body.copy(fontSize = 13.5.sp, color = if (u.error != null) Ph.Red else Ph.Text), modifier = Modifier.weight(1f),
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            if (p == null && !u.installing) Text(if (u.error != null) "Retry" else "Update", style = Ph.mono.copy(color = Ph.Amber))
+                        }
+                    }
+                }
                 item(key = "project") { ProjectRow(Modifier.padding(start = 0.dp, end = 4.dp, bottom = 2.dp)) }
                 val earlier = visible.filter { it.status !in ACTIVE && !it.archived }
                 val archived = visible.filter { it.status !in ACTIVE && it.archived }

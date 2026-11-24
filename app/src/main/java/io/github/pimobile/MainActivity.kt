@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); handle(intent) }
-    override fun onStart() { super.onStart(); UiStore.foreground = true }
+    override fun onStart() { super.onStart(); UiStore.foreground = true; io.github.pimobile.runtime.Updater.check() }
     // Leaving the app makes a pending delete final: if Android ends the process later, deleted tasks stay deleted.
     override fun onStop() { super.onStop(); UiStore.foreground = false; UiStore.commitUndo() }
 

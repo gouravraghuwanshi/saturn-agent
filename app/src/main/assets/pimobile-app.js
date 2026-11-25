@@ -231,8 +231,9 @@ export default function (pi) {
   pi.registerCommand("pimobile-reload", {
     description: "(Saturn app) reload extensions, skills, prompts and context files",
     handler: async (_args, ctx) => {
-      try { await ctx.reload(); emit(ctx, { type: "reloaded" }); }
-      catch (e) { emit(ctx, { type: "error", scope: "reload", message: String(e?.message ?? e) }); }
+      const out = { ui: ctx.ui }; // ctx goes stale after reload(); its ui getter would throw
+      try { await ctx.reload(); emit(out, { type: "reloaded" }); }
+      catch (e) { emit(out, { type: "error", scope: "reload", message: String(e?.message ?? e) }); }
     },
   });
 }

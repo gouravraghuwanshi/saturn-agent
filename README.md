@@ -4,7 +4,7 @@
 
 <h1 align="center">Saturn</h1>
 
-<p align="center"><b>Run the <a href="https://pi.dev">Pi coding agent</a> locally on Android.</b><br>
+<p align="center"><b>Your phone, now with an agent that does the work.</b><br>
 Shell, Node, git, and phone hardware tools in a standalone app — no root, no Termux, no backend server.<br><br>
 <a href="https://gouravraghuwanshi.github.io/saturn-agent/"><b>Website</b></a> · <a href="../../releases/latest"><b>Download</b></a> · <a href="https://pi.dev"><b>Pi</b></a></p>
 

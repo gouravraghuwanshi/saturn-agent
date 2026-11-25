@@ -4,81 +4,53 @@
 
 <h1 align="center">Saturn</h1>
 
-<p align="center"><b>A real coding agent, in your pocket.</b><br>
-You tell it what you want. It goes off and does it, right there on your phone.<br><br>
-<a href="https://gouravraghuwanshi.github.io/saturn-agent/"><b>Website</b></a> · <a href="../../releases/latest"><b>Download</b></a> · <a href="https://pi.dev">Uses Pi as its harness</a></p>
+<p align="center"><b>Run the <a href="https://pi.dev">Pi coding agent</a> locally on Android.</b><br>
+Shell, Node, git, and phone hardware tools in a standalone app — no root, no Termux, no backend server.<br><br>
+<a href="https://gouravraghuwanshi.github.io/saturn-agent/"><b>Website</b></a> · <a href="../../releases/latest"><b>Download</b></a> · <a href="https://pi.dev"><b>Pi</b></a></p>
 
 <p align="center">
-  <img src="docs/media/saturn-demo.gif" width="300" alt="Saturn running a task: the moon card, the steps, the answer and the tip calculator it built">
-  <br><sub>One ask, about a minute, real phone. <a href="docs/media/saturn-demo.mp4">Full-quality video</a></sub>
+  <img src="docs/media/saturn-demo.gif" width="300" alt="Saturn running a task on Android">
+  <br><sub><a href="docs/media/saturn-demo.mp4">Full-quality video</a></sub>
 </p>
 
 ---
 
-Most AI apps on your phone are a chat box. You ask, it answers, and that's it.
+Saturn is an agent that can do anything on your phone, not just code. [Pi](https://pi.dev) runs the agent loop, and Saturn gives it a phone to work on: an on-device Linux userland, phone integrations, and the app around it. Pick a model provider, give it a task, and it edits files, runs commands, builds web apps, or triggers phone actions on your device. Pi extensions and slash commands work the same way they do on desktop.
 
-Saturn actually does the work. It runs the [Pi coding agent](https://pi.dev) on the phone itself, with a shell, node, git and the usual tools built in. Ask it to build a small web app, sort a folder of PDFs, fix a bug in your repo or turn the torch off in ten minutes, then put the phone in your pocket. When it's done, the task card on your home screen has a tick.
+## Features
 
-No root. No Termux. No server of ours in the middle. Install it, pick a model, go.
+- **On-device Linux userland:** Ships Node.js, bash, git, ripgrep, ssh, and built-in utilities (`jq`, `pdftotext`, etc.) without Termux or root, plus an interactive terminal if you want direct shell access.
+- **Concurrent tasks:** Each task runs in its own `pi --mode rpc` process with a persistent session you can revisit, branch, or export.
+- **Artifacts:** Files created for you (HTML pages, reports, scripts, data) are collected in an Artifacts view for previewing and sharing.
+- **Phone APIs:** Termux:API-compatible commands (`termux-torch`, `termux-camera-photo`, `termux-location`, `termux-sensor`, `termux-notification`, `termux-tts-speak`, contacts, etc.) routed through a local, token-protected bridge.
+- **Scheduling:** `saturn-schedule` registers Android alarms for one-off timers or cron-style recurring tasks that run even when the app is closed.
+- **Browser, GitHub, and SSH:** An in-app browser the agent can inspect and drive, GitHub sign-in for `gh`/`git` workflows, and SSH access to remote machines.
+- **Android integration:** Share and drag-and-drop target, notification replies, home-screen widget, quick-settings tile, voice input, AppFunctions, and adaptive layouts for tablets, foldables, and DeX.
+- **Flexible models:** Sign in with ChatGPT, Claude, Copilot, and others, or bring your own API key (OpenRouter, Anthropic, OpenAI, etc.).
 
-## Uses Pi as its harness, not a wrapper around it
+## Privacy
 
-Saturn uses [Pi](https://pi.dev) as its agent harness: the official, unmodified Pi runs the loop that thinks, picks tools and edits files. Saturn is everything that harness needs to live on a phone, and almost none of that existed before:
+Saturn has no accounts, ads, analytics, or backend servers. Files, projects, and credentials stay in the app's private storage. Traffic only leaves the device to the AI provider (and any external services like GitHub or SSH) that you configure. See [PRIVACY.md](PRIVACY.md).
 
-- **A Linux toolbox inside an app.** Android won't run programs from app storage, so Saturn ships node, bash, git, ripgrep, ssh and more as native libraries and builds a working `usr/` out of them at startup. No root, no Termux.
-- **Many agents at once.** Each task is its own Pi process, with its own session you can come back to, branch or export.
-- **A body.** Torch, camera, location, sensors, notifications and speech, through a local bridge with Termux:API-compatible commands. Small built-in stand-ins (jq, pdftotext and friends) cover the tools phones don't have.
-- **Time.** Routines and timers that start Pi on schedule, even when the app is closed.
-- **Hands outside the phone.** A browser the agent drives while you watch, GitHub sign-in, and SSH to your computer.
-- **An app built for agents.** Task cards that show the work as it happens, Artifacts for what it makes, notification replies, a widget, a share target, and AppFunctions so other assistants can hand Saturn work.
+## Installation
 
-When Pi gets better, Saturn gets better on the next update, and every Pi extension and slash command works as it does on a desktop.
+Download the APK from [Releases](../../releases). Requires **Android 10+** on **arm64-v8a**.
 
-## What it's like
+Once installed, Saturn checks for new releases and verifies update APKs against its own signing key before installing.
 
-**Each request is a task.** Start a few at once. While Saturn works, a little moon circles the card. When it finishes, the card shows how long it took, how many steps it ran and what it made.
+## Optional: Cross-app UI control
 
-**It makes things you keep.** Web pages, notes, reports and scripts land in **Artifacts**, ready to open or share.
-
-**It knows it's on a phone.** It can use the torch, camera, mic, location, sensors, notifications and contacts, and speak out loud. The commands are Termux:API-compatible, so old scripts still work.
-
-**It keeps time.** "Remind me at 6" or "check this every morning" really happens, even when the app is closed.
-
-**It reaches further when you want.** It has a built-in browser you can watch it use, GitHub sign-in so it can clone, commit and open PRs, and SSH, so your laptop or server can do the heavy lifting.
-
-**It fits into Android.** You can share or drag anything to it from any app, reply to a finished task from the notification, use the home-screen widget or the quick-settings tile, or just talk to it.
-
-**It fits your screen.** On a tablet, an unfolded foldable or DeX, your tasks and the open task sit side by side. Turn your phone sideways and it still fits.
-
-**Any model you like.** Sign in with ChatGPT, Claude, Copilot and others, paste an API key, or use a free OpenRouter key to start.
-
-And if you want to poke around yourself, there's a real terminal.
-
-## Your stuff stays yours
-
-Saturn has no accounts, no ads, no analytics and no server of its own. Your files, keys and projects live in the app's private storage.
-
-The only thing that leaves the phone is what the agent sends to the AI provider *you* picked, so the model can think. Details are in [PRIVACY.md](PRIVACY.md).
-
-## Get it
-
-Download the APK from [Releases](../../releases). You'll need Android 10 or newer on a 64-bit ARM phone, which is pretty much any phone from the last few years.
-
-Open it, follow the short setup and give it something to do.
-
-After that, Saturn keeps itself up to date: when a new release is out, tap **Update** and it installs it. It only accepts updates signed with Saturn's own key. Android may offer to scan the app first, which is normal for apps from outside the Play Store.
-
-## Want it to tap through your other apps?
-
-That's a separate, opt-in app: [Phone Control](https://github.com/gouravraghuwanshi/phone-control-mcp). It's a small MCP server with a big Stop button and Allow prompts for anything risky, and it will never touch passwords or the lock screen. Saturn itself never uses the Accessibility API.
+To let the agent read and tap other apps, install the separate [Phone Control](https://github.com/gouravraghuwanshi/phone-control-mcp) MCP server, which uses Android's Accessibility API with an explicit stop button and confirmation prompts for sensitive actions. Saturn itself does not use the Accessibility API.
 
 ## How it works
 
-Android won't run programs from an app's own storage, but it happily loads native libraries shipped inside the APK. So Saturn ships node, bash, git and friends (built by the Termux project) as `lib*.so` files and links them into a tiny Linux-style folder at startup.
+Android blocks executing binaries from writable app storage on `targetSdk 29+`, but allows execution from the APK's native library directory (`nativeLibraryDir`). Saturn bundles Termux-built binaries as `lib*.so` files in `jniLibs` (`useLegacyPackaging = true`) and symlinks them into a `usr/` prefix on startup.
 
-Each task is its own `pi --mode rpc` process, and the Compose UI talks to it in JSON. Phone features go through a local, token-protected bridge back into the app.
+The Jetpack Compose UI communicates with each `pi --mode rpc` child process over JSON stdio, while Termux:API-compatible CLI shims call back into the app over a local, token-authenticated bridge.
 
-## Build it yourself
+## Build from source
+
+Prerequisites: JDK 17, Android SDK (platform 37, NDK r29), and Node.js/npm.
 
 ```sh
 python3 -I runtime/import_termux.py   # toolchain -> jniLibs + assets (sha256-verified)
@@ -86,18 +58,27 @@ runtime/build-pi-bundle.sh            # official Pi from npm -> assets/pi-bundle
 ./gradlew assembleGithubRelease
 ```
 
-You'll need JDK 17, the Android SDK (platform 37, NDK r29) and Node/npm.
+Two build flavors share the codebase:
+- `github`: Full feature set (GitHub Releases / F-Droid).
+- `play`: Google Play policy compliant (no contacts permission, no downloaded native Node add-ons).
 
-There are two flavors from one codebase. `github` is the full app. `play` follows Google Play's rules: no contacts, and no native add-ons in npm packages. See [RELEASING.md](RELEASING.md) and [store/PLAY_STORE.md](store/PLAY_STORE.md).
+See [RELEASING.md](RELEASING.md) and [store/PLAY_STORE.md](store/PLAY_STORE.md) for details.
 
 ## Contributing
 
-Bug reports, ideas and pull requests are all welcome. If something broke, the most useful thing you can send is what you asked Saturn to do and what happened.
+Bug reports, feature ideas, and pull requests are welcome. For bug reports, include what you asked Saturn to do and what happened.
 
 ## Thanks
 
-Saturn stands on other people's great work: [Pi](https://pi.dev) by Earendil Works, [Node.js](https://nodejs.org), [npm](https://github.com/npm/cli), the [Termux](https://github.com/termux) packages and terminal view, and the Inter and JetBrains Mono fonts. See [THIRD_PARTY.md](THIRD_PARTY.md). Saturn isn't affiliated with Earendil Works or Termux.
+Saturn is built on the work of others:
+
+- [Pi](https://pi.dev) by Earendil Works, the agent harness that runs every task
+- [Node.js](https://nodejs.org) and [npm](https://github.com/npm/cli)
+- [Termux](https://github.com/termux) packages and terminal view
+- Inter and JetBrains Mono fonts
+
+See [THIRD_PARTY.md](THIRD_PARTY.md) for licenses. Saturn is not affiliated with Earendil Works or Termux.
 
 ## License
 
-[Apache-2.0](LICENSE) for Saturn's own code. Bundled pieces keep their own licenses.
+[Apache-2.0](LICENSE) for Saturn's own code. Bundled components retain their respective licenses.

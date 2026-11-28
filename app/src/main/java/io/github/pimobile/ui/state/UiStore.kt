@@ -80,6 +80,8 @@ class TaskUi(val task: TaskManager.Task) {
     /** Editing your last message: the next send replaces it (and Saturn answers the new version). */
     var editingLast by mutableStateOf(false)
     var thinkingLevel by mutableStateOf<String?>(null)
+    /** The model this chat's pi is on ("provider/id"), once it has said. */
+    var model by mutableStateOf<String?>(null)
     /** Stop was pressed; cleared when the run ends. */
     var stopping by mutableStateOf(false)
     /** Bumped whenever the transcript is replaced from pi's history. */
@@ -150,6 +152,11 @@ object UiStore : TaskManager.Listener {
         project = prefs.getString("project", null)?.let { File(it) }
         TaskManager.tasks.forEach { ui(it) }
         TaskManager.addListener(this)
+        TaskManager.startupCommands = { startupCommands(it) }
+        // The open chat keeps its pi; the others end theirs after a few idle minutes (TaskManager.sweep).
+        TaskManager.onScreen = { it.id == openTaskId }
+        recentModels = prefs.getString("recentModels", null)?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+        favoriteModels = prefs.getString("favoriteModels", null)?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
     }
 
     /** pi provider id for each key env var the old Settings → API keys section stored. */
@@ -439,6 +446,7 @@ object UiStore : TaskManager.Listener {
     fun setModel(ui: TaskUi?, provider: String, id: String) {
         model = "$provider/$id"
         prefs.edit().putString("model", model).apply()
+        noteRecent("$provider/$id")
         writeSettings { it.put("defaultProvider", provider).put("defaultModel", id) }
         ui?.let { TaskManager.command(it.task, JSONObject().put("type", "set_model").put("provider", provider).put("modelId", id)) }
     }
@@ -450,18 +458,155 @@ object UiStore : TaskManager.Listener {
         ui?.let { it.thinkingLevel = level; TaskManager.command(it.task, JSONObject().put("type", "set_thinking_level").put("level", level)) }
     }
 
-    /** A task whose session remembers another model or level is brought in line with the defaults. */
+    /**
+     * A task whose session remembers another model or level is brought in line with what it should use:
+     * its own chat choice, else its project's, else the app-wide default.
+     */
     private fun align(ui: TaskUi, state: JSONObject) {
         val m = state.optJSONObject("model")
         val current = m?.let { "${it.optString("provider")}/${it.optString("id")}" }
-        val want = model
+        val want = wantedModel(ui.task)
         if (want != null && current != null && current != want && m.optString("id") != "unknown") {
             TaskManager.command(ui.task, JSONObject().put("id", "align-model").put("type", "set_model")
                 .put("provider", want.substringBefore('/')).put("modelId", want.substringAfter('/')))
         }
-        val level = thinkingDefault
+        val level = wantedThinking(ui.task)
         if (level != null && state.optString("thinkingLevel").let { it.isNotBlank() && it != level }) {
             TaskManager.command(ui.task, JSONObject().put("id", "align-thinking").put("type", "set_thinking_level").put("level", level))
+        }
+    }
+
+    // ------------------------------------------------ per chat and per project model / thinking
+
+    /** A model and/or thinking level picked for one chat or one project; null fields follow the next level up. */
+    data class Choice(val model: String? = null, val thinking: String? = null) {
+        val isEmpty get() = model == null && thinking == null
+    }
+
+    /** Models picked lately (newest first), shown at the top of the popup. */
+    var recentModels by mutableStateOf<List<String>>(emptyList())
+        private set
+    fun noteRecent(m: String) {
+        recentModels = (listOf(m) + recentModels.filter { it != m }).take(5)
+        prefs.edit().putString("recentModels", recentModels.joinToString("\n")).apply()
+    }
+
+    /** Models you starred: always at the top of the model lists, in the order you starred them. */
+    var favoriteModels by mutableStateOf<List<String>>(emptyList())
+        private set
+    fun toggleFavorite(m: String) {
+        favoriteModels = if (m in favoriteModels) favoriteModels - m else favoriteModels + m
+        prefs.edit().putString("favoriteModels", favoriteModels.joinToString("\n")).apply()
+    }
+
+    /** Bumped on every change so screens showing choices recompose. */
+    var choices by mutableStateOf(0)
+        private set
+
+    private fun readChoice(key: String): Choice = prefs.getString(key, null)
+        ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        ?.let { Choice(it.optString("model").ifBlank { null }, it.optString("thinking").ifBlank { null }) } ?: Choice()
+
+    private fun writeChoice(key: String, c: Choice) {
+        if (c.isEmpty) prefs.edit().remove(key).apply()
+        else prefs.edit().putString(key, JSONObject().apply { c.model?.let { put("model", it) }; c.thinking?.let { put("thinking", it) } }.toString()).apply()
+        choices++
+    }
+
+    /** The project folder a task's folder belongs to (General is the projects folder itself). */
+    fun projectOf(cwd: File): File {
+        val root = runtime.projects.absoluteFile.normalize(); val c = cwd.absoluteFile.normalize()
+        val rel = runCatching { c.relativeTo(root).path }.getOrNull()
+        return when { rel == null || rel.startsWith("..") -> c; rel.isEmpty() -> root; else -> File(root, rel.substringBefore('/')) }
+    }
+
+    private fun projectKey(dir: File) = "proj:" + projectOf(dir).path
+    private fun chatKey(id: String) = "chat:$id"
+
+    /** Read in composition: also subscribes to changes. */
+    fun projectChoice(dir: File): Choice { choices; return readChoice(projectKey(dir)) }
+    fun chatChoice(ui: TaskUi): Choice { choices; return readChoice(chatKey(ui.task.id)) }
+
+    // Safe off the main thread (TaskManager's startup hook).
+    fun wantedModel(task: TaskManager.Task): String? =
+        readChoice(chatKey(task.id)).model ?: readChoice(projectKey(task.cwd)).model ?: model
+    fun wantedThinking(task: TaskManager.Task): String? =
+        readChoice(chatKey(task.id)).thinking ?: readChoice(projectKey(task.cwd)).thinking ?: thinkingDefault
+
+    /** Where a chat's model / level comes from, for the little label in the popup. */
+    enum class Source { CHAT, PROJECT, DEFAULT }
+    fun modelSource(ui: TaskUi): Source = when {
+        chatChoice(ui).model != null -> Source.CHAT
+        projectChoice(ui.task.cwd).model != null -> Source.PROJECT
+        else -> Source.DEFAULT
+    }
+    fun thinkingSource(ui: TaskUi): Source = when {
+        chatChoice(ui).thinking != null -> Source.CHAT
+        projectChoice(ui.task.cwd).thinking != null -> Source.PROJECT
+        else -> Source.DEFAULT
+    }
+
+    /**
+     * Picks a model and/or thinking level from inside a chat. [forProject]: every chat in its project uses it
+     * (this chat stops having its own); otherwise only this chat. Running chats switch now, others when they start.
+     */
+    fun chooseInChat(ui: TaskUi, model: String? = null, thinking: String? = null, forProject: Boolean) {
+        val chat = readChoice(chatKey(ui.task.id))
+        if (forProject) {
+            val p = readChoice(projectKey(ui.task.cwd))
+            writeChoice(projectKey(ui.task.cwd), p.copy(model = model ?: p.model, thinking = thinking ?: p.thinking))
+            writeChoice(chatKey(ui.task.id), chat.copy(model = if (model != null) null else chat.model, thinking = if (thinking != null) null else chat.thinking))
+            applyToProject(ui.task.cwd)
+        } else {
+            writeChoice(chatKey(ui.task.id), chat.copy(model = model ?: chat.model, thinking = thinking ?: chat.thinking))
+            applyTo(ui)
+        }
+    }
+
+    /** The project switch in the popup: moves this chat's choice up to its project, or back down to just this chat. */
+    fun setChatFollowsProject(ui: TaskUi, on: Boolean) {
+        val m = ui.model ?: wantedModel(ui.task); val l = ui.thinkingLevel ?: wantedThinking(ui.task)
+        if (on) {
+            writeChoice(projectKey(ui.task.cwd), Choice(m, l))
+            writeChoice(chatKey(ui.task.id), Choice())
+            applyToProject(ui.task.cwd)
+        } else writeChoice(chatKey(ui.task.id), Choice(m, l))
+    }
+
+    /** From Home: the project's own model / level (null field = keep what it had). */
+    fun chooseForProject(dir: File, model: String? = null, thinking: String? = null) {
+        val p = readChoice(projectKey(dir))
+        writeChoice(projectKey(dir), p.copy(model = model ?: p.model, thinking = thinking ?: p.thinking))
+        applyToProject(dir)
+    }
+
+    /** Back to the app-wide default: the project's choice, or this chat's. */
+    fun resetProject(dir: File) { writeChoice(projectKey(dir), Choice()); applyToProject(dir) }
+    fun resetChat(ui: TaskUi) { writeChoice(chatKey(ui.task.id), Choice()); applyTo(ui) }
+
+    private fun applyToProject(dir: File) {
+        val key = projectKey(dir)
+        tasks.filter { projectKey(it.task.cwd) == key }.forEach { applyTo(it) }
+    }
+
+    /** Switches a chat whose pi is up; one that isn't gets it when it starts ([startupCommands]). */
+    private fun applyTo(ui: TaskUi) {
+        if (!TaskManager.isLive(ui.task)) return
+        val m = wantedModel(ui.task); val l = wantedThinking(ui.task)
+        if (m != null && m != ui.model) TaskManager.command(ui.task, JSONObject().put("id", "align-model").put("type", "set_model")
+            .put("provider", m.substringBefore('/')).put("modelId", m.substringAfter('/')))
+        if (l != null && l != ui.thinkingLevel) TaskManager.command(ui.task, JSONObject().put("id", "align-thinking").put("type", "set_thinking_level").put("level", l))
+    }
+
+    /**
+     * Sent before anything else when a chat's pi starts, so even its first message uses the chat's or
+     * project's choice (pi itself only knows the app-wide default).
+     */
+    fun startupCommands(task: TaskManager.Task): List<JSONObject> {
+        val chat = readChoice(chatKey(task.id)); val proj = readChoice(projectKey(task.cwd))
+        return buildList {
+            (chat.model ?: proj.model)?.let { m -> add(JSONObject().put("type", "set_model").put("provider", m.substringBefore('/')).put("modelId", m.substringAfter('/'))) }
+            (chat.thinking ?: proj.thinking)?.let { add(JSONObject().put("type", "set_thinking_level").put("level", it)) }
         }
     }
 
@@ -601,6 +746,7 @@ object UiStore : TaskManager.Listener {
 
     fun delete(ui: TaskUi) {
         deleted += ui.task.id
+        prefs.edit().remove(chatKey(ui.task.id)).apply()
         BrowserManager.close(ui.task.id)
         TaskManager.delete(ui.task)
         tasks.remove(ui); byId.remove(ui.task.id)
@@ -954,6 +1100,8 @@ object UiStore : TaskManager.Listener {
             "get_state" -> {
                 data?.optJSONObject("model")?.optInt("contextWindow", 0)?.takeIf { it > 0 }?.let { ui.contextWindow = it }
                 data?.optString("thinkingLevel")?.takeIf { it.isNotBlank() }?.let { ui.thinkingLevel = it }
+                data?.optJSONObject("model")?.takeIf { it.optString("id").let { id -> id.isNotBlank() && id != "unknown" } }
+                    ?.let { ui.model = "${it.optString("provider")}/${it.optString("id")}" }
                 data?.optString("sessionId")?.let { TaskManager.setSessionId(ui.task, it) }
                 // The header shows the app-wide default; tasks follow it rather than redefining it.
                 if (model == null) data?.optJSONObject("model")?.let { m ->
@@ -969,7 +1117,7 @@ object UiStore : TaskManager.Listener {
                 TaskManager.command(ui.task, JSONObject().put("type", "get_messages"))
             }
             "set_thinking_level" -> if (!r.optString("id").startsWith("align")) TaskManager.command(ui.task, JSONObject().put("type", "get_state"))
-            "set_model" -> if (!r.optString("id").startsWith("align")) data?.let { model = "${it.optString("provider")}/${it.optString("id")}" }
+            "set_model" -> data?.let { ui.model = "${it.optString("provider")}/${it.optString("id")}" }
             "get_commands" -> data?.optJSONArray("commands")?.let { a ->
                 commands = (0 until a.length()).map { a.getJSONObject(it) }
                     .filterNot { it.optString("name").startsWith("pimobile-") } // the app's own bridge commands

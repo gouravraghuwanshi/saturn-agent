@@ -39,21 +39,6 @@ android {
         }
     }
 
-    // Two builds from one codebase:
-    //  github: everything (GitHub Releases / F-Droid)
-    //  play:   Google Play policy: no contacts, node never loads downloaded native add-ons
-    flavorDimensions += "store"
-    productFlavors {
-        create("github") {
-            dimension = "store"
-            buildConfigField("boolean", "PLAY", "false")
-        }
-        create("play") {
-            dimension = "store"
-            buildConfigField("boolean", "PLAY", "true")
-        }
-    }
-
     buildFeatures { compose = true; buildConfig = true }
 
     externalNativeBuild {

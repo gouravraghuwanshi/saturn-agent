@@ -346,14 +346,16 @@ fun HomeScreen(
                     .clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Saturn menu") { sheet = "saturn" }, contentAlignment = Alignment.Center) {
                     SaturnMark(Modifier.size(28.dp))
                 }
-                Column(Modifier.weight(1f).clickable { sheet = "model" }) {
+                Column(Modifier.weight(1f).clickable { sheet = if (UiStore.projectChoice(projectDir).model != null) "projectModel" else "model" }) {
                     // The wordmark in the app's own mono face, tracked out, with a faint phosphor glow (none on paper).
                     Text("SATURN", style = Ph.mono.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ph.Text,
                         letterSpacing = 0.32.em, shadow = if (Ph.paper) null else androidx.compose.ui.graphics.Shadow(Ph.Amber.copy(alpha = 0.55f), blurRadius = 14f)))
-                    val label = io.github.pimobile.ui.state.modelLabel(UiStore.model)
+                    val projChoice = UiStore.projectChoice(projectDir)
+                    val label = io.github.pimobile.ui.state.modelLabel(projChoice.model ?: UiStore.model)
                     if (label != null) Text(androidx.compose.ui.text.buildAnnotatedString {
                         withStyle(androidx.compose.ui.text.SpanStyle(color = Ph.TextSoft)) { append(label.first) }
                         append(" · ${label.second}")
+                        if (projChoice.model != null) withStyle(androidx.compose.ui.text.SpanStyle(color = Ph.Amber)) { append(" · $projectLabel") }
                     }, style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) else Text(if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "auto model" else "not signed in · /login",
                         style = Ph.monoSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -366,8 +368,12 @@ fun HomeScreen(
             io.github.pimobile.ui.components.BrokenPackageBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
             // ---- project switcher: the list below is this project's tasks
             @Composable fun ProjectRow(modifier: Modifier) = Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val projHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
                 Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
-                    .clickable(onClickLabel = "Switch project") { sheet = "project" }.padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    // Tap: switch project. Long-press: this project's model and thinking level.
+                    .combinedClickable(onClickLabel = "Switch project", onLongClickLabel = "Model and thinking for this project",
+                        onLongClick = { projHaptics.buzz(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); sheet = "projectModel" }) { sheet = "project" }
+                    .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PhIcon(PhIcons.Folder, Ph.Amber, 16.dp)
                     Text(projectLabel, style = Ph.mono.copy(color = Ph.Text, fontWeight = FontWeight.SemiBold), maxLines = 1,
@@ -513,7 +519,10 @@ fun HomeScreen(
                 value = input, onValue = { input = it },
                 attachments = attachments.toList(), attach = pick, onRemoveAttachment = { attachments.remove(it) },
                 focus = homeFocus, acceptVoiceRequest = true,
-                thinking = ThinkingControl(UiStore.thinkingDefault, THINKING_LEVELS) { UiStore.setThinking(null, it) },
+                // A project with its own level shows and changes that; otherwise it's the app-wide default.
+                thinking = UiStore.projectChoice(projectDir).thinking.let { own ->
+                    ThinkingControl(own ?: UiStore.thinkingDefault, THINKING_LEVELS) {
+                        if (own != null) UiStore.chooseForProject(projectDir, thinking = it) else UiStore.setThinking(null, it) } },
                 placeholder = "Ask Saturn to do something…",
                 commands = commands,
                 onSend = { text ->
@@ -548,6 +557,7 @@ fun HomeScreen(
         "settings" -> SettingsSheet { sheet = null }
         "model" -> ModelSheet(null) { sheet = null }
         "project" -> ProjectSheet(projectDir, { selected.clear(); UiStore.selectProject(it) }) { sheet = null }
+        "projectModel" -> ModelPopup(ChoiceTarget.Project(projectDir, projectLabel)) { sheet = null }
         "login" -> LoginSheet(initialQuery = loginArg) { sheet = null }
         "logout" -> LoginSheet(logoutMode = true) { sheet = null }
         "resume" -> ResumeSheet(onOpen = { onOpen(it) }) { sheet = null }

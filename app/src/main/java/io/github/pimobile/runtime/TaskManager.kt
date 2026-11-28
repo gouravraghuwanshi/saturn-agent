@@ -35,6 +35,10 @@ object TaskManager {
         @Volatile var archived = false
         @Volatile var lastActivity: String = ""
         internal var session: PiSession? = null
+        /** Last time anything was sent to or heard from its pi. */
+        @Volatile internal var lastUsed = System.currentTimeMillis()
+        /** Its pi was ended for being idle (not stopped by the user): the status stays as it was. */
+        @Volatile internal var sleeping = false
     }
 
     fun interface Listener {
@@ -59,6 +63,7 @@ object TaskManager {
         if (::app.isInitialized) return
         app = context.applicationContext
         load()
+        main.postDelayed(sweeper, 60_000L)
     }
 
     fun addListener(l: Listener) = listeners.add(l)
@@ -94,6 +99,7 @@ object TaskManager {
     /** Continue a task's conversation; starts/resumes its process if needed. */
     fun send(task: Task, text: String, images: JSONArray? = null) {
         if (task.archived) { task.archived = false; save() } // continuing it brings it back
+        task.lastUsed = System.currentTimeMillis()
         io.execute {
             ensureSession(task)
             val cmd = JSONObject().put("type", "prompt").put("message", text)
@@ -102,6 +108,46 @@ object TaskManager {
             if (task.status == Status.RUNNING) cmd.put("streamingBehavior", "steer")
             task.session?.send(cmd)
         }
+    }
+
+    /** pi is up for this task (a command to it won't start it). */
+    fun isLive(task: Task) = task.session?.isAlive == true
+
+    /**
+     * Commands run, in order and waited for, right after a task's pi starts and before anything else is
+     * sent to it (the chat's or project's model and thinking level). Failures are ignored.
+     */
+    @Volatile var startupCommands: ((Task) -> List<JSONObject>)? = null
+
+    // ------------------------------------------------ idle chats give their memory back
+
+    /** An idle chat's pi (a Node process, ~100 MB) is ended after this long; its next message starts it again. */
+    private const val IDLE_MS = 4 * 60_000L
+    /** At most this many idle chats keep their pi running (most recently used first). */
+    private const val MAX_WARM = 2
+
+    /** The chat on screen keeps its pi, however long it's idle. Set by the UI. */
+    @Volatile var onScreen: (Task) -> Boolean = { false }
+
+    private val sweeper = object : Runnable {
+        override fun run() { sweep(); main.postDelayed(this, 60_000L) }
+    }
+
+    private fun sweep() {
+        val now = System.currentTimeMillis()
+        val idle = tasks.filter { it.session?.isAlive == true && it.status == Status.IDLE && !onScreen(it) }
+            .sortedByDescending { it.lastUsed }
+        idle.forEachIndexed { i, t -> if (i >= MAX_WARM || now - t.lastUsed > IDLE_MS) sleep(t) }
+    }
+
+    /** Ends an idle chat's pi quietly: nothing on screen changes, and the next message (or opening it) restarts it. */
+    private fun sleep(task: Task) = io.execute {
+        val s = task.session ?: return@execute
+        if (task.status != Status.IDLE || onScreen(task)) return@execute
+        task.sleeping = true
+        if (task.session === s) task.session = null
+        s.stop()
+        emit(task, null, "pi ended to save memory (idle); it restarts with the next message")
     }
 
     fun command(task: Task, cmd: JSONObject) = io.execute {
@@ -282,12 +328,14 @@ object TaskManager {
 
     private fun ensureSession(task: Task, quiet: Boolean = false) {
         if (task.session?.isAlive == true) return
+        task.sleeping = false
+        task.lastUsed = System.currentTimeMillis()
         if (!quiet) setStatus(task, Status.STARTING)
         val session = PiSession(runtime, task.sessionId, task.cwd, object : PiSession.Listener {
             override fun onRecord(record: JSONObject) = handle(task, record)
             override fun onLog(line: String) = emit(task, null, line)
             override fun onExit(code: Int) {
-                if (task.session?.isAlive != true) {
+                if (task.session?.isAlive != true && !task.sleeping) {
                     setStatus(task, if (code == 0 || task.status == Status.STOPPED) Status.STOPPED else Status.FAILED)
                 }
                 emit(task, null, "pi exited ($code)")
@@ -296,6 +344,7 @@ object TaskManager {
         task.session = session
         try {
             session.start(envFor(task))
+            startupCommands?.invoke(task)?.forEach { c -> runCatching { request(task, c, timeoutSec = 15) } }
             if (!quiet || task.status == Status.STARTING || task.status == Status.FAILED) setStatus(task, Status.IDLE)
             migrateSessionId(task)
             emit(task, JSONObject().put("type", SESSION_STARTED), null)
@@ -327,6 +376,7 @@ object TaskManager {
     }
 
     private fun handle(task: Task, r: JSONObject) {
+        task.lastUsed = System.currentTimeMillis()
         if (r.optString("type") == "response") waiters[r.optString("id")]?.let { it.complete(r); return }
         when (r.optString("type")) {
             "agent_start" -> setStatus(task, Status.RUNNING)

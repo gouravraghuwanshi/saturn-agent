@@ -322,12 +322,13 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     var loginArg by remember { mutableStateOf("") }
     // pi's built-in commands, mapped to RPC, the pimobile-app extension or native screens.
     val builtins = listOf(
-        Builtin("model", "Switch model (saved as your default)", args = true) { a ->
-            if (a.contains('/')) UiStore.setModel(t, a.substringBefore('/'), a.substringAfter('/')) else sheet = "model" },
-        Builtin("thinking", "Set the thinking level (saved as your default)", args = true) { a ->
-            if (a.isNotBlank()) UiStore.setThinking(t, a.trim()) else sheet = "thinking" },
+        Builtin("model", "Switch model for this chat (or its project)", args = true) { a ->
+            if (a.contains('/')) { UiStore.noteRecent(a.trim()); UiStore.chooseInChat(t, model = a.trim(), forProject = UiStore.modelSource(t) == UiStore.Source.PROJECT) }
+            else sheet = "model" },
+        Builtin("thinking", "Set the thinking level for this chat (or its project)", args = true) { a ->
+            if (a.isNotBlank()) UiStore.chooseInChat(t, thinking = a.trim(), forProject = UiStore.thinkingSource(t) == UiStore.Source.PROJECT) else sheet = "model" },
         Builtin("effort", "Same as /thinking", args = true) { a ->
-            if (a.isNotBlank()) UiStore.setThinking(t, a.trim()) else sheet = "thinking" },
+            if (a.isNotBlank()) UiStore.chooseInChat(t, thinking = a.trim(), forProject = UiStore.thinkingSource(t) == UiStore.Source.PROJECT) else sheet = "model" },
         Builtin("login", "Sign in to a provider (subscriptions, API keys)", args = true) { a -> loginArg = a; sheet = "login" },
         Builtin("logout", "Remove a provider credential") { sheet = "logout" },
         Builtin("new", "Start a fresh session in this task") { UiStore.rpc(t, "new_session") },
@@ -440,7 +441,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(t, tab, showBrowserTab, collapse, onSaturn = { glowAt = it },
-                    onModel = { sheet = "model" }, onThinking = { sheet = "thinking" },
+                    onModel = { sheet = "model" }, onThinking = { sheet = "model" },
                     onTab = { tab = it; if (it != "browser") holdBrowser = false },
                     onBack = { if (tab != "chat") tab = "chat" else onBack() }, onMenu = { sheet = "menu" },
                     lampOpen = lampOpen, onLamp = { lampOpen = it; lampTouch = System.currentTimeMillis() })
@@ -657,7 +658,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     }
                     val pick = rememberAttachPicker { attachments.addAll(it) }
                     // What this model can think at; asked again whenever the model changes.
-                    LaunchedEffect(UiStore.model) { UiStore.rpc(t, "get_available_thinking_levels") }
+                    LaunchedEffect(t.model) { UiStore.rpc(t, "get_available_thinking_levels") }
                     val thinkLevels = t.responses["get_available_thinking_levels"]?.optJSONArray("levels")
                         ?.let { a -> (0 until a.length()).map { a.getString(it) } }
                     Composer(
@@ -667,7 +668,8 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                                 note = t.contextWindow.takeIf { it > 0 }?.let { w -> "${(t.contextTokens * 100L / w)}% full" }) { UiStore.rpc(t, "compact") })
                             if (t.items.isNotEmpty()) add(PullAction(PhIcons.Share, "Share", "Release to share", note = "as markdown") { shareMarkdown(ctx, t) })
                         },
-                        thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l -> UiStore.setThinking(t, l) } },
+                        thinking = thinkLevels?.let { ThinkingControl(t.thinkingLevel, it) { l ->
+                            UiStore.chooseInChat(t, thinking = l, forProject = UiStore.thinkingSource(t) == UiStore.Source.PROJECT) } },
                         value = input, onValue = { input = it },
                         placeholder = "Ask Saturn · task #${t.task.number}…",
                         commands = commands,
@@ -712,12 +714,12 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
     }
 
     when (sheet) {
-        "model" -> ModelSheet(t) { sheet = null }
+        "model" -> ModelPopup(ChoiceTarget.Chat(t)) { sheet = null }
         "rename" -> RenameSheet(t) { sheet = null }
         "settings" -> SettingsSheet { sheet = null }
         "login" -> LoginSheet(initialQuery = loginArg) { sheet = null }
         "logout" -> LoginSheet(logoutMode = true) { sheet = null }
-        "thinking" -> ThinkingSheet(t) { sheet = null }
+        "thinking" -> ModelPopup(ChoiceTarget.Chat(t)) { sheet = null }
         "session" -> SessionSheet(t) { sheet = null }
         "tree" -> TreeSheet(t) { sheet = null }
         "fork" -> ForkSheet(t) { sheet = null }
@@ -727,7 +729,7 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
             fun cmd(name: String) = { builtins.first { it.name == name }.run("") }
             TaskMenuSheet(t, buildList {
                 add(MenuAction("Rename", PhIcons.Pencil) { sheet = "rename" })
-                add(MenuAction("Model", PhIcons.Cube, hint = io.github.pimobile.ui.state.modelLabel(UiStore.model)?.first) { sheet = "model" })
+                add(MenuAction("Model", PhIcons.Cube, hint = io.github.pimobile.ui.state.modelLabel(t.model ?: UiStore.model)?.first) { sheet = "model" })
                 add(MenuAction("Session info", PhIcons.Info) { sheet = "session" })
                 add(MenuAction("Session tree", PhIcons.Branch) { sheet = "tree" })
                 add(MenuAction("Copy last reply", PhIcons.Copy, run = cmd("copy")))
@@ -796,7 +798,8 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 val helpers by remember(t) { androidx.compose.runtime.derivedStateOf { Shapes.liveHelpers(t.items) } }
                 MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT, helpers = helpers, modifier =
-                    Modifier.width(118.dp).onGloballyPositioned { c -> onSaturn(c.boundsInRoot().center) })
+                    Modifier.width(118.dp).onGloballyPositioned { c -> onSaturn(c.boundsInRoot().center) }
+                        .clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Model and thinking for this chat") { onModel() })
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (running || t.status == Status.NEEDS_INPUT) PulseDot(tint, 7)
@@ -813,7 +816,11 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
                     // What used to sit under the message box: model and thinking (tap to change), context size.
                     Row(Modifier.offset(x = (-6).dp), verticalAlignment = Alignment.CenterVertically) {
                         val tap = Modifier.clip(RoundedCornerShape(8.dp))
-                        Text(io.github.pimobile.ui.state.modelLabel(UiStore.model)?.first ?: "model", style = Ph.monoSmall.copy(color = Ph.Amber),
+                        // A small mark when this chat doesn't use the app-wide default: a folder (its project's) or a dot (its own).
+                        val src = listOf(UiStore.modelSource(t), UiStore.thinkingSource(t))
+                        if (UiStore.Source.CHAT in src) Box(Modifier.padding(start = 6.dp).size(5.dp).clip(RoundedCornerShape(3.dp)).background(Ph.Amber))
+                        else if (UiStore.Source.PROJECT in src) PhIcon(PhIcons.Folder, Ph.Amber, 11.dp, "Project setting", Modifier.padding(start = 6.dp))
+                        Text(io.github.pimobile.ui.state.modelLabel(t.model ?: UiStore.model)?.first ?: "model", style = Ph.monoSmall.copy(color = Ph.Amber),
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false).then(tap).clickable(onClickLabel = "Change model") { onModel() }.padding(horizontal = 6.dp, vertical = 6.dp))
                         t.thinkingLevel?.let {
@@ -1057,7 +1064,7 @@ private fun toolSummary(tools: List<Item.Tool>, running: Boolean): String {
 private fun ModelLine(t: TaskUi, onModel: () -> Unit, onThinking: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         val tap = Modifier.clip(RoundedCornerShape(8.dp))
-        Text(io.github.pimobile.ui.state.modelLabel(UiStore.model)?.first ?: "model", style = Ph.monoSmall, maxLines = 1,
+        Text(io.github.pimobile.ui.state.modelLabel(t.model ?: UiStore.model)?.first ?: "model", style = Ph.monoSmall, maxLines = 1,
             modifier = tap.clickable(onClickLabel = "Change model") { onModel() }.padding(horizontal = 8.dp, vertical = 8.dp))
         t.thinkingLevel?.let {
             Text("·", style = Ph.monoSmall)

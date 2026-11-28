@@ -103,35 +103,17 @@ internal fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () -
 
 @Composable
 fun ModelSheet(task: TaskUi?, onDismiss: () -> Unit) {
-    var query by remember { mutableStateOf("") }
+    var custom by remember { mutableStateOf("") }
     // Always ask fresh: a sign-in since the last look adds models.
     LaunchedEffect(Unit) { io.github.pimobile.ui.state.Control.loadModels() }
-    // Newest first: compare ids by their numbers (gpt-5.5 > gpt-4o > gpt-4), the default's provider on top.
-    val models = UiStore.models.filter { (p, id) -> "$p/$id".contains(query, ignoreCase = true) }
-        .sortedWith(compareBy<Pair<String, String>> { if (it.first == UiStore.model?.substringBefore('/')) 0 else 1 }
-            .thenBy { it.first }.then { a, b -> versionCompare(b.second, a.second) })
-        .take(200)
     PhSheet(onDismiss) {
-        SheetTitle("Model", UiStore.model?.let { "Current: $it" } ?: "pi chooses a default from your keys")
-        Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { Field(query, { query = it }, "search or provider/model-id") }
-        if (UiStore.models.isEmpty()) Text(
-            if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty()) "Loading models…"
-            else "Sign in first (/login) — or type provider/model-id and tap Use.",
-            style = Ph.body.copy(color = Ph.Muted, fontSize = 13.sp), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-        if (query.contains('/') && models.isEmpty()) Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-            PrimaryButton("Use $query") {
-                UiStore.setModel(task, query.substringBefore('/'), query.substringAfter('/')); onDismiss()
-            }
-        }
-        LazyColumn(Modifier.heightIn(max = 420.dp)) {
-            items(models, key = { "${it.first}/${it.second}" }) { (p, id) ->
-                val current = UiStore.model == "$p/$id"
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { UiStore.setModel(task, p, id); onDismiss() }
-                    .padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(id, style = Ph.mono.copy(fontSize = 13.sp, color = if (current) Ph.Amber else Ph.Text),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(p, style = Ph.monoSmall)
-                }
+        SheetTitle("Default model", UiStore.model?.let { "Current: $it" } ?: "pi chooses a default from your keys")
+        ModelList(UiStore.model) { m -> UiStore.setModel(task, m.substringBefore('/'), m.substringAfter('/')); onDismiss() }
+        // A model the provider doesn't list (yet): type its id.
+        Box(Modifier.padding(horizontal = 20.dp).padding(top = 10.dp)) { Field(custom, { custom = it }, "or type provider/model-id") }
+        if (custom.trim().let { it.contains('/') && !it.endsWith('/') }) Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            PrimaryButton("Use ${custom.trim()}") {
+                UiStore.setModel(task, custom.trim().substringBefore('/'), custom.trim().substringAfter('/')); onDismiss()
             }
         }
     }
@@ -326,7 +308,7 @@ fun TaskMenuSheet(task: TaskUi, actions: List<MenuAction>, onDismiss: () -> Unit
 
 
 /** Natural order on model ids: digit runs compare as numbers, so "gpt-5.5" > "gpt-5" > "gpt-4o". */
-private fun versionCompare(a: String, b: String): Int {
+internal fun versionCompare(a: String, b: String): Int {
     val ra = Regex("\\d+|\\D+").findAll(a.lowercase()).map { it.value }.toList()
     val rb = Regex("\\d+|\\D+").findAll(b.lowercase()).map { it.value }.toList()
     for (i in 0 until minOf(ra.size, rb.size)) {

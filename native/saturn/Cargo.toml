@@ -1,0 +1,19 @@
+[package]
+name = "saturn"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Saturn's small native tools: the phone-command bridge, jq, fold (one binary, picked by argv[0])"
+license = "Apache-2.0"
+
+[dependencies]
+jaq-core = "=3.1.2"
+jaq-std = "=3.0.4"
+jaq-json = "=2.0.3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

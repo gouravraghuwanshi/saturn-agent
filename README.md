@@ -50,19 +50,16 @@ The Jetpack Compose UI communicates with each `pi --mode rpc` child process over
 
 ## Build from source
 
-Prerequisites: JDK 17, Android SDK (platform 37, NDK r29), and Node.js/npm.
+Prerequisites: JDK 17, Android SDK (platform 37, NDK r29), Node.js/npm, and Rust (rustup with the `aarch64-linux-android` target).
 
 ```sh
 python3 -I runtime/import_termux.py   # toolchain -> jniLibs + assets (sha256-verified)
 runtime/build-pi-bundle.sh            # official Pi from npm -> assets/pi-bundle.zip
-./gradlew assembleGithubRelease
+runtime/build-saturn.sh               # Saturn's native tools (Rust) -> jniLibs/libx_saturn.so
+./gradlew assembleRelease
 ```
 
-Two build flavors share the codebase:
-- `github`: Full feature set (GitHub Releases / F-Droid).
-- `play`: Google Play policy compliant (no contacts permission, no downloaded native Node add-ons).
-
-See [RELEASING.md](RELEASING.md) and [store/PLAY_STORE.md](store/PLAY_STORE.md) for details.
+See [RELEASING.md](RELEASING.md) for signing and releases.
 
 ## Contributing
 

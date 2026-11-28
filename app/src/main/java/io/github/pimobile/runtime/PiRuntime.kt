@@ -146,7 +146,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         "CURL_CA_BUNDLE" to certs.path,
         "GIT_SSL_CAINFO" to certs.path,
         // Play build: node never loads native add-ons (.node machine code) from downloaded packages.
-        "NODE_OPTIONS" to if (io.github.pimobile.BuildConfig.PLAY) "--use-bundled-ca --no-addons" else "--use-bundled-ca",
+        "NODE_OPTIONS" to "--use-bundled-ca",
         // git
         "GIT_EXEC_PATH" to gitCore.path,
         "GIT_TEMPLATE_DIR" to File(usr, "share/git-core/templates").path,
@@ -189,7 +189,6 @@ class PiRuntime private constructor(private val ctx: Context) {
         val shims = mapOf(
             "xdg-open" to "printf '%s' \"${'$'}1\" | ${post("open")}",
             "termux-open-url" to "printf '%s' \"${'$'}1\" | ${post("open")}",
-            "termux-open" to "printf '%s' \"${'$'}1\" | ${post("open")}",
             "termux-clipboard-set" to "if [ ${'$'}# -gt 0 ]; then printf '%s' \"${'$'}*\"; else cat; fi | ${post("clipboard")}",
             "termux-clipboard-get" to "curl -fsS \"${'$'}PIMOBILE_BROWSER_URL/app/clipboard\"",
         )
@@ -215,9 +214,16 @@ class PiRuntime private constructor(private val ctx: Context) {
         val tools = listOf("jq", "fold", "pdftotext", "python", "python3", "pip", "pip3", "apt", "apt-get", "pkg")
             .associateWith { "exec \"${File(bin, "node").path}\" \"${toolsJs.path}\" $it \"${'$'}@\"" } +
             ("pi" to "exec \"${File(bin, "node").path}\" \"${piCli.path}\" \"${'$'}@\"")
+        // Saturn's native tool binary (native/saturn, Rust) answers most of these itself: phone commands go
+        // straight to the bridge (no shell + curl per call) and jq/fold run without starting Node. The
+        // scripts stay as the fallback for a build made without it.
+        val saturn = File(nativeDir, "libx_saturn.so")
+        val native = if (!saturn.exists()) emptySet() else shims.keys + device.keys + schedule.first +
+            listOf("jq", "fold", "python", "python3", "pip", "pip3", "apt", "apt-get", "pkg")
         for ((name, body) in shims + device + schedule + tools) {
             val f = File(bin, name)
             f.delete()
+            if (name in native) { Os.symlink(saturn.path, f.path); continue }
             f.writeText("#!/system/bin/sh\n[ -n \"${'$'}PIMOBILE_BROWSER_URL\" ] || { echo \"$name: not running inside Saturn\" >&2; exit 1; }\n$body\n")
             f.setExecutable(true, false)
         }
@@ -302,15 +308,24 @@ class PiRuntime private constructor(private val ctx: Context) {
             |· termux-tts-speak <text> · termux-notification -t <title> -c <text> [--id id] · termux-toast <text>
             |· termux-location [-p gps|network] [-r once|last] · termux-camera-info · termux-camera-photo [-c 0|1] [file.jpg]
             |· termux-microphone-record [-f file.m4a] [-l seconds] · termux-sensor -l | -s <name> [-n count]
-            |· ${if (io.github.pimobile.BuildConfig.PLAY) "" else "termux-contact-list · "}termux-wifi-connectioninfo · termux-clipboard-get / -set
-            |· termux-share <file> · termux-open-url <url> · termux-telephony-call <number> · termux-sms-send -n <number> <text>
+            |· termux-contact-list · termux-wifi-connectioninfo · termux-clipboard-get / -set
+            |· termux-share <file> · termux-open <file|url> (opens it in the right app) · termux-open-url <url>
+            |· termux-telephony-call <number> · termux-sms-send -n <number> <text>
+            |· saturn-apps [name] (apps on this phone) · saturn-open-app <name|package> · saturn-install <file.apk>
+            |· termux-wallpaper -f <image> [-l lock screen] · termux-brightness <0-255|auto> · termux-download [-t title] <url>
+            |· termux-media-scan <file> (show new photos/music in Gallery) · termux-media-player play <file>|pause|resume|stop|info
+            |· termux-setup-storage: links the phone's folders into ~/storage (shared, downloads, dcim, pictures, music,
+            |  movies, documents) once the user allows "All files access". Run it first when asked to work with the
+            |  phone's own files; if it says the user must allow it, tell them and stop.
+            |saturn-install, termux-brightness and termux-setup-storage open an Android screen where the user confirms;
+            |say so instead of retrying in a loop.
             |Photos and recordings without a file name are saved to the artifacts folder; the path is printed.
             |To silence the phone use `termux-volume ring 0` (and notification 0); to unmute set them back up (e.g. 10).
             |Unmuting needs the user's "Do Not Disturb access" (Settings → Permissions); when scheduling an unmute,
             |test it right away (or check with the user) so it doesn't fail silently later.
             |termux-telephony-call and termux-sms-send only open the dialer / messaging app filled in — the user
             |presses call or send themselves; say so. Use these only when the user's request needs them. The first
-            |use of the camera, microphone, location${if (io.github.pimobile.BuildConfig.PLAY) "" else " or contacts"} shows an Android permission prompt to the user.
+            |use of the camera, microphone, location or contacts shows an Android permission prompt to the user.
             |
             |## Scheduling (timers, reminders, cron)
             |To do something later or repeatedly, use `saturn-schedule` — it sets an Android alarm that runs even

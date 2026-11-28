@@ -71,6 +71,9 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Item(PhIcons.Sparkle, "Default model", UiStore.model?.substringAfter('/') ?: "Chosen automatically", tint = Ph.Amber) { open = "model" }
                 Divider()
                 Item(PhIcons.Clock, "Usage", "What you've spent and how many tokens, by model and task", tint = Ph.Amber) { UiStore.openRequest = USAGE; onDismiss() }
+                Divider()
+                Item(PhIcons.Speaker, "Voice", "Your phone's voice · " + String.format(java.util.Locale.US, "%.2f", io.github.pimobile.device.Voice.speed).trimEnd('0').trimEnd('.') + "x",
+                    tint = Ph.Amber) { open = "voice" }
             }
 
             Group("Connections") {
@@ -139,6 +142,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
     when (open) {
         "login" -> LoginSheet { open = null }
         "model" -> ModelSheet(null) { open = null }
+        "voice" -> VoiceSheet { open = null }
         "github" -> GitHubSheet { open = null }
         "computers" -> ComputersSheet { open = null }
         "permissions" -> PermissionsSheet { open = null }
@@ -164,7 +168,7 @@ private fun PermissionsSheet(onDismiss: () -> Unit) {
         add(Triple(PhIcons.Camera, "Camera", android.Manifest.permission.CAMERA))
         add(Triple(PhIcons.Mic, "Microphone", android.Manifest.permission.RECORD_AUDIO))
         add(Triple(PhIcons.External, "Location", android.Manifest.permission.ACCESS_FINE_LOCATION))
-        if (!io.github.pimobile.BuildConfig.PLAY) add(Triple(PhIcons.Folder, "Contacts", android.Manifest.permission.READ_CONTACTS))
+        add(Triple(PhIcons.Folder, "Contacts", android.Manifest.permission.READ_CONTACTS))
         if (android.os.Build.VERSION.SDK_INT >= 33) add(Triple(PhIcons.Info, "Notifications", android.Manifest.permission.POST_NOTIFICATIONS))
     }
     PhSheet(onDismiss) {
@@ -191,6 +195,28 @@ private fun PermissionsSheet(onDismiss: () -> Unit) {
             }) {
                 runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
             }
+        }
+        // Special access only Android's own screens can grant (the phone's files, brightness, installing apps).
+        Group(null) {
+            fun open(action: String) = runCatching { ctx.startActivity(android.content.Intent(action, android.net.Uri.parse("package:" + ctx.packageName))) }
+            val files = remember(tick) { io.github.pimobile.device.Extras.storageGranted() }
+            LaunchedEffect(files) { if (files) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { io.github.pimobile.device.Extras.linkStorage() } }
+            Item(PhIcons.Folder, "Files on this phone", "Downloads, photos and documents, in ~/storage", trailing = {
+                Text(if (files) "Allowed" else "Off", style = Ph.monoSmall.copy(color = if (files) Ph.Green else Ph.Muted))
+            }) {
+                if (android.os.Build.VERSION.SDK_INT >= 30) open(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                else io.github.pimobile.device.Permissions.request(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            Divider()
+            val write = remember(tick) { android.provider.Settings.System.canWrite(ctx) }
+            Item(PhIcons.Sparkle, "Modify system settings", "Lets Saturn change screen brightness", trailing = {
+                Text(if (write) "Allowed" else "Off", style = Ph.monoSmall.copy(color = if (write) Ph.Green else Ph.Muted))
+            }) { open(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS) }
+            Divider()
+            val install = remember(tick) { ctx.packageManager.canRequestPackageInstalls() }
+            Item(PhIcons.Cube, "Install apps", "Updates, and APKs Saturn builds for you (you confirm each)", trailing = {
+                Text(if (install) "Allowed" else "Off", style = Ph.monoSmall.copy(color = if (install) Ph.Green else Ph.Muted))
+            }) { open(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES) }
         }
         Text("Calls and texts only open the dialer or Messages filled in. You press call or send.",
             style = Ph.body.copy(fontSize = 12.5.sp, color = Ph.Muted), modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp))

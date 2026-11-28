@@ -5,4 +5,6 @@
     <files-path name="artifacts" path="home/artifacts/" />
     <!-- termux-share: any file in Saturn's home folder (projects, photos…). -->
     <files-path name="home" path="home/" />
+    <!-- termux-open / termux-share / saturn-install on the phone's storage (after termux-setup-storage). -->
+    <external-path name="storage" path="." />
 </paths>

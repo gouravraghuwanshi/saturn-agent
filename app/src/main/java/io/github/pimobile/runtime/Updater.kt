@@ -24,7 +24,7 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 /**
- * Updates from Saturn's GitHub releases (the GitHub build only; Play updates itself).
+ * Updates from Saturn's GitHub releases.
  * Checks at most once a day, downloads the new APK, makes sure it's Saturn signed with the
  * same key and newer than this one, then hands it to Android's installer.
  */
@@ -49,7 +49,7 @@ object Updater {
     var checkedAt by mutableStateOf(0L)
         private set
 
-    val supported get() = !BuildConfig.PLAY
+    val supported get() = true
     val current: String get() = BuildConfig.VERSION_NAME
 
     private lateinit var app: Context

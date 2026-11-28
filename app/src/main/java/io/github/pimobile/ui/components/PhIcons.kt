@@ -63,6 +63,9 @@ object PhIcons {
     val Import = stroke("M12 4v11M8 11l4 4 4-4", "M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3")
     val Check = stroke("M5 12l5 5 9-10", width = 2.4f)
     val Close = stroke("M6 6l12 12M18 6L6 18")
+    /** Favourite models: outline, and filled when it's a favourite. */
+    val Star = stroke("M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.75 1-5.8L3.5 9.7l5.9-.9z", width = 1.6f)
+    val StarFilled = fill("M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.75 1-5.8L3.5 9.7l5.9-.9z")
     val Key = stroke(circle(8f, 15f, 4f), "M11 12l9-9M17 6l3 3")
     val File = stroke("M7 3h7l5 5v13H7z", "M14 3v5h5")
     val Camera = stroke("M4 8h3l2-2.5h6L17 8h3v11H4z", circle(12f, 13f, 3.5f))

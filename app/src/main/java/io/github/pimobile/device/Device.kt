@@ -65,7 +65,7 @@ object Device {
         get() = prefs.getBoolean("enabled", true)
         set(v) { prefs.edit().putBoolean("enabled", v).apply() }
 
-    fun init(context: Context) { app = context.applicationContext }
+    fun init(context: Context) { app = context.applicationContext; Voice.init(app) }
 
     /** Commands, as the agent sees them (also listed in its system prompt). */
     val COMMANDS = listOf(
@@ -73,8 +73,10 @@ object Device {
         "termux-notification", "termux-notification-remove", "termux-toast", "termux-location",
         "termux-camera-info", "termux-camera-photo", "termux-microphone-record", "termux-sensor",
         "termux-wifi-connectioninfo", "termux-telephony-call", "termux-sms-send",
-        "termux-share",
-    ) + if (io.github.pimobile.BuildConfig.PLAY) emptyList() else listOf("termux-contact-list")
+        "termux-share", "termux-open", "termux-setup-storage", "termux-wallpaper", "termux-brightness",
+        "termux-media-scan", "termux-download", "termux-media-player", "saturn-apps", "saturn-open-app", "saturn-install",
+        "termux-contact-list",
+    )
 
     /**
      * Runs one command. [argv] is: the caller's working directory, its
@@ -104,11 +106,24 @@ object Device {
                 a.opt("f")?.let(::path) ?: File(artifacts ?: cwd, "recording-${stamp()}.m4a"),
                 (a.opt("l")?.toIntOrNull() ?: 10).coerceIn(1, 600))
             "termux-sensor" -> sensors(a.flag("l"), a.opt("s"), (a.opt("n")?.toIntOrNull() ?: 1).coerceIn(1, 50), a.flag("a"))
-            "termux-contact-list" -> if (io.github.pimobile.BuildConfig.PLAY) throw Fail("Contacts aren't available in this version of Saturn.") else contacts()
+            "termux-contact-list" -> contacts()
             "termux-wifi-connectioninfo" -> wifi()
             "termux-telephony-call" -> dial(a.positional.firstOrNull() ?: throw Fail("usage: termux-telephony-call <number>"))
             "termux-sms-send" -> sms(a.opt("n") ?: throw Fail("usage: termux-sms-send -n <number> <text>"), a.positional.joinToString(" "))
             "termux-share" -> a.opt("text")?.let(::shareText) ?: share(a.positional.firstOrNull()?.let(::path), a.opt("c"), a.opt("a") ?: "send")
+            "termux-open" -> a.positional.firstOrNull()?.let { t ->
+                if (Regex("^[a-z][a-z0-9+.-]*:.+", RegexOption.IGNORE_CASE).matches(t) && !t.startsWith("file:")) openUrl(t)
+                else share(path(t.removePrefix("file://")), a.opt("content-type"), if (a.flag("send")) "send" else "view")
+            } ?: throw Fail("usage: termux-open <file|url> [--send] [--content-type type]")
+            "termux-setup-storage" -> Extras.setupStorage()
+            "termux-wallpaper" -> Extras.wallpaper(a.opt("f")?.let(::path) ?: throw Fail("usage: termux-wallpaper -f <image> [-l]"), a.flag("l"))
+            "termux-brightness" -> Extras.brightness(a.positional.firstOrNull() ?: throw Fail("usage: termux-brightness <0-255|auto>"))
+            "termux-media-scan" -> Extras.mediaScan(a.positional.map(::path).ifEmpty { throw Fail("usage: termux-media-scan <file>...") })
+            "termux-download" -> Extras.download(a.positional.firstOrNull() ?: throw Fail("usage: termux-download [-t title] <url>"), a.opt("t"), a.opt("d"))
+            "termux-media-player" -> Extras.player(a.positional.getOrNull(0) ?: "info", a.positional.getOrNull(1)?.let(::path))
+            "saturn-apps" -> Extras.apps(a.positional.joinToString(" "))
+            "saturn-open-app" -> Extras.openApp(a.positional.joinToString(" ").ifBlank { throw Fail("usage: saturn-open-app <app name or package>") })
+            "saturn-install" -> Extras.install(a.positional.firstOrNull()?.let(::path) ?: throw Fail("usage: saturn-install <file.apk>"))
             else -> throw Fail("unknown command $cmd")
         }
     }
@@ -138,6 +153,7 @@ object Device {
 
     private val FLAGS = mapOf(
         "termux-vibrate" to setOf("f"), "termux-toast" to setOf("s"), "termux-sensor" to setOf("l", "a"),
+        "termux-wallpaper" to setOf("l"), "termux-open" to setOf("send"),
     )
 
     private fun stamp() = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
@@ -226,30 +242,10 @@ object Device {
         }).toString(2)
     }
 
-    private var tts: TextToSpeech? = null
-    private val ttsDone = mutableMapOf<String, CountDownLatch>()
-
-    private fun speak(text: String, rate: Float?, pitch: Float?): String {
+    /** termux-tts-speak: the voice chosen in Settings (natural or the phone's), until it's said. */
+    private fun speak(text: String, rate: Float?, @Suppress("UNUSED_PARAMETER") pitch: Float?): String {
         if (text.isBlank()) throw Fail("usage: termux-tts-speak <text>")
-        if (tts == null) {
-            val ready = CountDownLatch(1)
-            var ok = false
-            onMain { done -> tts = TextToSpeech(app) { ok = it == TextToSpeech.SUCCESS; ready.countDown() }; done() }
-            ready.await(10, TimeUnit.SECONDS)
-            if (!ok) { tts = null; throw Fail("No text-to-speech engine available") }
-            tts!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(id: String) {}
-                override fun onDone(id: String) { synchronized(ttsDone) { ttsDone.remove(id) }?.countDown() }
-                @Deprecated("") override fun onError(id: String) { synchronized(ttsDone) { ttsDone.remove(id) }?.countDown() }
-            })
-        }
-        val t = tts!!
-        val id = "u${SystemClock.uptimeMillis()}"
-        val latch = CountDownLatch(1)
-        synchronized(ttsDone) { ttsDone[id] = latch }
-        t.setSpeechRate(rate ?: 1f); t.setPitch(pitch ?: 1f)
-        t.speak(text, TextToSpeech.QUEUE_ADD, null, id)
-        latch.await((text.length / 8 + 15).toLong(), TimeUnit.SECONDS)
+        Voice.speakBlocking(text, rate)
         return ""
     }
 
@@ -446,7 +442,7 @@ object Device {
         } else {
             if (!file.isFile) throw Fail("No such file: $file")
             val uri = runCatching { FileProvider.getUriForFile(app, app.packageName + ".files", file) }
-                .getOrElse { throw Fail("Only files inside Saturn's home folder can be shared") }
+                .getOrElse { throw Fail("Saturn can only open or share files in its home folder, or on the phone's storage after termux-setup-storage") }
             val mime = type ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
             if (action == "view") Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
             else Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
@@ -454,6 +450,15 @@ object Device {
         startActivity(Intent.createChooser(i, null))
         return ""
     }
+
+    private fun openUrl(url: String): String {
+        runCatching { io.github.pimobile.browser.AppLinks.open(url) }.onFailure { throw Fail("Couldn't open $url: ${it.message}") }
+        return ""
+    }
+
+    internal fun startActivityPublic(i: Intent) = startActivity(i)
+    internal fun needPublic(permission: String, what: String) = need(permission, what)
+    internal val appContext get() = app
 
     /** termux-share with text on stdin. */
     private fun shareText(text: String): String {

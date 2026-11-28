@@ -1,0 +1,1 @@
+Saturn 1.1.1. Small hints point out the new gestures: hold the project on Home, or tap the little Saturn in a chat, to choose the model and thinking level. Each hint disappears once you've used it.

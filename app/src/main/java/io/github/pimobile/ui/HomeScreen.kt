@@ -372,7 +372,8 @@ fun HomeScreen(
                 Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Ph.Surface).border(1.dp, Ph.Line, RoundedCornerShape(12.dp))
                     // Tap: switch project. Long-press: this project's model and thinking level.
                     .combinedClickable(onClickLabel = "Switch project", onLongClickLabel = "Model and thinking for this project",
-                        onLongClick = { projHaptics.buzz(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); sheet = "projectModel" }) { sheet = "project" }
+                        onLongClick = { projHaptics.buzz(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            UiStore.markHint("hold-project"); sheet = "projectModel" }) { sheet = "project" }
                     .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PhIcon(PhIcons.Folder, Ph.Amber, 16.dp)
@@ -380,6 +381,9 @@ fun HomeScreen(
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
                     PhIcon(PhIcons.Chevron, Ph.Muted, 14.dp)
                 }
+                // Until it's been used once: the chip also holds the project's model and thinking level.
+                if (UiStore.hasCredentials || io.github.pimobile.ui.state.Control.signedIn.isNotEmpty())
+                    Hint("hold-project", "hold for model & thinking", modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
                 if (elsewhere > 0) Text("$elsewhere running elsewhere", style = Ph.monoSmall.copy(color = Ph.Amber),
                     modifier = Modifier.clickable { sheet = "project" })

@@ -156,6 +156,7 @@ object UiStore : TaskManager.Listener {
         // The open chat keeps its pi; the others end theirs after a few idle minutes (TaskManager.sweep).
         TaskManager.onScreen = { it.id == openTaskId }
         recentModels = prefs.getString("recentModels", null)?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+        hintsSeen = prefs.getStringSet("hintsSeen", emptySet())?.toSet() ?: emptySet()
         favoriteModels = prefs.getString("favoriteModels", null)?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
     }
 
@@ -489,6 +490,16 @@ object UiStore : TaskManager.Listener {
     fun noteRecent(m: String) {
         recentModels = (listOf(m) + recentModels.filter { it != m }).take(5)
         prefs.edit().putString("recentModels", recentModels.joinToString("\n")).apply()
+    }
+
+    /** One-time hints for gestures (hold the project, tap Saturn): shown until the gesture is used once. */
+    var hintsSeen by mutableStateOf<Set<String>>(emptySet())
+        private set
+    fun hintSeen(key: String) = key in hintsSeen
+    fun markHint(key: String) {
+        if (key in hintsSeen) return
+        hintsSeen = hintsSeen + key
+        prefs.edit().putStringSet("hintsSeen", hintsSeen).apply()
     }
 
     /** Models you starred: always at the top of the model lists, in the order you starred them. */

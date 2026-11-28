@@ -799,7 +799,7 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
                 val helpers by remember(t) { androidx.compose.runtime.derivedStateOf { Shapes.liveHelpers(t.items) } }
                 MiniSaturn(spinning = running, needsYou = t.status == Status.NEEDS_INPUT, helpers = helpers, modifier =
                     Modifier.width(118.dp).onGloballyPositioned { c -> onSaturn(c.boundsInRoot().center) }
-                        .clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Model and thinking for this chat") { onModel() })
+                        .clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Model and thinking for this chat") { UiStore.markHint("tap-saturn"); onModel() })
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (running || t.status == Status.NEEDS_INPUT) PulseDot(tint, 7)
@@ -831,6 +831,8 @@ private fun Header(t: TaskUi, tab: String, browser: Boolean, collapse: Float, on
                         if (t.contextTokens > 0) Text("· " + String.format(Locale.US, "%.1fk ctx", t.contextTokens / 1000.0), style = Ph.monoSmall,
                             modifier = Modifier.padding(start = 4.dp), maxLines = 1)
                     }
+                    // Until it's been used once: the little Saturn on the left opens this chat's model and thinking.
+                    Hint("tap-saturn", "tap Saturn for model & thinking", arrow = "←")
                 }
             }
           }

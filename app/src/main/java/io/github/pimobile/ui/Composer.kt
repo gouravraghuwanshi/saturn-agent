@@ -140,8 +140,10 @@ fun Composer(
     onRemoveAttachment: (UiStore.Attachment) -> Unit = {},
     acceptVoiceRequest: Boolean = false,
     thinking: ThinkingControl? = null,
-    /** How full the model's context is (0..1), drawn as a ring round the mic/send button; null hides it. */
+    /** How full the model's context is (0..1), drawn as a wash filling the box from the left; null hides it. */
     contextFill: Float? = null,
+    /** Whose context [contextFill] is (the chat): a change of chat jumps to its level instead of animating. */
+    contextKey: Any? = null,
     /** Hold the box and pull it up to do this (e.g. compact), like the other pull actions. */
     pulls: List<PullAction> = emptyList(),
 ) {
@@ -157,6 +159,25 @@ fun Composer(
     var boxW by remember { mutableStateOf(1f) }
     var inputFocused by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Context fill: when it changes (a reply finished), it grows to the new level with a brief amber glow and
+    // a label above the box says what it is, so the eye catches it. Opening a chat just shows the level.
+    val fillTarget = (contextFill ?: 0f).coerceIn(0f, 1f)
+    val fillShown = remember(contextKey) { androidx.compose.animation.core.Animatable(fillTarget) }
+    val fillGlow = remember(contextKey) { androidx.compose.animation.core.Animatable(0f) }
+    var fillLabel by remember(contextKey) { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(contextKey, fillTarget) {
+        if (kotlin.math.abs(fillTarget - fillShown.value) < 0.001f) return@LaunchedEffect
+        val pct = (fillTarget * 100).toInt().coerceIn(1, 100)
+        fillLabel = "$pct% of context used" + if (pulls.isNotEmpty() && pct >= 80) " · hold to compact" else ""
+        launch {
+            fillGlow.animateTo(1f, androidx.compose.animation.core.tween(260))
+            kotlinx.coroutines.delay(900)
+            fillGlow.animateTo(0f, androidx.compose.animation.core.tween(1500))
+        }
+        fillShown.animateTo(fillTarget, androidx.compose.animation.core.tween(1100, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        kotlinx.coroutines.delay(2300)
+        fillLabel = null
+    }
     // Pressed in while charging; at the ting it springs back out and wobbles like jelly.
     val charge by androidx.compose.animation.core.animateFloatAsState(if (charging) 1f else 0f,
         if (charging) androidx.compose.animation.core.tween(holdMs.toInt(), easing = androidx.compose.animation.core.LinearEasing)
@@ -270,6 +291,20 @@ fun Composer(
             }
         }
         Box {
+        // "37% of context used": floats just above the box's right edge for a moment after the fill changes.
+        androidx.compose.animation.AnimatedVisibility(fillLabel != null && barIn <= 0.01f && !showPalette,
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 14.dp).layout { m, c ->
+                val p = m.measure(c.copy(minWidth = 0, minHeight = 0))
+                layout(p.width, 0) { p.place(0, -p.height - with(density) { 8.dp.roundToPx() }) }
+            },
+            enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
+            var last by remember { mutableStateOf("") }
+            fillLabel?.let { last = it }
+            // Soft on purpose: easy to notice, just as easy to ignore.
+            Text(last, maxLines = 1, style = Ph.monoSmall.copy(fontSize = 11.sp, color = Ph.Amber.copy(alpha = 0.8f)),
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Ph.Amber.copy(alpha = 0.07f))
+                    .border(1.dp, Ph.Amber.copy(alpha = 0.22f), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 4.dp))
+        }
         // The options: pop in above the box the moment the hold "tings".
         if (pulls.isNotEmpty() && barIn > 0.01f) {
             Box(Modifier.matchParentSize().padding(horizontal = 16.dp).layout { m, c ->
@@ -370,13 +405,23 @@ fun Composer(
                     clipPath(outline) {
                         drawRect(Ph.Raised)
                         // How full the context is: a faint wash filling the box from the left.
-                        val f = (contextFill ?: 0f).coerceIn(0f, 1f)
+                        val f = if (contextFill == null) 0f else fillShown.value.coerceIn(0f, 1f)
                         if (f > 0.003f) {
-                            val c = Ph.Text.copy(alpha = if (f >= 0.9f) 0.085f else 0.05f)
+                            val g = fillGlow.value
+                            // Faint grey normally; warms to amber while it's just changed.
+                            val c = androidx.compose.ui.graphics.lerp(Ph.Text.copy(alpha = if (f >= 0.9f) 0.085f else 0.05f),
+                                Ph.Amber.copy(alpha = 0.1f), g)
                             val end = size.width * f
                             val soft = 28.dp.toPx().coerceAtMost(end)
                             drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(0f to c, ((end - soft) / end).coerceIn(0f, 1f) to c, 1f to Color.Transparent,
                                 startX = 0f, endX = end), size = androidx.compose.ui.geometry.Size(end, size.height))
+                            // The leading edge lights up as it moves.
+                            if (g > 0.01f) {
+                                val w = 3.dp.toPx()
+                                drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Ph.Amber.copy(alpha = 0.35f * g), Color.Transparent)),
+                                    topLeft = androidx.compose.ui.geometry.Offset((end - soft * 0.5f - w / 2).coerceAtLeast(0f), 0f),
+                                    size = androidx.compose.ui.geometry.Size(w, size.height))
+                            }
                         }
                         // Rings spreading from your finger, like a drop in water.
                         if (wave > 0.01f) for (k in 0 until 3) {

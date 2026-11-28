@@ -661,8 +661,14 @@ fun TaskScreen(t: TaskUi, shared: SharedTransitionScope, visibility: AnimatedVis
                     LaunchedEffect(t.model) { UiStore.rpc(t, "get_available_thinking_levels") }
                     val thinkLevels = t.responses["get_available_thinking_levels"]?.optJSONArray("levels")
                         ?.let { a -> (0 until a.length()).map { a.getString(it) } }
+                    // The fill takes the new level once the reply is done (it changes after every step while running),
+                    // so it animates once per reply.
+                    val fillNow = t.contextWindow.takeIf { it > 0 && t.contextTokens > 0 }?.let { t.contextTokens / it.toFloat() }
+                    var fillSettled by remember(t.task.id) { mutableStateOf(fillNow) }
+                    LaunchedEffect(t.task.id, running, fillNow) { if (!running) fillSettled = fillNow }
                     Composer(
-                        contextFill = t.contextWindow.takeIf { it > 0 && t.contextTokens > 0 }?.let { t.contextTokens / it.toFloat() },
+                        contextFill = fillSettled,
+                        contextKey = t.task.id,
                         pulls = buildList {
                             if (!running && t.contextTokens > 0) add(PullAction(PhIcons.Compact, "Compact", "Release to compact",
                                 note = t.contextWindow.takeIf { it > 0 }?.let { w -> "${(t.contextTokens * 100L / w)}% full" }) { UiStore.rpc(t, "compact") })

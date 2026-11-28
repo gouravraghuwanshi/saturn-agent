@@ -1,0 +1,1 @@
+Saturn 1.2.1. When Saturn finishes a reply, the input box shows how much of the chat's context is used: the fill grows to the new level with a soft amber glow, and a small note above the box ("12% of context used") fades in and out. It's gentle, so you can ignore it; past 80% it reminds you that you can hold the box to compact.

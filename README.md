@@ -22,11 +22,12 @@ Saturn is an agent that can do anything on your phone, not just code. [Pi](https
 - **On-device Linux userland:** Ships Node.js, bash, git, ripgrep, ssh, and built-in utilities (`jq`, `pdftotext`, etc.) without Termux or root, plus an interactive terminal if you want direct shell access.
 - **Concurrent tasks:** Each task runs in its own `pi --mode rpc` process with a persistent session you can revisit, branch, or export.
 - **Artifacts:** Files created for you (HTML pages, reports, scripts, data) are collected in an Artifacts view for previewing and sharing.
-- **Phone APIs:** Termux:API-compatible commands (`termux-torch`, `termux-camera-photo`, `termux-location`, `termux-sensor`, `termux-notification`, `termux-tts-speak`, contacts, etc.) routed through a local, token-protected bridge.
+- **Phone APIs:** Termux:API-compatible commands (`termux-torch`, `termux-camera-photo`, `termux-location`, `termux-sensor`, `termux-notification`, `termux-tts-speak`, contacts, etc.) plus the phone's files (`termux-setup-storage`), other apps (`saturn-apps`, `saturn-open-app`), APK installs, wallpaper, brightness and downloads, routed through a local, token-protected bridge by a small native (Rust) tool. Anything sensitive goes through Android's own confirmation screen.
 - **Scheduling:** `saturn-schedule` registers Android alarms for one-off timers or cron-style recurring tasks that run even when the app is closed.
 - **Browser, GitHub, and SSH:** An in-app browser the agent can inspect and drive, GitHub sign-in for `gh`/`git` workflows, and SSH access to remote machines.
 - **Android integration:** Share and drag-and-drop target, notification replies, home-screen widget, quick-settings tile, voice input, AppFunctions, and adaptive layouts for tablets, foldables, and DeX.
-- **Flexible models:** Sign in with ChatGPT, Claude, Copilot, and others, or bring your own API key (OpenRouter, Anthropic, OpenAI, etc.).
+- **Flexible models:** Sign in with ChatGPT, Claude, Copilot, and others, or bring your own API key (OpenRouter, Anthropic, OpenAI, etc.). Choose the model and thinking level per chat or per project, and star favourites.
+- **Light when idle:** Chats you're not using end their agent process after a few minutes and restart in about a second when you return.
 
 ## Privacy
 

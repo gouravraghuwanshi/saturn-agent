@@ -79,6 +79,8 @@ class PiRuntime private constructor(private val ctx: Context) {
     val globalModules get() = File(usr, "lib/node_modules")
     /** jq, fold, pdftotext and friendly python/apt messages (assets/saturn-tools.js). */
     private val toolsJs get() = File(usr, "lib/saturn-tools.js")
+    /** npm packages on Android: musl builds, fallbacks, the npm wrapper (assets/saturn-compat.cjs). */
+    private val compatJs get() = File(usr, "lib/saturn-compat.cjs")
     private val npmCli get() = File(piRoot, "node_modules/npm/bin/npm-cli.js")
     private val npxCli get() = File(piRoot, "node_modules/npm/bin/npx-cli.js")
     private val bashEnv = File(usr, "etc/pi-bash-env.sh")
@@ -109,6 +111,10 @@ class PiRuntime private constructor(private val ctx: Context) {
         listOf(home, projects, artifacts, tmp, bin, gitCore, bashEnv.parentFile!!, globalModules).forEach { it.mkdirs() }
         link(bin, BIN)
         link(gitCore, GIT_CORE)
+        // Libraries for Linux musl programs (run through libx_ldmusl.so by the exec shim).
+        File(usr, "lib/musl").also { it.mkdirs() }.let { musl ->
+            if (File(nativeDir, "libx_musl_gcc_s.so").exists()) link(musl, mapOf("libgcc_s.so.1" to "libx_musl_gcc_s.so"))
+        }
         // Real npm/npx commands (npm's own #!/usr/bin/env node scripts), so
         // extensions can spawn e.g. `npx some-mcp-server`. Needs the exec shim.
         for ((name, script) in listOf("npm" to npmCli, "npx" to npxCli)) {
@@ -145,8 +151,10 @@ class PiRuntime private constructor(private val ctx: Context) {
         "SSL_CERT_FILE" to certs.path,
         "CURL_CA_BUNDLE" to certs.path,
         "GIT_SSL_CAINFO" to certs.path,
-        // Play build: node never loads native add-ons (.node machine code) from downloaded packages.
-        "NODE_OPTIONS" to "--use-bundled-ca",
+        // saturn-compat.cjs helps npm packages that expect desktop Linux (see that file).
+        "NODE_OPTIONS" to "--use-bundled-ca --require ${compatJs.path}",
+        // Compiling native modules isn't possible on the phone; this stand-in skips it so the install goes on.
+        "NPM_CONFIG_NODE_GYP" to File(bin, "node-gyp").path,
         // git
         "GIT_EXEC_PATH" to gitCore.path,
         "GIT_TEMPLATE_DIR" to File(usr, "share/git-core/templates").path,
@@ -211,9 +219,14 @@ class PiRuntime private constructor(private val ctx: Context) {
         // Stand-ins for desktop tools the model reaches for (see assets/saturn-tools.js), and `pi` itself.
         toolsJs.parentFile?.mkdirs()
         ctx.assets.open("saturn-tools.js").use { i -> toolsJs.outputStream().use { i.copyTo(it) } }
+        ctx.assets.open("saturn-compat.cjs").use { i -> compatJs.outputStream().use { i.copyTo(it) } }
+        copyAssetDir("saturn-compat", File(usr, "lib/saturn-compat"))
+        // npm finds node-gyp through this script; unpacking the app's files drops its executable bit.
+        File(piRoot, "node_modules/npm/bin/node-gyp-bin/node-gyp").setExecutable(true, false)
         val tools = listOf("jq", "fold", "pdftotext", "python", "python3", "pip", "pip3", "apt", "apt-get", "pkg")
             .associateWith { "exec \"${File(bin, "node").path}\" \"${toolsJs.path}\" $it \"${'$'}@\"" } +
-            ("pi" to "exec \"${File(bin, "node").path}\" \"${piCli.path}\" \"${'$'}@\"")
+            ("pi" to "exec \"${File(bin, "node").path}\" \"${piCli.path}\" \"${'$'}@\"") +
+            ("node-gyp" to "exec \"${File(bin, "node").path}\" \"${compatJs.path}\" node-gyp \"${'$'}@\"")
         // Saturn's native tool binary (native/saturn, Rust) answers most of these itself: phone commands go
         // straight to the bridge (no shell + curl per call) and jq/fold run without starting Node. The
         // scripts stay as the fallback for a build made without it.
@@ -243,6 +256,16 @@ class PiRuntime private constructor(private val ctx: Context) {
         }
     }
 
+    /** Copies an assets folder (and its subfolders) to [dest]. */
+    private fun copyAssetDir(path: String, dest: File) {
+        dest.mkdirs()
+        for (n in ctx.assets.list(path).orEmpty()) {
+            val child = "$path/$n"
+            if (ctx.assets.list(child).orEmpty().isNotEmpty()) copyAssetDir(child, File(dest, n))
+            else ctx.assets.open(child).use { i -> File(dest, n).outputStream().use { i.copyTo(it) } }
+        }
+    }
+
     private fun writeConfig() {
         if (!opensslConf.exists()) opensslConf.writeText("")
         bashEnv.writeText(
@@ -261,7 +284,7 @@ class PiRuntime private constructor(private val ctx: Context) {
         val settingsFile = File(home, ".pi/agent/settings.json")
         settingsFile.parentFile?.mkdirs()
         val settings = runCatching { JSONObject(settingsFile.readText()) }.getOrElse { JSONObject() }
-        settings.put("npmCommand", JSONArray(listOf(File(bin, "node").path, npmCli.path)))
+        settings.put("npmCommand", JSONArray(listOf(File(bin, "node").path, compatJs.path, "npm")))
         settingsFile.writeText(settings.toString(2))
         // Built-in extensions shipped with the app (refreshed on every start).
         val ext = File(home, ".pi/agent/extensions").apply { mkdirs() }

@@ -15,6 +15,8 @@ Saturn's own code is Apache-2.0 (see [LICENSE](LICENSE)). The app also ships the
 | OpenSSL | Apache-2.0 | https://www.openssl.org |
 | CA certificates (Mozilla) | MPL-2.0 | https://curl.se/docs/caextract.html |
 | Other shared libraries pulled in by the packages above (zlib, ncurses, readline, libiconv, …) | their own licenses | https://github.com/termux/termux-packages |
+| musl libc / dynamic loader (Alpine `musl` 1.2.5), runs Linux musl programs | MIT | https://musl.libc.org |
+| libgcc_s (Alpine `libgcc` 14.2.0) | GPL-3.0 with GCC Runtime Library Exception | https://gcc.gnu.org |
 | Termux terminal-emulator and terminal-view | Apache-2.0 | https://github.com/termux/termux-app |
 | AndroidX, Jetpack Compose, CameraX | Apache-2.0 | https://developer.android.com/jetpack |
 | Inter, JetBrains Mono fonts | SIL OFL 1.1 | see [NOTICE-fonts.txt](NOTICE-fonts.txt) |

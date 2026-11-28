@@ -57,6 +57,8 @@ Prerequisites: JDK 17, Android SDK (platform 37, NDK r29), Node.js/npm, and Rust
 python3 -I runtime/import_termux.py   # toolchain -> jniLibs + assets (sha256-verified)
 runtime/build-pi-bundle.sh            # official Pi from npm -> assets/pi-bundle.zip
 runtime/build-saturn.sh               # Saturn's native tools (Rust) -> jniLibs/libx_saturn.so
+runtime/fetch-musl.sh                 # musl loader + libgcc_s for Linux musl programs -> jniLibs (sha256-verified)
+runtime/build-addons.sh               # Android builds of native add-ons extensions need (node-pty) -> assets
 ./gradlew assembleRelease
 ```
 

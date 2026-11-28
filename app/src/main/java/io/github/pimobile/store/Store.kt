@@ -60,11 +60,55 @@ object Store {
     }
 
     enum class Filter(val label: String, val query: String) {
-        ALL("all", ""), EXTENSIONS("extensions", "extension"), SKILLS("skills", "skill"),
+        ALL("all", ""), WORKS("✓ works on Saturn", ""), EXTENSIONS("extensions", "extension"), SKILLS("skills", "skill"),
         THEMES("themes", "theme"), INSTALLED("installed", ""),
     }
 
     private const val REGISTRY = "https://registry.npmjs.org"
+
+    /** A package Saturn has tested on a phone: installed with npm and loaded with pi's own loader. */
+    data class Compat(val status: String, val version: String, val description: String, val weekly: Long, val note: String?) {
+        val works get() = status == "works"
+    }
+
+    /** The tested list, published in the repo so it grows without an app update. */
+    private const val COMPAT_URL = "https://raw.githubusercontent.com/gouravraghuwanshi/saturn-agent/main/compat/extensions.json"
+    @Volatile private var compatCache: Map<String, Compat>? = null
+    var compatTested = ""; private set
+
+    /** Tested packages: the newest copy we have (downloaded, else the one in the app). Call off the main thread. */
+    fun compat(ctx: android.content.Context): Map<String, Compat> {
+        compatCache?.let { return it }
+        val cached = File(ctx.filesDir, "compat.json")
+        val bundled = ctx.assets.open("compat.json").bufferedReader().use { it.readText() }
+        // The downloaded copy, unless it's broken or older than the one in this version of the app.
+        val text = runCatching { cached.readText().takeIf { tested(it) >= tested(bundled) } }.getOrNull() ?: bundled
+        val map = runCatching { parseCompat(text) }.getOrElse { parseCompat(bundled) }
+        compatCache = map
+        // Refresh at most once a day, in the background; used from the next time the store opens.
+        if (System.currentTimeMillis() - cached.lastModified() > 24 * 3600_000L) Thread {
+            runCatching { get(COMPAT_URL).also { parseCompat(it); cached.writeText(it) } }
+        }.start()
+        return map
+    }
+
+    private fun tested(text: String) = runCatching { JSONObject(text).optString("tested") }.getOrDefault("")
+
+    private fun parseCompat(text: String): Map<String, Compat> {
+        val o = JSONObject(text)
+        val p = o.getJSONObject("packages")
+        compatTested = o.optString("tested")
+        return p.keys().asSequence().associateWith { k ->
+            val e = p.getJSONObject(k)
+            Compat(e.optString("status"), e.optString("version"), e.optString("description"), e.optLong("weekly"),
+                e.optString("note").ifBlank { null })
+        }
+    }
+
+    /** The "works on Saturn" tab: tested packages that work, most used first. */
+    fun works(ctx: android.content.Context, text: String): List<Pkg> = compat(ctx).filter { (n, c) ->
+        c.works && (text.isBlank() || n.contains(text, true) || c.description.contains(text, true))
+    }.entries.sortedByDescending { it.value.weekly }.map { (n, c) -> Pkg(n, c.version, c.description, c.weekly, emptyList(), "") }
 
     /** Desktop-only or native dependencies that won't work in the Android runtime. */
     private val RISKY = mapOf(

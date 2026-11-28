@@ -80,6 +80,9 @@ fun StoreScreen(onBack: () -> Unit) {
     var installed by remember { mutableStateOf(Store.installed(UiStore.runtime)) }
     var open by remember { mutableStateOf<Store.Pkg?>(null) }
     var endReached by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    var compat by remember { mutableStateOf<Map<String, Store.Compat>>(emptyMap()) }
+    LaunchedEffect(Unit) { compat = withContext(Dispatchers.IO) { runCatching { Store.compat(ctx) }.getOrDefault(emptyMap()) } }
     val list = rememberLazyListState()
 
     suspend fun load(reset: Boolean) {
@@ -89,6 +92,11 @@ fun StoreScreen(onBack: () -> Unit) {
                 .filter { it.contains(query, ignoreCase = true) }.forEach {
                     results.add(Store.Pkg(it, "", "Installed", 0, emptyList(), ""))
                 }
+            return
+        }
+        if (filter == Store.Filter.WORKS) {
+            val list = withContext(Dispatchers.IO) { Store.works(ctx, query) }
+            results.clear(); results.addAll(list); endReached = true
             return
         }
         loading = true; error = null
@@ -140,12 +148,16 @@ fun StoreScreen(onBack: () -> Unit) {
         LazyColumn(state = list, modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             error?.let { item { Text(it, style = Ph.body.copy(color = Ph.Red)) } }
+            if (filter == Store.Filter.WORKS && results.isNotEmpty()) item {
+                Text("Installed and loaded on a phone by Saturn${Store.compatTested.ifBlank { null }?.let { " · tested $it" } ?: ""}. More get added as they're tested.",
+                    style = Ph.body.copy(fontSize = 12.5.sp, color = Ph.Muted))
+            }
             if (!loading && results.isEmpty() && error == null) item {
                 Text(if (filter == Store.Filter.INSTALLED) "No packages installed yet." else "No packages found.",
                     style = Ph.body.copy(color = Ph.Muted))
             }
             items(results, key = { it.name }) { p ->
-                PackageCard(p, installed = p.installSpec in installed, onOpen = { open = p })
+                PackageCard(p, installed = p.installSpec in installed, compat = compat[p.name], onOpen = { open = p })
             }
         }
 
@@ -159,7 +171,7 @@ fun StoreScreen(onBack: () -> Unit) {
     }
 
     open?.let { p ->
-        PackageSheet(p, isInstalled = p.installSpec in installed, onDismiss = { open = null },
+        PackageSheet(p, isInstalled = p.installSpec in installed, compat = compat[p.name], onDismiss = { open = null },
             onChanged = {
                 UiStore.commands = emptyList() // refetched from pi so new skills/commands show in the / palette
                 scope.launch { installed = withContext(Dispatchers.IO) { Store.installed(UiStore.runtime) } }
@@ -168,7 +180,7 @@ fun StoreScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun PackageCard(p: Store.Pkg, installed: Boolean, onOpen: () -> Unit) {
+private fun PackageCard(p: Store.Pkg, installed: Boolean, compat: Store.Compat?, onOpen: () -> Unit) {
     val ctx = LocalContext.current
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Ph.Surface)
@@ -181,6 +193,10 @@ private fun PackageCard(p: Store.Pkg, installed: Boolean, onOpen: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (installed) Text("installed", style = Ph.monoSmall.copy(color = Ph.Green),
                 modifier = Modifier.border(1.dp, Color(0xFF2C4A38), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
+            else if (compat?.works == true) Text("✓ works", style = Ph.monoSmall.copy(color = Ph.Green),
+                modifier = Modifier.border(1.dp, Color(0xFF2C4A38), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
+            else if (compat != null) Text("known issue", style = Ph.monoSmall.copy(color = Ph.Amber),
+                modifier = Modifier.border(1.dp, Ph.AmberLine, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
             else if (p.desktopOnly) Text("desktop only", style = Ph.monoSmall.copy(color = Ph.Amber),
                 modifier = Modifier.border(1.dp, Ph.AmberLine, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
         }
@@ -205,7 +221,7 @@ private fun PackageCard(p: Store.Pkg, installed: Boolean, onOpen: () -> Unit) {
 
 /** Details + install/remove with live output. */
 @Composable
-private fun PackageSheet(p: Store.Pkg, isInstalled: Boolean, onDismiss: () -> Unit, onChanged: () -> Unit) {
+private fun PackageSheet(p: Store.Pkg, isInstalled: Boolean, compat: Store.Compat?, onDismiss: () -> Unit, onChanged: () -> Unit) {
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     var details by remember { mutableStateOf<Store.Details?>(null) }
@@ -251,12 +267,29 @@ private fun PackageSheet(p: Store.Pkg, isInstalled: Boolean, onDismiss: () -> Un
                 Image(it.asImageBitmap(), contentDescription = "${p.name} preview", contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth().aspectRatio(16 / 9f).clip(RoundedCornerShape(14.dp)))
             }
+            compat?.let { c ->
+                if (c.works) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("✓ Tested on Saturn: installs and loads on a phone (v${c.version})",
+                        style = Ph.monoSmall.copy(color = Ph.Green))
+                    c.note?.let { Text(it, style = Ph.monoSmall.copy(color = Ph.Muted)) }
+                }
+                else Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1A1610))
+                        .border(1.dp, Color(0xFF3A3222), RoundedCornerShape(12.dp)).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Known issue on Saturn", style = Ph.title.copy(fontSize = 13.sp, color = Ph.Amber))
+                    c.note?.let { Text(it, style = Ph.monoSmall.copy(color = Color(0xFFD9C9A8))) }
+                }
+            }
             val d = details
             if (d == null) Text(failed?.let { "Couldn't load details: $it" } ?: "Loading…", style = Ph.body.copy(color = Ph.Muted))
             else {
                 if (d.contents.isNotEmpty()) Text("Contains: " + d.contents.joinToString(", "), style = Ph.mono.copy(color = Ph.TextSoft))
                 // Mobile compatibility: flag dependencies that need desktop Chrome or native modules.
-                if (d.mobileWarnings.isNotEmpty()) Column(
+                // A tested result beats guessing from the dependency list.
+                if (compat?.works == true) Unit
+                else if (d.mobileWarnings.isNotEmpty()) Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1A1610))
                         .border(1.dp, Color(0xFF3A3222), RoundedCornerShape(12.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),

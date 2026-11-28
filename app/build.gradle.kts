@@ -15,8 +15,8 @@ android {
         applicationId = (findProperty("appId") as String?) ?: "io.github.gouravraghuwanshi.saturn" // -PappId=… for the old dev install
         minSdk = 29
         targetSdk = 37
-        versionCode = 20
-        versionName = "1.1.1"
+        versionCode = 21
+        versionName = "1.2.0"
         ndk { abiFilters += "arm64-v8a" }
     }
 

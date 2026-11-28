@@ -1,0 +1,265 @@
+{
+ "tested": "2026-11-28",
+ "packages": {
+  "billion-context": {
+   "status": "works",
+   "version": "0.1.216",
+   "description": "A context-compression plugin — small context windows (a 100K context is enough), 5x fewer tokens, month-long single sessions (billions of tokens), and compression quality — for all agents: pi, OpenCode, Codex, Claude Code, and more. billion-context is all",
+   "weekly": 534219
+  },
+  "pi-mcp-adapter": {
+   "status": "works",
+   "version": "7.0.1",
+   "description": "MCP (Model Context Protocol) adapter extension for Pi coding agent",
+   "weekly": 434782
+  },
+  "modern-web-guidance": {
+   "status": "works",
+   "version": "1.0.2",
+   "description": "Keep your agent up to date on the latest web best practices.",
+   "weekly": 431436
+  },
+  "pi-subagents": {
+   "status": "works",
+   "version": "0.90.0",
+   "description": "Pi extension for single-agent delegation and scripted multi-agent workflows",
+   "weekly": 179937
+  },
+  "pi-web-access": {
+   "status": "works",
+   "version": "0.48.0",
+   "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent. Supports OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Crawl4AI, Jina, SE",
+   "weekly": 167317
+  },
+  "pi-sleep-agent": {
+   "status": "works",
+   "version": "0.8.23",
+   "description": "A reviewable sleep and dream cycle for Pi agent memory.",
+   "weekly": 154909
+  },
+  "openwiki": {
+   "status": "works",
+   "version": "0.9.0",
+   "description": "A CLI that uses a DeepAgents documentation agent to generate and maintain an OpenWiki for a codebase.",
+   "weekly": 66080
+  },
+  "pi-claude-bridge": {
+   "status": "works",
+   "version": "0.13.1",
+   "description": "Pi extension that uses Claude Code (via Agent SDK) as a model provider.",
+   "weekly": 59786
+  },
+  "context-mode": {
+   "status": "works",
+   "version": "2.2.4",
+   "description": "Context window saver for 11 coding agents. Local and free: sandboxed code execution, FTS5 search, session continuity.",
+   "weekly": 59654
+  },
+  "@juicesharp/rpiv-ask-user-question": {
+   "status": "works",
+   "version": "2.16.0",
+   "description": "Pi extension. A structured questionnaire the model can put to you when it would otherwise guess, with typed options instead of free-form replies.",
+   "weekly": 50972
+  },
+  "pi-deltabox": {
+   "status": "works",
+   "version": "0.1.6",
+   "description": "Pi extension: agent-native sandbox sessions with diff/commit/abort, powered by deltabox-lite",
+   "weekly": 50313
+  },
+  "pi-mcp-extension": {
+   "status": "works",
+   "version": "1.16.8",
+   "description": "Full-featured, lightweight MCP extension for the Pi coding agent: stdio, SSE & Streamable HTTP transports, OAuth 2.1 (PKCE + DCR), lazy/eager lifecycles — minimal dependencies, zero bloat.",
+   "weekly": 48979
+  },
+  "@dietrichgebert/ponytail": {
+   "status": "works",
+   "version": "5.3.3",
+   "description": "Lazy senior dev mode for AI agents. The best code is the code you never wrote.",
+   "weekly": 48480
+  },
+  "@tintinweb/pi-subagents": {
+   "status": "works",
+   "version": "0.26.3",
+   "description": "Claude Code-like subagents and workflow orchestration for the pi coding agent — parallel execution, live widget, fleet view, custom agent types, mid-run steering, dynamic workflows, Claude Code compatibility, look and feel.",
+   "weekly": 45529
+  },
+  "glimpseui": {
+   "status": "issue",
+   "version": "0.8.1",
+   "description": "Native micro-UI for scripts and agents — cross-platform WebView windows with bidirectional JSON communication",
+   "weekly": 44638,
+   "note": "Opens desktop windows, which Android can't do."
+  },
+  "cc-safety-net": {
+   "status": "works",
+   "version": "2.8.3",
+   "description": "A coding agent CLI hook - block destructive commands and secret file access",
+   "weekly": 43848
+  },
+  "pi-rtk-optimizer": {
+   "status": "works",
+   "version": "0.9.0",
+   "description": "Pi extension that optimizes RTK command rewriting and tool output compaction for the coding agent.",
+   "weekly": 37629
+  },
+  "pi-farm": {
+   "status": "works",
+   "version": "0.84.18",
+   "description": "tmux session manager for pi agents — YAML config, reboot autostart, cron, todo panel, and sessions on other machines over ssh",
+   "weekly": 33958
+  },
+  "pi-lens": {
+   "status": "works",
+   "version": "4.5.3",
+   "description": "Real-time code feedback for pi — LSP, linters, formatters, type-checking, structural analysis & booboo",
+   "weekly": 29436
+  },
+  "@langchain/langsmith-pi-extension": {
+   "status": "works",
+   "version": "0.2.1",
+   "description": "LangSmith extension for Pi Coding Agent",
+   "weekly": 27949
+  },
+  "@getpipher/vision": {
+   "status": "works",
+   "version": "0.5.3",
+   "description": "Capability-aware vision + paste extension for the pi coding agent. Delegates image analysis to a vision model only when the active primary model is text-only; passes images through natively for multimodal models (zero delegation).",
+   "weekly": 26704
+  },
+  "@datadog/pi-plugin": {
+   "status": "works",
+   "version": "0.7.22",
+   "description": "Use Datadog directly in the Pi coding agent through a preconfigured Datadog MCP server. Query logs, metrics, traces, dashboards, and more through natural conversation.",
+   "weekly": 26313
+  },
+  "@onkernel/browser-loop": {
+   "status": "works",
+   "version": "0.12.1",
+   "description": "Browser tools for your agent: framework-neutral tool catalog, per-model compilation, Kernel-browser execution, and a pi binding + extension",
+   "weekly": 15047
+  },
+  "@gotgenes/pi-permission-system": {
+   "status": "works",
+   "version": "46.0.0",
+   "description": "Permission enforcement extension for the Pi coding agent.",
+   "weekly": 14053
+  },
+  "pi-intercom": {
+   "status": "works",
+   "version": "0.19.0",
+   "description": "<p>   <img src=\"banner.png\" alt=\"pi-intercom\" width=\"1100\"> </p>",
+   "weekly": 13436
+  },
+  "betterwright": {
+   "status": "works",
+   "version": "2.9.1",
+   "description": "A persistent, policy-guarded Playwright browser for AI agents with network controls, trusted credential filling, proof screenshots, and CAPTCHA helpers.",
+   "weekly": 12055
+  },
+  "gentle-pi": {
+   "status": "works",
+   "version": "5.1.0",
+   "description": "Turn Pi into el Gentleman: an ODD development harness with focused subagents, configured TDD evidence, native review, and skill discovery.",
+   "weekly": 11820,
+   "note": "Its optional Gentle AI program has no Android download; the extension itself works."
+  },
+  "pi-background-tasks": {
+   "status": "works",
+   "version": "2.6.10",
+   "description": "Pi extension for durable background shell tasks, read-only delegated agents, local attested Pi runs, and fixed-purpose Fusion workflows through child Pi processes.",
+   "weekly": 11468
+  },
+  "@narumitw/pi-plan-mode": {
+   "status": "works",
+   "version": "0.63.0",
+   "description": "Pi extension that adds a Codex-like read-only /plan collaboration mode.",
+   "weekly": 10982
+  },
+  "pi-straw-boss": {
+   "status": "works",
+   "version": "0.115.2",
+   "description": "Straw Boss coordination for pi in Herdr: sessions join a tab's net by choice, the first joiner is its main agent, a workspace tower opens on demand with a live monitoring dashboard, and boss_broadcast reaches the rest",
+   "weekly": 10981
+  },
+  "@juicesharp/rpiv-i18n": {
+   "status": "works",
+   "version": "2.16.0",
+   "description": "Pi extension. The localization foundation for rpiv-* skills: locale detection, the /languages command, the --locale flag, and a cross-package locale registry.",
+   "weekly": 10789
+  },
+  "@braintrust/pi-extension": {
+   "status": "works",
+   "version": "2.3.1",
+   "description": "Braintrust extension for pi. Includes automatic tracing for pi sessions, turns, LLM calls, and tool executions to Braintrust.",
+   "weekly": 10752
+  },
+  "@gotgenes/pi-anthropic-auth": {
+   "status": "works",
+   "version": "3.7.0",
+   "description": "Pi extension package for Anthropic OAuth compatibility",
+   "weekly": 10443
+  },
+  "@cratis/pi": {
+   "status": "works",
+   "version": "7.194.2",
+   "description": "Configuration-aware Cratis AI integration for Pi",
+   "weekly": 10259
+  },
+  "@mutmutco/pi-plugin": {
+   "status": "works",
+   "version": "4.7.160",
+   "description": "MMI workflow skills and org gates delivery.",
+   "weekly": 9961
+  },
+  "pi-open-tui": {
+   "status": "works",
+   "version": "0.4.7",
+   "description": "A polished TUI for Pi coding agent: branded header, responsive footer, framed editor, thinking preview, and compact tool views.",
+   "weekly": 9807
+  },
+  "pi-goal-x": {
+   "status": "works",
+   "version": "0.35.2",
+   "description": "Adds /goal to pi: conversational goal planning, flexible or ordered goals, persistent progress, and an independent completion auditor.",
+   "weekly": 9787
+  },
+  "pi-observational-memory": {
+   "status": "works",
+   "version": "3.1.4",
+   "description": "Observational memory extension for pi — cache-friendly tiered compaction with observations and reflections.",
+   "weekly": 9326
+  },
+  "@bopstack/pi-codegraph": {
+   "status": "works",
+   "version": "0.2.0",
+   "description": "CodeGraph code understanding extension for Pi and Oh My Pi",
+   "weekly": 9322
+  },
+  "pi-hermes-memory": {
+   "status": "works",
+   "version": "0.11.0",
+   "description": "🧠 Persistent memory + 🔍 session search + 🛡️ secret scanning for Pi. Token-aware policy-only memory by default, SQLite FTS5 search, auto-consolidation, procedural skills. 732 tests. Ported from Hermes agent.",
+   "weekly": 9284
+  },
+  "@czottmann/pi-automode": {
+   "status": "works",
+   "version": "1.18.0",
+   "description": "Claude Code-style auto mode guardrail for pi.",
+   "weekly": 8774
+  },
+  "pi-harness-runtime": {
+   "status": "works",
+   "version": "1.1.531",
+   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
+   "weekly": 8441
+  },
+  "pi-fireworks-quota": {
+   "status": "works",
+   "version": "0.1.4",
+   "description": "Pi commands /fireworks:quota and /fireworks:test-key — Fireworks AI balance, spend, tokens, and limits",
+   "weekly": 8361
+  }
+ }
+}
